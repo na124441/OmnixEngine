@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake ..)",
+      "Bash(chmod +x *)",
+      "Bash(g++ *)",
+      "Bash(where cl *)",
+      "Bash(build_simple.bat *)",
+      "Bash(cmd *)",
+      "Bash(./build_and_test.sh)",
+      "Bash(rm -rf build)",
+      "Bash(mkdir build *)",
+      "Bash(cmake --build . --config Release)",
+      "Bash(cmake .. -G \"Visual Studio 16 2019\")",
+      "Bash(cmake *)"
+    ]
+  }
+}

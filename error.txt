@@ -1,0 +1,176 @@
+PS E:\Omnix_Studio_v0.1\Engine\build> cmake --build . --config Release
+MSBuild version 18.5.4+cb4e32d21 for .NET Framework
+
+  Compiling Vulkan shaders...
+  EngineCore.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\EngineCore.lib
+  Serialization.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\Serialization.lib
+  ECS.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\ECS.lib
+  Input.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\Input.lib
+  GltfModel.cpp
+  RenderingEngine.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\RenderingEngine.lib
+  Scene.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\Scene.lib
+  Building Custom Rule E:/Omnix_Studio_v0.1/Engine/CMakeLists.txt
+  main.cpp
+  Application.cpp
+  Generating Code...
+LINK : warning LNK4098: defaultlib 'MSVCRT' conflicts with use of other libs; use /NODEFAULTLIB:library [E
+:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(mon
+itor.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(vul
+kan.c.obj)' in function '_glfwInitVulkan' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(wgl
+_context.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(egl
+_context.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(win
+32_init.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(win
+32_monitor.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(win
+dow.c.obj)' in function 'glfwCreateWindow' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(win
+32_window.c.obj)' in function 'windowProc' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(inp
+ut.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'calloc' defined in 'libucrt.lib(calloc.obj)' is imported by 'glfw3.lib(win
+32_joystick.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(monitor
+.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(vulkan.
+c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(wgl_con
+text.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(egl_con
+text.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(win32_i
+nit.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(win32_m
+onitor.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(window.
+c.obj)' in function 'glfwDestroyWindow' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(win32_w
+indow.c.obj)' in function '_glfwPlatformPollEvents' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj
+]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(input.c
+.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'free' defined in 'libucrt.lib(free.obj)' is imported by 'glfw3.lib(win32_j
+oystick.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'strncmp' defined in 'libucrt.lib(strncmp.obj)' is imported by 'glfw3.lib(c
+ontext.c.obj)' in function '_glfwRefreshContextAttribs' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcx
+proj]
+LINK : warning LNK4217: symbol 'strncmp' defined in 'libucrt.lib(strncmp.obj)' is imported by 'glfw3.lib(e
+gl_context.c.obj)' in function '_glfwCreateContextEGL' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxp
+roj]
+LINK : warning LNK4217: symbol '__stdio_common_vsprintf' defined in 'libucrt.lib(output.obj)' is imported
+by 'glfw3.lib(init.c.obj)' in function '_glfwInputError' [E:\Omnix_Studio_v0.1\Engine\build\Application.vc
+xproj]
+LINK : warning LNK4217: symbol 'qsort' defined in 'libucrt.lib(qsort.obj)' is imported by 'glfw3.lib(win32
+_joystick.c.obj)' in function 'deviceCallback' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4286: symbol 'qsort' defined in 'libucrt.lib(qsort.obj)' is imported by 'glfw3.lib(monit
+or.c.obj)' [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+LINK : warning LNK4217: symbol 'realloc' defined in 'libucrt.lib(realloc.obj)' is imported by 'glfw3.lib(w
+in32_monitor.c.obj)' in function '_glfwPlatformGetMonitors' [E:\Omnix_Studio_v0.1\Engine\build\Application
+.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::URI
+Decode(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,cla
+ss std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > *,void *)" (?URIDecod
+e@tinygltf@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAV23@PEAX@Z) referenced
+ in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@XZ) [E:\Omni
+x_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Fil
+eExists(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,vo
+id *)" (?FileExists@tinygltf@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PEAX@Z)
+ referenced in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@X
+Z) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "class std::basic_string<ch
+ar,struct std::char_traits<char>,class std::allocator<char> > __cdecl tinygltf::ExpandFilePath(class std::
+basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,void *)" (?ExpandFile
+Path@tinygltf@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBV23@PEAX@Z) referenced
+ in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@XZ) [E:\Omni
+x_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Rea
+dWholeFile(class std::vector<unsigned char,class std::allocator<unsigned char> > *,class std::basic_string
+<char,struct std::char_traits<char>,class std::allocator<char> > *,class std::basic_string<char,struct std
+::char_traits<char>,class std::allocator<char> > const &,void *)" (?ReadWholeFile@tinygltf@@YA_NPEAV?$vect
+or@EV?$allocator@E@std@@@std@@PEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@AEBV43@PEAX@Z)
+ referenced in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@X
+Z) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Wri
+teWholeFile(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > *,clas
+s std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,class std::vec
+tor<unsigned char,class std::allocator<unsigned char> > const &,void *)" (?WriteWholeFile@tinygltf@@YA_NPE
+AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBV23@AEBV?$vector@EV?$allocator@E@std@@@3
+@PEAX@Z) referenced in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf
+@@QEAA@XZ) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Get
+FileSizeInBytes(unsigned __int64 *,class std::basic_string<char,struct std::char_traits<char>,class std::a
+llocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >
+ const &,void *)" (?GetFileSizeInBytes@tinygltf@@YA_NPEA_KPEAV?$basic_string@DU?$char_traits@D@std@@V?$all
+ocator@D@2@@std@@AEBV23@PEAX@Z) referenced in function "public: __cdecl tinygltf::TinyGLTF::TinyGLTF(void)
+" (??0TinyGLTF@tinygltf@@QEAA@XZ) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Loa
+dImageData(struct tinygltf::Image *,int,class std::basic_string<char,struct std::char_traits<char>,class s
+td::allocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<ch
+ar> > *,int,int,unsigned char const *,int,void *)" (?LoadImageData@tinygltf@@YA_NPEAUImage@1@HPEAV?$basic_
+string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1HHPEBEHPEAX@Z) referenced in function "public: __cde
+cl tinygltf::TinyGLTF::TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@XZ) [E:\Omnix_Studio_v0.1\Engine\build\
+Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "bool __cdecl tinygltf::Wri
+teImageData(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const
+*,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const *,struct t
+inygltf::Image const *,bool,struct tinygltf::FsCallbacks const *,struct tinygltf::URICallbacks const *,cla
+ss std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > *,void *)" (?WriteIma
+geData@tinygltf@@YA_NPEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0PEBUImage@1@_NPEBUF
+sCallbacks@1@PEBUURICallbacks@1@PEAV23@PEAX@Z) referenced in function "public: __cdecl tinygltf::TinyGLTF:
+:TinyGLTF(void)" (??0TinyGLTF@tinygltf@@QEAA@XZ) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "public: bool __cdecl tinyg
+ltf::TinyGLTF::LoadASCIIFromFile(class tinygltf::Model *,class std::basic_string<char,struct std::char_tra
+its<char>,class std::allocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class
+std::allocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<c
+har> > const &,unsigned int)" (?LoadASCIIFromFile@TinyGLTF@tinygltf@@QEAA_NPEAVModel@2@PEAV?$basic_string@
+DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1AEBV45@I@Z) referenced in function "public: bool __cdecl en
+g::renderer::GltfModel::load(class std::basic_string<char,struct std::char_traits<char>,class std::allocat
+or<char> > const &,struct eng::renderer::EngineResources &,class eng::renderer::RenderScene &)" (?load@Glt
+fModel@renderer@eng@@QEAA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAUEngineReso
+urces@23@AEAVRenderScene@23@@Z) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "public: bool __cdecl tinyg
+ltf::TinyGLTF::LoadBinaryFromFile(class tinygltf::Model *,class std::basic_string<char,struct std::char_tr
+aits<char>,class std::allocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class
+ std::allocator<char> > *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<
+char> > const &,unsigned int)" (?LoadBinaryFromFile@TinyGLTF@tinygltf@@QEAA_NPEAVModel@2@PEAV?$basic_strin
+g@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1AEBV45@I@Z) referenced in function "public: bool __cdecl
+eng::renderer::GltfModel::load(class std::basic_string<char,struct std::char_traits<char>,class std::alloc
+ator<char> > const &,struct eng::renderer::EngineResources &,class eng::renderer::RenderScene &)" (?load@G
+ltfModel@renderer@eng@@QEAA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAUEngineRe
+sources@23@AEAVRenderScene@23@@Z) [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+RenderingEngine.lib(GltfModel.obj) : error LNK2019: unresolved external symbol "public: static class eng::
+renderer::Texture * __cdecl eng::renderer::Texture::getWhiteTexture(struct eng::renderer::EngineResources
+const &)" (?getWhiteTexture@Texture@renderer@eng@@SAPEAV123@AEBUEngineResources@23@@Z) referenced in funct
+ion "private: class std::unique_ptr<class eng::renderer::Material,struct std::default_delete<class eng::re
+nderer::Material> > __cdecl eng::renderer::GltfModel::createMaterial(struct tinygltf::Material const &,cla
+ss tinygltf::Model const &,struct eng::renderer::EngineResources &)" (?createMaterial@GltfModel@renderer@e
+ng@@AEAA?AV?$unique_ptr@VMaterial@renderer@eng@@U?$default_delete@VMaterial@renderer@eng@@@std@@@std@@AEBU
+Material@tinygltf@@AEBVModel@7@AEAUEngineResources@23@@Z) [E:\Omnix_Studio_v0.1\Engine\build\Application.v
+cxproj]
+glfw3.lib(context.c.obj) : error LNK2019: unresolved external symbol __imp_strstr referenced in function _
+glfwStringInExtensionString [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+glfw3.lib(win32_joystick.c.obj) : error LNK2001: unresolved external symbol __imp_strstr [E:\Omnix_Studio_
+v0.1\Engine\build\Application.vcxproj]
+glfw3.lib(context.c.obj) : error LNK2019: unresolved external symbol __imp___stdio_common_vsscanf referenc
+ed in function _vsscanf_l [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+glfw3.lib(win32_window.c.obj) : error LNK2019: unresolved external symbol __imp__strdup referenced in func
+tion _glfwPlatformGetRequiredInstanceExtensions [E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+glfw3.lib(win32_joystick.c.obj) : error LNK2001: unresolved external symbol __imp__strdup [E:\Omnix_Studio
+_v0.1\Engine\build\Application.vcxproj]
+glfw3.lib(monitor.c.obj) : error LNK2001: unresolved external symbol __imp__strdup [E:\Omnix_Studio_v0.1\E
+ngine\build\Application.vcxproj]
+E:\Omnix_Studio_v0.1\Engine\build\Release\Application.exe : fatal error LNK1120: 14 unresolved externals [
+E:\Omnix_Studio_v0.1\Engine\build\Application.vcxproj]
+  Building Custom Rule E:/Omnix_Studio_v0.1/Engine/CMakeLists.txt
+  RenderQueue_test.cpp
+  engine_tests.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\engine_tests.exe
+  'pwsh.exe' is not recognized as an internal or external command,
+  operable program or batch file.
+  sampler.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\sampler.exe
+  serialization_test.vcxproj -> E:\Omnix_Studio_v0.1\Engine\build\Release\serialization_test.exe

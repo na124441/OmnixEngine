@@ -1,0 +1,283 @@
+//============================================================================
+// SceneObject.h - Hierarchical Scene Node
+//
+// A hierarchical node with Transform and bound EntityID
+// Core building block of the scene graph
+//
+// Created: November 25, 2025
+//============================================================================
+
+#pragma once
+
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <memory>
+#include "../ECS/ECSconfig.h"
+#include "../ECS/ECSComponents.h"
+#include "Transform.h"
+#include "Runtime/Public/AssetHandle.h"
+
+/**
+ * @brief SceneObject - Hierarchical scene graph node
+ *
+ * Responsibilities:
+ * - Maintain transform hierarchy (parent-child relationships)
+ * - Update transforms (local → world)
+ * - Propagate updates to children
+ * - Store EntityID for ECS integration
+ * - Manage scene graph structure
+ *
+ * Update Order:
+ * 1. Update own transform (local → global)
+ * 2. ECS updates components (managed externally)
+ * 3. Update children recursively
+ */
+class SceneObject {
+public:
+    //========================================================================
+    // CONSTRUCTION / DESTRUCTION
+    //========================================================================
+    void InitializeWithECS(class Coordinator& coordinator);
+    Entity GetECSEntity() const { return m_ECSEntity; }
+    void SetECSEntity(Entity entity) { m_ECSEntity = entity; }
+    /**
+     * @brief Constructor
+     * @param name Object name
+     */
+    explicit SceneObject(const std::string& name);
+
+    /**
+     * @brief Destructor
+     */
+    ~SceneObject();
+
+    //========================================================================
+    // CORE ALGORITHM: Update
+    //========================================================================
+
+    /**
+     * @brief Update - Main update loop for this object
+     *
+     * Algorithm (from specification):
+     * 1. Update Transform (local → global)
+     * 2. For each attached component in ECS:
+     *    - ECS manages its Update, not SceneObject
+     * 3. Call Update on each child SceneObject
+     *
+     * @param deltaTime Time elapsed since last update
+     */
+    void Update(float deltaTime);
+
+    //========================================================================
+    // CORE ALGORITHM: AddChild
+    //========================================================================
+
+    /**
+     * @brief AddChild - Add child to this object
+     *
+     * Algorithm (from specification):
+     * 1. Set child.parent = this
+     * 2. Add to children list
+     * 3. Recompute transform inheritance
+     * 4. Rebind EntityID hierarchy if needed
+     *
+     * @param child Child object to add
+     */
+    void AddChild(SceneObject* child);
+
+    //========================================================================
+    // HIERARCHY MANAGEMENT
+    //========================================================================
+
+    /**
+     * @brief Remove child from this object
+     * @param child Child to remove
+     */
+    void RemoveChild(SceneObject* child);
+
+    /**
+     * @brief Set parent of this object
+     * @param newParent New parent (nullptr for root)
+     */
+    void SetParent(SceneObject* newParent);
+
+    /**
+     * @brief Get parent object
+     * @return Pointer to parent (nullptr if root)
+     */
+    SceneObject* GetParent() const;
+
+    /**
+     * @brief Get all children
+     * @return Const reference to children vector
+     */
+    const std::vector<SceneObject*>& GetChildren() const;
+
+    /**
+     * @brief Check if this object has children
+     * @return True if has children
+     */
+    bool HasChildren() const;
+
+    /**
+     * @brief Get child count
+     * @return Number of children
+     */
+    size_t GetChildCount() const;
+
+    /**
+     * @brief Find child by name
+     * @param name Child name
+     * @return Pointer to child (nullptr if not found)
+     */
+    SceneObject* FindChild(const std::string& name) const;
+
+    //========================================================================
+    // OBJECT PROPERTIES
+    //========================================================================
+
+    /**
+     * @brief Get EntityID
+     * @return Unique entity identifier
+     */
+    uint32_t GetID() const;
+
+    /**
+     * @brief Set EntityID (use carefully - normally set by Scene)
+     * @param id Entity ID
+     */
+    void SetID(uint32_t id);
+
+    /**
+     * @brief Get object name
+     * @return Object name string
+     */
+    const std::string& GetName() const;
+
+    /**
+     * @brief Set object name
+     * @param name New name
+     */
+    void SetName(const std::string& name);
+
+    /**
+     * @brief Get active state
+     * @return True if active
+     */
+    bool IsActive() const;
+
+    /**
+     * @brief Set active state
+     * @param active Active state
+     */
+    void SetActive(bool active);
+
+    //========================================================================
+    // LIFECYCLE
+    //========================================================================
+
+    /**
+     * @brief Initialize - Called when object is added to scene
+     */
+    void Initialize();
+
+    /**
+     * @brief Cleanup - Called when object is removed from scene
+     */
+    void Cleanup();
+
+    //========================================================================
+    // PUBLIC MEMBER - Transform
+    //========================================================================
+
+    /**
+     * @brief Transform component
+     *
+     * Public member for easy access:
+     * object.transform.SetPosition(...)
+     */
+    Transform transform;
+
+    bool m_HasRenderableMesh = false;
+    AssetHandle m_MeshAssetHandle;
+
+    bool m_HasMaterial = false;
+    AssetHandle m_MaterialAssetHandle;
+
+    bool m_HasStaticBody = false;
+    StaticBodyComponent m_StaticBody;
+
+    bool m_HasBoxCollider = false;
+    BoxColliderComponent m_BoxCollider;
+
+    bool m_HasSphereCollider = false;
+    SphereColliderComponent m_SphereCollider;
+
+    bool m_HasCapsuleCollider = false;
+    CapsuleColliderComponent m_CapsuleCollider;
+
+    void SetRenderableMesh(AssetHandle handle) { m_MeshAssetHandle = handle; m_HasRenderableMesh = true; }
+    void ClearRenderableMesh() { m_HasRenderableMesh = false; }
+
+    void SetMaterial(AssetHandle handle) { m_MaterialAssetHandle = handle; m_HasMaterial = true; }
+    void ClearMaterial() { m_HasMaterial = false; }
+
+    void SetStaticBody(const StaticBodyComponent& comp) { m_StaticBody = comp; m_HasStaticBody = true; }
+    void ClearStaticBody() { m_HasStaticBody = false; }
+
+    void SetBoxCollider(const BoxColliderComponent& comp) { m_BoxCollider = comp; m_HasBoxCollider = true; }
+    void ClearBoxCollider() { m_HasBoxCollider = false; }
+
+    void SetSphereCollider(const SphereColliderComponent& comp) { m_SphereCollider = comp; m_HasSphereCollider = true; }
+    void ClearSphereCollider() { m_HasSphereCollider = false; }
+
+    void SetCapsuleCollider(const CapsuleColliderComponent& comp) { m_CapsuleCollider = comp; m_HasCapsuleCollider = true; }
+    void ClearCapsuleCollider() { m_HasCapsuleCollider = false; }
+
+private:
+    //========================================================================
+    // INTERNAL HELPERS
+    //========================================================================
+    Entity m_ECSEntity;
+    /**
+     * @brief Update transform with parent's world transform
+     */
+    void UpdateTransformHierarchy();
+
+    /**
+     * @brief Update all children recursively
+     * @param deltaTime Time delta
+     */
+    void UpdateChildren(float deltaTime);
+
+    /**
+     * @brief Recompute transform inheritance for this object and children
+     */
+    void RecomputeTransformInheritance();
+
+    /**
+     * @brief Rebind EntityID hierarchy (notify ECS of parent-child relationship)
+     */
+    void RebindEntityIDHierarchy();
+
+    //========================================================================
+    // MEMBER VARIABLES
+    //========================================================================
+
+    // Identity
+    uint32_t entityID_;       // Unique entity ID
+    std::string name_;        // Object name
+    bool active_;             // Active state
+
+    // Hierarchy
+    SceneObject* parent_;              // Parent object (nullptr if root)
+    std::vector<SceneObject*> children_;  // Child objects
+
+    // State flags
+    bool initialized_;        // Has Initialize() been called?
+};
+
+//============================================================================
+// END OF FILE
+//===============================================================

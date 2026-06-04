@@ -1,0 +1,112 @@
+*.spv binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tga binary
+*.hdr binary
+*.ktx binary
+
+* text eol=lf
+# PhysX unnecessary content
+ThirdParty/PhysX/**/tests/
+ThirdParty/PhysX/**/Test/
+ThirdParty/PhysX/**/Samples/
+ThirdParty/PhysX/**/*.usd
+# PhysX
+ThirdParty/PhysX/
+
+# USD files
+*.usd
+
+# PhysX tests/samples
+**/tests/
+**/Test/
+**/Samples/
+# Build folders
+build/
+build_ninja/
+cmake-build-*/
+out/
+
+# Visual Studio / MSVC build artifacts
+*.pdb
+*.ilk
+*.lib
+*.obj
+*.exp
+*.exe
+*.dll
+
+# Logs
+*.log
+Omnix.log
+
+# IDE/editor folders
+.vs/
+.idea/
+.vscode/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+# Build folders
+build/
+build_ninja/
+cmake-build-*/
+out/
+bin/
+obj/
+
+# Logs
+*.log
+Omnix.log
+
+# Visual Studio / MSVC build artifacts
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.obj
+*.exe
+*.dll
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# IDE
+.vs/
+.idea/
+.vscode/
+# Build folders
+build/
+build_ninja/
+cmake-build-*/
+out/
+bin/
+obj/
+
+# Logs
+*.log
+Omnix.log
+
+# Compiled binaries / debug files
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.obj
+*.exe
+*.dll
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# IDE
+.vs/
+.idea/
+.vscode/
