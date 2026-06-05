@@ -10,6 +10,7 @@
 #include "scene/GlobalUBO.h"
 #include "graph/RenderGraph.h"
 #include "gltf/GltfModel.h"
+#include "LightingUBO.h"
 #include <unordered_map>
 #include <unordered_set>
 
@@ -68,6 +69,7 @@ public:
     glm::vec3    lightColor     = glm::vec3(1.0f, 1.0f, 1.0f);
     float        lightIntensity = 1.0f;
     bool         m_UseEditorDefaultLighting = true;
+    uint32_t     m_ShadingMode = 0; // 0 = Lit, 1 = Unlit
     glm::vec3    ambientColor = glm::vec3(0.10f, 0.12f, 0.16f);
     float        ambientIntensity = 0.35f;
 
@@ -125,6 +127,12 @@ public:
     uint32_t m_StaticRenderCount = 0;
     uint32_t m_EcsRenderCount = 0;
     uint32_t m_TotalRenderCount = 0;
+
+    LightData getLastLightData() const { return m_LastLightData; }
+    bool isFallbackLightingActive() const { return m_LastFallbackActive; }
+
+    LightData m_LastLightData = {};
+    bool m_LastFallbackActive = true;
 };
 
 } // namespace eng::renderer

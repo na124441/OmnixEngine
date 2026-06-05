@@ -112,6 +112,7 @@ struct CameraComponent {
     float farPlane;             // Far clipping plane
     float orthographicSize;     // Size for orthographic
     bool isPrimary;             // Is this the main camera?
+    Vector3 localOffset;        // Eye offset height (e.g. 1.6m)
 
     CameraComponent()
         : projectionType(ProjectionType::Perspective)
@@ -121,6 +122,7 @@ struct CameraComponent {
         , farPlane(1000.0f)
         , orthographicSize(10.0f)
         , isPrimary(true)
+        , localOffset{0.0f, 1.6f, 0.0f}
     {}
 };
 
@@ -363,6 +365,100 @@ struct CapsuleColliderComponent {
     Vector3 offset = { 0.0f, 0.0f, 0.0f };
     bool isTrigger = false;
     bool debugDraw = true;
+};
+
+struct PlayerStartComponent {
+    bool active = true;
+};
+
+struct CharacterControllerComponent {
+    float moveSpeed = 5.0f;
+    float sprintSpeed = 8.0f;
+    float mouseSensitivity = 0.12f;
+
+    float gravity = -20.0f;
+    float jumpVelocity = 7.0f;
+
+    float capsuleRadius = 0.35f;
+    float capsuleHeight = 1.8f;
+
+    float groundCheckDistance = 0.12f;
+    float skinWidth = 0.03f;
+
+    Vector3 velocity = {0.0f, 0.0f, 0.0f};
+    bool isGrounded = false;
+    bool enableJump = false;
+
+    float yaw = -90.0f;
+    float pitch = 0.0f;
+};
+
+struct InputComponent {
+    bool enabled = true;
+};
+
+enum class TriggerShapeType : uint8_t
+{
+    Box = 0,
+    Sphere,
+    Capsule
+};
+
+struct TriggerComponent
+{
+    bool enabled = true;
+    TriggerShapeType shapeType = TriggerShapeType::Box;
+    Vector3 boxSize = {1.0f, 1.0f, 1.0f};
+    float sphereRadius = 0.5f;
+    float capsuleRadius = 0.5f;
+    float capsuleHeight = 2.0f;
+    Vector3 offset = {0.0f, 0.0f, 0.0f};
+    bool fireEnter = true;
+    bool fireStay = false;
+    bool fireExit = true;
+    std::string eventName = "Trigger";
+};
+
+struct InteractableComponent
+{
+    bool enabled = true;
+    std::string interactionName = "Interactable";
+    std::string onTriggerEnterEvent = "Interactable.Enter";
+};
+
+struct DirectionalLightComponent
+{
+    bool enabled = true;
+    Vector3 color = {1.0f, 0.96f, 0.88f};
+    float intensity = 3.0f;
+    bool castShadows = false;
+};
+
+struct PointLightComponent
+{
+    bool enabled = true;
+    Vector3 color = {1.0f, 0.85f, 0.55f};
+    float intensity = 5.0f;
+    float radius = 10.0f;
+    bool castShadows = false;
+};
+
+struct AmbientLightComponent
+{
+    bool enabled = true;
+    Vector3 color = {0.10f, 0.12f, 0.16f};
+    float intensity = 0.35f;
+};
+
+struct SpotLightComponent
+{
+    bool enabled = true;
+    Vector3 color = {1.0f, 0.9f, 0.75f};
+    float intensity = 8.0f;
+    float range = 15.0f;
+    float innerConeAngle = 15.0f;
+    float outerConeAngle = 30.0f;
+    bool castShadows = false;
 };
 
 //============================================================================

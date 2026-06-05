@@ -37,6 +37,7 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
     // 4. Add RenderableMeshComponent if assigned
     if (m_HasRenderableMesh) {
         coordinator.AddComponent(m_ECSEntity, RenderableMeshComponent(m_MeshAssetHandle));
+        coordinator.AddComponent(m_ECSEntity, MeshRendererComponent());
     }
 
     // 5. Add MaterialComponent if assigned
@@ -62,6 +63,56 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
     // 9. Add CapsuleColliderComponent if assigned
     if (m_HasCapsuleCollider) {
         coordinator.AddComponent(m_ECSEntity, m_CapsuleCollider);
+    }
+
+    // 10. Add PlayerStartComponent if assigned
+    if (m_HasPlayerStart) {
+        coordinator.AddComponent(m_ECSEntity, m_PlayerStart);
+    }
+
+    // 11. Add CharacterControllerComponent if assigned
+    if (m_HasCharacterController) {
+        coordinator.AddComponent(m_ECSEntity, m_CharacterController);
+    }
+
+    // 12. Add CameraComponent if assigned
+    if (m_HasCameraComponent) {
+        coordinator.AddComponent(m_ECSEntity, m_CameraComponent);
+    }
+
+    // 13. Add InputComponent if assigned
+    if (m_HasInputComponent) {
+        coordinator.AddComponent(m_ECSEntity, m_InputComponent);
+    }
+
+    // 14. Add TriggerComponent if assigned
+    if (m_HasTrigger) {
+        coordinator.AddComponent(m_ECSEntity, m_Trigger);
+    }
+
+    // 15. Add InteractableComponent if assigned
+    if (m_HasInteractable) {
+        coordinator.AddComponent(m_ECSEntity, m_Interactable);
+    }
+
+    // 16. Add DirectionalLightComponent if assigned
+    if (m_HasDirectionalLight) {
+        coordinator.AddComponent(m_ECSEntity, m_DirectionalLight);
+    }
+
+    // 17. Add PointLightComponent if assigned
+    if (m_HasPointLight) {
+        coordinator.AddComponent(m_ECSEntity, m_PointLight);
+    }
+
+    // 18. Add AmbientLightComponent if assigned
+    if (m_HasAmbientLight) {
+        coordinator.AddComponent(m_ECSEntity, m_AmbientLight);
+    }
+
+    // 19. Add SpotLightComponent if assigned
+    if (m_HasSpotLight) {
+        coordinator.AddComponent(m_ECSEntity, m_SpotLight);
     }
 
     std::cout << "[SceneObject] '" << name_

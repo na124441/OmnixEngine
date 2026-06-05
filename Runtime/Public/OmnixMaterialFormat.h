@@ -78,6 +78,11 @@ struct OmnixMaterial
     std::vector<MaterialTextureBinding> textures;
     std::vector<MaterialScalarParameter> scalars;
     std::vector<MaterialVectorParameter> vectors;
+
+    // Direct PNG texture paths (written/read as plain strings in the file).
+    // These take priority over the texture binding AssetHandles in the renderer.
+    std::string albedoTexturePath;  // e.g. "Assets/Textures/brick.png"
+    std::string normalTexturePath;  // optional
 };
 
 inline bool SerializeMaterial(const OmnixMaterial& mat, const std::string& filepath) {
@@ -103,6 +108,10 @@ inline bool SerializeMaterial(const OmnixMaterial& mat, const std::string& filep
 
     // Vectors
     writer.WriteBytes(reinterpret_cast<const uint8_t*>(mat.vectors.data()), mat.vectors.size() * sizeof(MaterialVectorParameter));
+
+    // Texture paths (plain strings, appended after the binary blobs)
+    writer.WriteString(mat.albedoTexturePath);
+    writer.WriteString(mat.normalTexturePath);
 
     return writer.SaveToFile(filepath);
 }
@@ -146,6 +155,10 @@ inline bool DeserializeMaterial(OmnixMaterial& mat, const std::string& filepath)
         if (mat.header.vectorParameterCount > 0) {
             reader.ReadBytes(reinterpret_cast<uint8_t*>(mat.vectors.data()), mat.header.vectorParameterCount * sizeof(MaterialVectorParameter));
         }
+
+        // Texture paths (may be absent in older files — read safely)
+        mat.albedoTexturePath = reader.ReadString();
+        mat.normalTexturePath = reader.ReadString();
 
     } catch (const std::exception&) {
         return false;
@@ -193,6 +206,10 @@ inline bool DeserializeMaterialFromMemory(OmnixMaterial& mat, const uint8_t* dat
         if (mat.header.vectorParameterCount > 0) {
             reader.ReadBytes(reinterpret_cast<uint8_t*>(mat.vectors.data()), mat.header.vectorParameterCount * sizeof(MaterialVectorParameter));
         }
+
+        // Texture paths (may be absent in older files — read safely)
+        mat.albedoTexturePath = reader.ReadString();
+        mat.normalTexturePath = reader.ReadString();
 
     } catch (const std::exception&) {
         return false;

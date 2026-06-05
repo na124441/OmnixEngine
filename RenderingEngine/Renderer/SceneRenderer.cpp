@@ -15,7 +15,9 @@
 #define OMNIX_DONT_DEFINE_GLOBAL_LOG_MACROS
 #include "Core/World.h"
 #include "ECS/ECSComponents.h"
+#include "ECS/LightCollectionSystem.h"
 #include "Runtime/Public/AssetRegistry.h"
+#include "Runtime/Public/OmnixMaterialFormat.h"
 
 namespace eng::renderer {
 
@@ -253,7 +255,7 @@ void SceneRenderer::setupRenderGraph()
             }
 
             VkClearValue clearVals[1];
-            clearVals[0].color = {{0.025f, 0.028f, 0.035f, 1.0f}};
+            clearVals[0].color = {{0.035f, 0.040f, 0.050f, 1.0f}};
             rpInfo.clearValueCount = 1;
             rpInfo.pClearValues = clearVals;
 
@@ -593,11 +595,25 @@ void SceneRenderer::buildRenderQueue()
                                 if (m_AssetRegistry) {
                                     const auto* meta = m_AssetRegistry->GetMetadata(mc.materialAssetHandle);
                                     if (meta && meta->type == AssetType::Material) {
-                                        std::string albedoPath = "textures/brick_albedo.png";
-                                        std::string normalPath = "textures/brick_normal.png";
-                                        if (meta->sourcePath.find("wood") != std::string::npos) {
-                                            albedoPath = "textures/wood_albedo.png";
-                                            normalPath = "";
+                                        // Deserialize the .omnixmat file to read the texture paths set by the user
+                                        OmnixMaterial omnixMat;
+                                        std::string albedoPath;
+                                        std::string normalPath;
+
+                                        if (DeserializeMaterial(omnixMat, meta->sourcePath)) {
+                                            albedoPath = omnixMat.albedoTexturePath;
+                                            normalPath = omnixMat.normalTexturePath;
+                                        }
+
+                                        // Legacy fallback: if the material has no texture paths set,
+                                        // use the old name-based heuristic so existing scenes still work
+                                        if (albedoPath.empty()) {
+                                            if (meta->sourcePath.find("wood") != std::string::npos) {
+                                                albedoPath = "textures/wood_albedo.png";
+                                            } else {
+                                                albedoPath = "textures/brick_albedo.png";
+                                                normalPath = "textures/brick_normal.png";
+                                            }
                                         }
 
                                         Material* loadedMat = scene.createMaterial();
@@ -684,6 +700,7 @@ void SceneRenderer::updateGlobalUBO()
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjMatrix(aspect);
     ubo.proj[1][1] *= -1.0f;
+    ubo.cameraPos = glm::vec4(camera.position, 0.0f);
 
     FrameData& fd = resources.getCurrentFrameData(frameIndex);
     void* dst = nullptr;
@@ -694,52 +711,73 @@ void SceneRenderer::updateGlobalUBO()
 
 void SceneRenderer::updateLightingUBO()
 {
-    // Default lighting values (Omnix Editor v0.4.5 requirements)
-    glm::vec3 activeLightDir = glm::vec3(-0.4f, -1.0f, -0.3f);
-    glm::vec3 activeLightCol = glm::vec3(1.0f, 0.96f, 0.88f);
-    float activeLightIntensity = 3.0f;
-    glm::vec3 activeAmbientCol = glm::vec3(0.10f, 0.12f, 0.16f);
-    float activeAmbientIntensity = 0.35f;
+    LightData uboData{};
+    
+    // Editor Preview Lighting (Sunny preview fallback settings)
+    glm::vec3 activeLightDir = glm::vec3(-0.35f, -0.85f, -0.35f);
+    glm::vec3 activeLightCol = glm::vec3(1.0f, 0.96f, 0.86f);
+    float activeLightIntensity = 3.5f;
+    glm::vec3 activeAmbientCol = glm::vec3(0.45f, 0.50f, 0.58f);
+    float activeAmbientIntensity = 0.55f;
 
-    // Check if we should search the ECS world for custom lighting
-    if (!m_UseEditorDefaultLighting && m_World) {
+    uboData.ambientColorIntensity = glm::vec4(activeAmbientCol, activeAmbientIntensity);
+    uboData.directionalDirectionIntensity = glm::vec4(glm::normalize(activeLightDir), activeLightIntensity);
+    uboData.directionalColor = glm::vec4(activeLightCol, 1.0f);
+    uboData.pointLightCount = 0;
+    uboData.shadingMode = m_ShadingMode;
+
+    bool sceneHasLights = false;
+    if (m_World) {
         auto& coordinator = m_World->getCoordinator();
-        const auto& entities = coordinator.GetActiveEntities();
-        
-        // Find Component type IDs
-        auto lightType = coordinator.GetComponentType<LightComponent>();
-        auto transformType = coordinator.GetComponentType<TransformComponent>();
-        
-        bool foundLight = false;
-        for (Entity entity : entities) {
-            if (entity != 0 && coordinator.IsEntityAlive(entity)) {
-                Signature sig = coordinator.GetSignature(entity);
-                if (sig.test(lightType)) {
-                    const auto& lightComp = coordinator.GetComponent<LightComponent>(entity);
-                    activeLightCol = glm::vec3(lightComp.color.x, lightComp.color.y, lightComp.color.z);
-                    activeLightIntensity = lightComp.intensity;
-                    foundLight = true;
-                    
-                    if (sig.test(transformType)) {
-                        const auto& transComp = coordinator.GetComponent<TransformComponent>(entity);
-                        glm::quat rot(transComp.rotation.w, transComp.rotation.x, transComp.rotation.y, transComp.rotation.z);
-                        activeLightDir = rot * glm::vec3(0.0f, 0.0f, -1.0f);
-                    }
-                    break;
-                }
+        for (Entity ent : coordinator.GetActiveEntities()) {
+            if (!coordinator.IsEntityAlive(ent)) continue;
+            auto sig = coordinator.GetSignature(ent);
+            if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>()) ||
+                sig.test(coordinator.GetComponentType<PointLightComponent>()) ||
+                sig.test(coordinator.GetComponentType<AmbientLightComponent>()) ||
+                sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
+                sceneHasLights = true;
+                break;
             }
         }
     }
 
-    LightData light{};
-    light.direction = glm::vec4(glm::normalize(activeLightDir), 0.0f);
-    light.color     = glm::vec4(activeLightCol * activeLightIntensity, 1.0f); // w = intensity
-    light.ambient   = glm::vec4(activeAmbientCol, activeAmbientIntensity);    // w = intensity
+    if (!m_UseEditorDefaultLighting && m_World && sceneHasLights) {
+        auto& coordinator = m_World->getCoordinator();
+        auto lightCollectionSys = coordinator.GetSystem<eng::runtime::LightCollectionSystem>();
+        if (lightCollectionSys) {
+            auto lightData = lightCollectionSys->CollectLights(coordinator);
+            
+            // Map directional light
+            uboData.directionalDirectionIntensity = glm::vec4(lightData.directionalLight.direction, lightData.directionalLight.intensity);
+            uboData.directionalColor = glm::vec4(lightData.directionalLight.color, 1.0f);
+            
+            // Map ambient light
+            uboData.ambientColorIntensity = glm::vec4(lightData.ambientLight.color, lightData.ambientLight.intensity);
+            
+            // Map point lights
+            uboData.pointLightCount = static_cast<uint32_t>(lightData.pointLights.size());
+            for (uint32_t i = 0; i < uboData.pointLightCount && i < 16; ++i) {
+                const auto& pt = lightData.pointLights[i];
+                uboData.pointPositionsRadius[i] = glm::vec4(pt.position, pt.radius);
+                uboData.pointColorsIntensity[i] = glm::vec4(pt.color, pt.intensity);
+            }
+        }
+    }
+
+    m_LastLightData = uboData;
+    m_LastFallbackActive = m_UseEditorDefaultLighting || !m_World || !sceneHasLights;
+    if (!m_LastFallbackActive && m_World) {
+        auto& coordinator = m_World->getCoordinator();
+        if (!coordinator.GetSystem<eng::runtime::LightCollectionSystem>()) {
+            m_LastFallbackActive = true;
+        }
+    }
 
     const auto& lData = resources.perFrameLightingData[frameIndex];
     void* dst = nullptr;
     VK_CHECK(vmaMapMemory(resources.allocator, lData.uboAlloc, &dst));
-    std::memcpy(dst, &light, sizeof(light));
+    std::memcpy(dst, &uboData, sizeof(uboData));
     vmaUnmapMemory(resources.allocator, lData.uboAlloc);
 }
 

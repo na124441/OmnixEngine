@@ -5,6 +5,10 @@
 #include <memory>
 
 // Forward declarations for subsystem interfaces
+namespace Omnix {
+    class EventManager;
+}
+
 namespace eng::renderer {
     class IRenderer;
 }
@@ -38,6 +42,7 @@ namespace eng::runtime {
         eng::runtime::IScheduler* scheduler = nullptr;
         eng::runtime::IECSWorld* ecs = nullptr;
         InputManager* input = nullptr;
+        Omnix::EventManager* events = nullptr;
         std::function<std::unique_ptr<eng::runtime::IECSWorld>(std::unique_ptr<eng::runtime::IECSWorld>)> swapECS;
 
         const eng::runtime::FrameTiming* timing = nullptr;
@@ -50,6 +55,7 @@ namespace eng::runtime {
                    scheduler != nullptr &&
                    ecs != nullptr &&
                    input != nullptr &&
+                   events != nullptr &&
                    timing != nullptr &&
                    currentStage != nullptr;
         }

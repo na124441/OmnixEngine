@@ -26,3 +26,13 @@ constexpr ComponentTypeID STATIC_BODY_COMPONENT = 16;
 constexpr ComponentTypeID BOX_COLLIDER_COMPONENT = 17;
 constexpr ComponentTypeID SPHERE_COLLIDER_COMPONENT = 18;
 constexpr ComponentTypeID CAPSULE_COLLIDER_COMPONENT = 19;
+constexpr ComponentTypeID PLAYER_START_COMPONENT = 20;
+constexpr ComponentTypeID CHARACTER_CONTROLLER_COMPONENT = 21;
+constexpr ComponentTypeID INPUT_COMPONENT = 22;
+constexpr ComponentTypeID TRIGGER_COMPONENT = 23;
+constexpr ComponentTypeID INTERACTABLE_COMPONENT = 24;
+constexpr ComponentTypeID DIRECTIONAL_LIGHT_COMPONENT = 26;
+constexpr ComponentTypeID POINT_LIGHT_COMPONENT = 27;
+constexpr ComponentTypeID AMBIENT_LIGHT_COMPONENT = 28;
+constexpr ComponentTypeID SPOT_LIGHT_COMPONENT = 29;
+

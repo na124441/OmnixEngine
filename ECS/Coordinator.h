@@ -100,6 +100,15 @@ public:
         if constexpr (std::is_same_v<T, BoxColliderComponent>) return BOX_COLLIDER_COMPONENT;
         if constexpr (std::is_same_v<T, SphereColliderComponent>) return SPHERE_COLLIDER_COMPONENT;
         if constexpr (std::is_same_v<T, CapsuleColliderComponent>) return CAPSULE_COLLIDER_COMPONENT;
+        if constexpr (std::is_same_v<T, PlayerStartComponent>) return PLAYER_START_COMPONENT;
+        if constexpr (std::is_same_v<T, CharacterControllerComponent>) return CHARACTER_CONTROLLER_COMPONENT;
+        if constexpr (std::is_same_v<T, InputComponent>) return INPUT_COMPONENT;
+        if constexpr (std::is_same_v<T, TriggerComponent>) return TRIGGER_COMPONENT;
+        if constexpr (std::is_same_v<T, InteractableComponent>) return INTERACTABLE_COMPONENT;
+        if constexpr (std::is_same_v<T, DirectionalLightComponent>) return DIRECTIONAL_LIGHT_COMPONENT;
+        if constexpr (std::is_same_v<T, PointLightComponent>) return POINT_LIGHT_COMPONENT;
+        if constexpr (std::is_same_v<T, AmbientLightComponent>) return AMBIENT_LIGHT_COMPONENT;
+        if constexpr (std::is_same_v<T, SpotLightComponent>) return SPOT_LIGHT_COMPONENT;
         
         // This should not happen if all components are registered and known to the serializer
         CORE_LOG_FATAL("ECS: Attempted to get type ID for unknown component type!");

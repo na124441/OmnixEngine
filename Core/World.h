@@ -17,6 +17,9 @@
 #include "../ECS/RenderSystem.h"
 #include "../ECS/PlayerSystem.h"
 #include "../ECS/CameraSystem.h"
+#include "../ECS/PlayerControllerSystem.h"
+#include "../ECS/TriggerSystem.h"
+#include "../ECS/LightCollectionSystem.h"
 
 namespace eng::runtime {
 
@@ -50,8 +53,27 @@ public:
         m_coordinator.RegisterComponent<AudioSourceComponent>();
         m_coordinator.RegisterComponent<AnimatorComponent>();
         m_coordinator.RegisterComponent<ScriptComponent>();
+        m_coordinator.RegisterComponent<PlayerStartComponent>();
+        m_coordinator.RegisterComponent<CharacterControllerComponent>();
+        m_coordinator.RegisterComponent<InputComponent>();
+        m_coordinator.RegisterComponent<TriggerComponent>();
+        m_coordinator.RegisterComponent<InteractableComponent>();
+        m_coordinator.RegisterComponent<DirectionalLightComponent>();
+        m_coordinator.RegisterComponent<PointLightComponent>();
+        m_coordinator.RegisterComponent<AmbientLightComponent>();
+        m_coordinator.RegisterComponent<SpotLightComponent>();
 
         // 2. Register Systems & Signatures
+
+        // --- PlayerControllerSystem ---
+        {
+            auto playerControllerSys = m_coordinator.RegisterSystem<PlayerControllerSystem>();
+            ::Signature sig;
+            sig.set(m_coordinator.GetComponentType<TransformComponent>());
+            sig.set(m_coordinator.GetComponentType<CharacterControllerComponent>());
+            sig.set(m_coordinator.GetComponentType<CameraComponent>());
+            m_coordinator.SetSystemSignature<PlayerControllerSystem>(sig);
+        }
 
         // --- PlayerSystem ---
         {
@@ -88,6 +110,23 @@ public:
             sig.set(m_coordinator.GetComponentType<TransformComponent>());
             sig.set(m_coordinator.GetComponentType<MeshRendererComponent>());
             m_coordinator.SetSystemSignature<RenderSystem>(sig);
+        }
+
+        // --- TriggerSystem ---
+        {
+            auto triggerSys = m_coordinator.RegisterSystem<TriggerSystem>();
+            ::Signature sig;
+            sig.set(m_coordinator.GetComponentType<TransformComponent>());
+            sig.set(m_coordinator.GetComponentType<TriggerComponent>());
+            m_coordinator.SetSystemSignature<TriggerSystem>(sig);
+        }
+
+        // --- LightCollectionSystem ---
+        {
+            auto lightCollectionSys = m_coordinator.RegisterSystem<LightCollectionSystem>();
+            ::Signature sig;
+            sig.set(m_coordinator.GetComponentType<TransformComponent>());
+            m_coordinator.SetSystemSignature<LightCollectionSystem>(sig);
         }
 
         CORE_LOG_INFO("World: Golden Scene ECS initialized");

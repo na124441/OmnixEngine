@@ -3,17 +3,24 @@
 #include "ThirdParty/imgui/imgui_internal.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
 #include "RenderingEngine/Renderer/SceneRenderer.h"
+#include "ImGuizmo.h"
+#include "ECS/ECSComponents.h"
+#include "ECS/Public/IECSWorld.h"
+#include "Runtime/Public/Editor/EditorSelection.h"
+#include "Runtime/Public/Editor/EditorDirtyState.h"
+#include "Runtime/Public/Editor/EditorMath.h"
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace eng::runtime {
 
-    static void DrawGrid(ImDrawList* drawList, const glm::mat4& view, const glm::mat4& proj, ImVec2 imageStartPos, ImVec2 size) {
+    static void DrawGrid(ImDrawList* drawList, const glm::mat4& view, const glm::mat4& proj, ImVec2 imageStartPos, ImVec2 size, const glm::vec3& cameraPos, float gridScale) {
         int gridRange = 50;
         
-        auto projectWorldPoint = [&](const glm::vec3& worldPos, ImVec2& outPos) -> bool {
+        auto projectWorldPoint = [&](const glm::vec3& worldPos, ImVec2& outPos, float& outFade) -> bool {
             glm::vec4 clipPos = proj * view * glm::vec4(worldPos, 1.0f);
             if (clipPos.w <= 0.001f) return false;
             glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
@@ -21,6 +28,11 @@ namespace eng::runtime {
             if (std::abs(ndc.x) > 2.0f || std::abs(ndc.y) > 2.0f || ndc.z < 0.0f || ndc.z > 1.0f) return false;
             outPos.x = imageStartPos.x + (ndc.x + 1.0f) * 0.5f * size.x;
             outPos.y = imageStartPos.y + (1.0f - ndc.y) * 0.5f * size.y;
+
+            float dist = glm::distance(worldPos, cameraPos);
+            float maxFadeDist = 60.0f;
+            outFade = 1.0f - glm::clamp(dist / maxFadeDist, 0.0f, 1.0f);
+            outFade = outFade * outFade; // smooth quadratic falloff
             return true;
         };
 
@@ -40,9 +52,17 @@ namespace eng::runtime {
                 color = zAxisColor;
                 thickness = 2.0f;
             }
-            if (projectWorldPoint(glm::vec3((float)i, 0.0f, -(float)gridRange), p1) &&
-                projectWorldPoint(glm::vec3((float)i, 0.0f, (float)gridRange), p2)) {
-                drawList->AddLine(p1, p2, color, thickness);
+            float fade1 = 0.0f, fade2 = 0.0f;
+            if (projectWorldPoint(glm::vec3((float)i * gridScale, 0.0f, -(float)gridRange * gridScale), p1, fade1) &&
+                projectWorldPoint(glm::vec3((float)i * gridScale, 0.0f, (float)gridRange * gridScale), p2, fade2)) {
+                float fade = (fade1 + fade2) * 0.5f;
+                if (fade > 0.01f) {
+                    ImU32 alphaAdjustedColor = color;
+                    int a = (color >> 24) & 0xFF;
+                    a = static_cast<int>(a * fade);
+                    alphaAdjustedColor = (color & 0x00FFFFFF) | (a << 24);
+                    drawList->AddLine(p1, p2, alphaAdjustedColor, thickness);
+                }
             }
 
             // Lines parallel to X (constant Z)
@@ -52,9 +72,18 @@ namespace eng::runtime {
                 color = xAxisColor;
                 thickness = 2.0f;
             }
-            if (projectWorldPoint(glm::vec3(-(float)gridRange, 0.0f, (float)i), p1) &&
-                projectWorldPoint(glm::vec3((float)gridRange, 0.0f, (float)i), p2)) {
-                drawList->AddLine(p1, p2, color, thickness);
+            fade1 = 0.0f;
+            fade2 = 0.0f;
+            if (projectWorldPoint(glm::vec3(-(float)gridRange * gridScale, 0.0f, (float)i * gridScale), p1, fade1) &&
+                projectWorldPoint(glm::vec3((float)gridRange * gridScale, 0.0f, (float)i * gridScale), p2, fade2)) {
+                float fade = (fade1 + fade2) * 0.5f;
+                if (fade > 0.01f) {
+                    ImU32 alphaAdjustedColor = color;
+                    int a = (color >> 24) & 0xFF;
+                    a = static_cast<int>(a * fade);
+                    alphaAdjustedColor = (color & 0x00FFFFFF) | (a << 24);
+                    drawList->AddLine(p1, p2, alphaAdjustedColor, thickness);
+                }
             }
         }
     }
@@ -91,7 +120,7 @@ namespace eng::runtime {
         m_Context = context;
     }
 
-    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight) {
+    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, EditorSelection& selection, EditorDirtyState& dirtyState) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Viewport", nullptr);
         ImGui::PopStyleVar();
@@ -107,13 +136,31 @@ namespace eng::runtime {
         outWidth = size.x;
         outHeight = size.y;
 
+        // Determine screen-space start of the viewport panel
         ImVec2 imageStartPos = ImGui::GetCursorScreenPos();
-
+        
         if (viewportTexture != VK_NULL_HANDLE) {
             // Draw offscreen color buffer texture
             ImGui::Image((ImTextureID)viewportTexture, size, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
         } else {
             ImGui::Text("3D Scene Viewport");
+        }
+        
+        // Store viewport screen position and size for debugging overlays
+        m_ViewportScreenX = imageStartPos.x;
+        m_ViewportScreenY = imageStartPos.y;
+        m_ViewportWidth = size.x;
+        m_ViewportHeight = size.y;
+
+        // Keyboard hotkeys for changing transform gizmo type (W, E, R)
+        if (m_IsFocused && !ImGui::GetIO().WantTextInput) {
+            if (ImGui::IsKeyPressed(ImGuiKey_W)) {
+                m_GizmoType = ImGuizmo::TRANSLATE;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                m_GizmoType = ImGuizmo::ROTATE;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+                m_GizmoType = ImGuizmo::SCALE;
+            }
         }
 
         // Draw 3D Grid floor and axes
@@ -128,9 +175,50 @@ namespace eng::runtime {
 
             ImDrawList* drawList = ImGui::GetWindowDrawList();
             if (m_ShowGrid) {
-                DrawGrid(drawList, view, proj, imageStartPos, size);
+                DrawGrid(drawList, view, proj, imageStartPos, size, cam.position, m_GridScale);
             }
             DrawAxisGizmo(drawList, view, imageStartPos, size);
+
+            // Render 3D Gizmo for selected entity (suppressed while capturing editor camera view)
+            Entity selectedEntity = selection.GetSelectedEntity();
+            bool disableGizmo = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+            if (selectedEntity != 0 && m_Context->ecs && !disableGizmo) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                if (coordinator.IsEntityAlive(selectedEntity) && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<TransformComponent>())) {
+                    auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
+
+                    ImGuizmo::SetOrthographic(false);
+                    ImGuizmo::SetDrawlist();
+                    ImGuizmo::SetRect(imageStartPos.x, imageStartPos.y, size.x, size.y);
+
+                    // Build GLM matrix from custom ECS transform components
+                    glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
+                    glm::quat glmRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
+                    glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
+
+                    glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), glmPos) *
+                                            glm::mat4_cast(glmRot) *
+                                            glm::scale(glm::mat4(1.0f), glmScale);
+
+                    // Manipulate matrix using ImGuizmo
+                    if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
+                                             (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL,
+                                             glm::value_ptr(modelMatrix))) {
+                        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+                        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(modelMatrix),
+                                                              matrixTranslation,
+                                                              matrixRotation,
+                                                              matrixScale);
+
+                        tc.position = Vector3(matrixTranslation[0], matrixTranslation[1], matrixTranslation[2]);
+                        tc.rotation = EulerToQuaternion(matrixRotation[0], matrixRotation[1], matrixRotation[2]);
+                        tc.scale = Vector3(matrixScale[0], matrixScale[1], matrixScale[2]);
+                        tc.dirty = true;
+
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+            }
         }
 
         // Viewport Toolbar Overlay (Horizontal floating panel)
@@ -146,25 +234,41 @@ namespace eng::runtime {
         
         ImGui::AlignTextToFramePadding();
         ImGui::Text(" Mode: "); ImGui::SameLine();
-        const char* renderModes[] = { "Lit", "Unlit", "Wireframe" };
-        ImGui::SetNextItemWidth(100.0f);
+        const char* renderModes[] = { "Scene Lights", "Preview Sunny", "Unlit", "Wireframe" };
+        ImGui::SetNextItemWidth(120.0f);
         if (ImGui::Combo("##RenderModeCombo", &m_RenderMode, renderModes, IM_ARRAYSIZE(renderModes))) {
             if (renderer) {
-                if (m_RenderMode == 1) { // Unlit
-                    renderer->lightIntensity = 0.0f;
-                    renderer->ambientIntensity = 1.0f;
-                    renderer->ambientColor = glm::vec3(1.0f, 1.0f, 1.0f);
-                } else if (m_RenderMode == 0) { // Lit
-                    renderer->lightIntensity = 3.0f;
-                    renderer->ambientIntensity = 0.35f;
-                    renderer->ambientColor = glm::vec3(0.10f, 0.12f, 0.16f);
+                if (m_RenderMode == 0) { // Scene Lights
+                    renderer->m_UseEditorDefaultLighting = false;
+                    renderer->m_ShadingMode = 0;
+                } else if (m_RenderMode == 1) { // Preview Sunny
+                    renderer->m_UseEditorDefaultLighting = true;
+                    renderer->m_ShadingMode = 0;
+                } else if (m_RenderMode == 2) { // Unlit
+                    renderer->m_ShadingMode = 1;
+                } else if (m_RenderMode == 3) { // Wireframe
+                    renderer->m_ShadingMode = 1;
                 }
-                // Wireframe is a placeholder mode as requested
             }
         }
         
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         ImGui::Checkbox("Grid", &m_ShowGrid);
+
+        if (m_ShowGrid) {
+            ImGui::SameLine();
+            const char* gridScales[] = { "1m", "5m", "10m" };
+            int currentScaleIdx = 0;
+            if (m_GridScale == 5.0f) currentScaleIdx = 1;
+            else if (m_GridScale == 10.0f) currentScaleIdx = 2;
+            
+            ImGui::SetNextItemWidth(60.0f);
+            if (ImGui::Combo("##GridScaleCombo", &currentScaleIdx, gridScales, IM_ARRAYSIZE(gridScales))) {
+                if (currentScaleIdx == 0) m_GridScale = 1.0f;
+                else if (currentScaleIdx == 1) m_GridScale = 5.0f;
+                else if (currentScaleIdx == 2) m_GridScale = 10.0f;
+            }
+        }
         
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         ImGui::Checkbox("Colliders", &m_ShowColliders);
@@ -188,7 +292,7 @@ namespace eng::runtime {
         ImGui::EndChild();
 
         // Viewport Diagnostics overlay
-        if (renderer) {
+        if (renderer && m_ShowDiagnostics) {
             uint32_t offscreenWidth = renderer->GetOffscreenWidth();
             uint32_t offscreenHeight = renderer->GetOffscreenHeight();
             uint32_t frameIdx = renderer->frameIndex;

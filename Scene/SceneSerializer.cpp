@@ -139,6 +139,153 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("debugDraw", object->m_CapsuleCollider.debugDraw, allocator);
             components.PushBack(comp, allocator);
         }
+        if (object->m_HasPlayerStart) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "PlayerStart", allocator);
+            comp.AddMember("active", object->m_PlayerStart.active, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasCharacterController) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "CharacterController", allocator);
+            comp.AddMember("moveSpeed", object->m_CharacterController.moveSpeed, allocator);
+            comp.AddMember("sprintSpeed", object->m_CharacterController.sprintSpeed, allocator);
+            comp.AddMember("mouseSensitivity", object->m_CharacterController.mouseSensitivity, allocator);
+            comp.AddMember("gravity", object->m_CharacterController.gravity, allocator);
+            comp.AddMember("jumpVelocity", object->m_CharacterController.jumpVelocity, allocator);
+            comp.AddMember("capsuleRadius", object->m_CharacterController.capsuleRadius, allocator);
+            comp.AddMember("capsuleHeight", object->m_CharacterController.capsuleHeight, allocator);
+            comp.AddMember("groundCheckDistance", object->m_CharacterController.groundCheckDistance, allocator);
+            comp.AddMember("skinWidth", object->m_CharacterController.skinWidth, allocator);
+            comp.AddMember("enableJump", object->m_CharacterController.enableJump, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasCameraComponent) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Camera", allocator);
+            comp.AddMember("fov", object->m_CameraComponent.fov, allocator);
+            comp.AddMember("nearPlane", object->m_CameraComponent.nearPlane, allocator);
+            comp.AddMember("farPlane", object->m_CameraComponent.farPlane, allocator);
+            comp.AddMember("isPrimary", object->m_CameraComponent.isPrimary, allocator);
+
+            Value offsetVal(kObjectType);
+            offsetVal.AddMember("x", object->m_CameraComponent.localOffset.x, allocator);
+            offsetVal.AddMember("y", object->m_CameraComponent.localOffset.y, allocator);
+            offsetVal.AddMember("z", object->m_CameraComponent.localOffset.z, allocator);
+            comp.AddMember("localOffset", offsetVal, allocator);
+
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasInputComponent) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Input", allocator);
+            comp.AddMember("enabled", object->m_InputComponent.enabled, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasTrigger) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Trigger", allocator);
+            comp.AddMember("enabled", object->m_Trigger.enabled, allocator);
+            
+            std::string shapeStr = "Box";
+            if (object->m_Trigger.shapeType == TriggerShapeType::Sphere) shapeStr = "Sphere";
+            else if (object->m_Trigger.shapeType == TriggerShapeType::Capsule) shapeStr = "Capsule";
+            comp.AddMember("shapeType", Value(shapeStr.c_str(), allocator).Move(), allocator);
+
+            Value boxSizeVal(kArrayType);
+            boxSizeVal.PushBack(object->m_Trigger.boxSize.x, allocator);
+            boxSizeVal.PushBack(object->m_Trigger.boxSize.y, allocator);
+            boxSizeVal.PushBack(object->m_Trigger.boxSize.z, allocator);
+            comp.AddMember("boxSize", boxSizeVal, allocator);
+
+            comp.AddMember("sphereRadius", object->m_Trigger.sphereRadius, allocator);
+            comp.AddMember("capsuleRadius", object->m_Trigger.capsuleRadius, allocator);
+            comp.AddMember("capsuleHeight", object->m_Trigger.capsuleHeight, allocator);
+
+            Value offsetVal(kArrayType);
+            offsetVal.PushBack(object->m_Trigger.offset.x, allocator);
+            offsetVal.PushBack(object->m_Trigger.offset.y, allocator);
+            offsetVal.PushBack(object->m_Trigger.offset.z, allocator);
+            comp.AddMember("offset", offsetVal, allocator);
+
+            comp.AddMember("eventName", Value(object->m_Trigger.eventName.c_str(), allocator).Move(), allocator);
+            comp.AddMember("fireEnter", object->m_Trigger.fireEnter, allocator);
+            comp.AddMember("fireStay", object->m_Trigger.fireStay, allocator);
+            comp.AddMember("fireExit", object->m_Trigger.fireExit, allocator);
+
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasInteractable) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Interactable", allocator);
+            comp.AddMember("enabled", object->m_Interactable.enabled, allocator);
+            comp.AddMember("interactionName", Value(object->m_Interactable.interactionName.c_str(), allocator).Move(), allocator);
+            comp.AddMember("onTriggerEnterEvent", Value(object->m_Interactable.onTriggerEnterEvent.c_str(), allocator).Move(), allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasDirectionalLight) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "DirectionalLight", allocator);
+            comp.AddMember("enabled", object->m_DirectionalLight.enabled, allocator);
+            
+            Value colorVal(kObjectType);
+            colorVal.AddMember("x", object->m_DirectionalLight.color.x, allocator);
+            colorVal.AddMember("y", object->m_DirectionalLight.color.y, allocator);
+            colorVal.AddMember("z", object->m_DirectionalLight.color.z, allocator);
+            comp.AddMember("color", colorVal, allocator);
+            
+            comp.AddMember("intensity", object->m_DirectionalLight.intensity, allocator);
+            comp.AddMember("castShadows", object->m_DirectionalLight.castShadows, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasPointLight) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "PointLight", allocator);
+            comp.AddMember("enabled", object->m_PointLight.enabled, allocator);
+            
+            Value colorVal(kObjectType);
+            colorVal.AddMember("x", object->m_PointLight.color.x, allocator);
+            colorVal.AddMember("y", object->m_PointLight.color.y, allocator);
+            colorVal.AddMember("z", object->m_PointLight.color.z, allocator);
+            comp.AddMember("color", colorVal, allocator);
+            
+            comp.AddMember("intensity", object->m_PointLight.intensity, allocator);
+            comp.AddMember("radius", object->m_PointLight.radius, allocator);
+            comp.AddMember("castShadows", object->m_PointLight.castShadows, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasAmbientLight) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "AmbientLight", allocator);
+            comp.AddMember("enabled", object->m_AmbientLight.enabled, allocator);
+            
+            Value colorVal(kObjectType);
+            colorVal.AddMember("x", object->m_AmbientLight.color.x, allocator);
+            colorVal.AddMember("y", object->m_AmbientLight.color.y, allocator);
+            colorVal.AddMember("z", object->m_AmbientLight.color.z, allocator);
+            comp.AddMember("color", colorVal, allocator);
+            
+            comp.AddMember("intensity", object->m_AmbientLight.intensity, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasSpotLight) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "SpotLight", allocator);
+            comp.AddMember("enabled", object->m_SpotLight.enabled, allocator);
+            
+            Value colorVal(kObjectType);
+            colorVal.AddMember("x", object->m_SpotLight.color.x, allocator);
+            colorVal.AddMember("y", object->m_SpotLight.color.y, allocator);
+            colorVal.AddMember("z", object->m_SpotLight.color.z, allocator);
+            comp.AddMember("color", colorVal, allocator);
+            
+            comp.AddMember("intensity", object->m_SpotLight.intensity, allocator);
+            comp.AddMember("range", object->m_SpotLight.range, allocator);
+            comp.AddMember("innerConeAngle", object->m_SpotLight.innerConeAngle, allocator);
+            comp.AddMember("outerConeAngle", object->m_SpotLight.outerConeAngle, allocator);
+            comp.AddMember("castShadows", object->m_SpotLight.castShadows, allocator);
+            components.PushBack(comp, allocator);
+        }
         objValue.AddMember("components", components, allocator);
 
         objects.PushBack(objValue, allocator);

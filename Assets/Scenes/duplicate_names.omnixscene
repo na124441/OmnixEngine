@@ -1,0 +1,25 @@
+{
+  "name": "DuplicateNamesScene",
+  "version": 1,
+  "objects": [
+    {
+      "name": "Cube",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": []
+    },
+    {
+      "name": "Cube",
+      "transform": {
+        "position": { "x": 2.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": []
+    }
+  ],
+  "hierarchy": []
+}

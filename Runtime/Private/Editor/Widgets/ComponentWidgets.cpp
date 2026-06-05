@@ -1,5 +1,6 @@
 #include "Runtime/Private/Editor/Widgets/ComponentWidgets.h"
 #include "Runtime/Public/AssetRegistry.h"
+#include "Runtime/Public/OmnixMaterialFormat.h"
 #include "ThirdParty/imgui/imgui.h"
 #include "PhysicsValidation.h"
 #include <algorithm>
@@ -363,6 +364,51 @@ namespace eng::runtime {
             const AssetMetadata* meta = registry.GetMetadata(component.materialAssetHandle);
             if (meta) {
                 ImGui::Text("Source Path: %s", meta->sourcePath.c_str());
+
+                // ---- Texture path fields ----------------------------------------
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "PNG Texture Paths");
+                ImGui::TextDisabled("Drop a PNG into Assets/Textures/ then type its path below.");
+                ImGui::Separator();
+
+                // Load current paths from the .omnixmat file (once per frame the popup is open)
+                static char albedoBuf[512] = {};
+                static char normalBuf[512]  = {};
+                static uint64_t lastHandle  = 0;
+
+                if (lastHandle != component.materialAssetHandle.value) {
+                    lastHandle = component.materialAssetHandle.value;
+                    OmnixMaterial mat;
+                    if (DeserializeMaterial(mat, meta->sourcePath)) {
+                        std::strncpy(albedoBuf, mat.albedoTexturePath.c_str(), sizeof(albedoBuf) - 1);
+                        std::strncpy(normalBuf,  mat.normalTexturePath.c_str(),  sizeof(normalBuf) - 1);
+                    } else {
+                        albedoBuf[0] = '\0';
+                        normalBuf[0]  = '\0';
+                    }
+                }
+
+                ImGui::InputText("Albedo PNG##MatAlbedo", albedoBuf, sizeof(albedoBuf));
+                ImGui::InputText("Normal PNG##MatNormal", normalBuf, sizeof(normalBuf));
+                ImGui::TextDisabled("Example: Assets/Textures/brick.png");
+
+                if (ImGui::Button("Save Texture Paths")) {
+                    // Re-read the current mat, update paths, re-serialize
+                    OmnixMaterial mat;
+                    DeserializeMaterial(mat, meta->sourcePath); // load existing data
+                    mat.albedoTexturePath = albedoBuf;
+                    mat.normalTexturePath = normalBuf;
+                    if (SerializeMaterial(mat, meta->sourcePath)) {
+                        dirtyState.MarkSceneDirty();
+                        changed = true;
+                        // Reset cached handle so paths are re-read next frame
+                        lastHandle = 0;
+                    }
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(restart scene or re-apply material to see changes)");
+                // -----------------------------------------------------------------
+
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Material: <Missing Asset>");
                 ImGui::TextDisabled("Warning: Assigned material handle was not found in AssetRegistry.");
@@ -391,6 +437,376 @@ namespace eng::runtime {
             }
             ImGui::EndPopup();
         }
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawPlayerStart(PlayerStartComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+        if (ImGui::Checkbox("Active", &component.active)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawCharacterController(CharacterControllerComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+        if (ImGui::DragFloat("Move Speed", &component.moveSpeed, 0.1f, 0.0f, 100.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Sprint Speed", &component.sprintSpeed, 0.1f, 0.0f, 100.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Mouse Sensitivity", &component.mouseSensitivity, 0.01f, 0.0f, 10.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Gravity", &component.gravity, 0.1f, -100.0f, 0.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Jump Velocity", &component.jumpVelocity, 0.1f, 0.0f, 50.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Capsule Radius", &component.capsuleRadius, 0.05f, 0.01f, 10.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Capsule Height", &component.capsuleHeight, 0.05f, 0.01f, 10.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Ground Check Distance", &component.groundCheckDistance, 0.01f, 0.0f, 5.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Skin Width", &component.skinWidth, 0.005f, 0.0f, 1.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::Checkbox("Enable Jump", &component.enableJump)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawCamera(CameraComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+        
+        float fovDeg = component.fov;
+        if (ImGui::DragFloat("FOV", &fovDeg, 1.0f, 1.0f, 179.0f)) {
+            component.fov = fovDeg;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        
+        if (ImGui::DragFloat("Near Plane", &component.nearPlane, 0.05f, 0.001f, 10.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::DragFloat("Far Plane", &component.farPlane, 10.0f, 10.0f, 10000.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        if (ImGui::Checkbox("Is Main Camera", &component.isPrimary)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        
+        float localOffset[3] = { component.localOffset.x, component.localOffset.y, component.localOffset.z };
+        if (ImGui::DragFloat3("Local Offset", localOffset, 0.05f)) {
+            component.localOffset.x = localOffset[0];
+            component.localOffset.y = localOffset[1];
+            component.localOffset.z = localOffset[2];
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawInput(InputComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+        if (ImGui::Checkbox("Enabled", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawTrigger(TriggerComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+        
+        if (ImGui::Checkbox("Enabled##Trigger", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        // Shape Type Combo
+        const char* shapes[] = { "Box", "Sphere", "Capsule" };
+        int shapeIdx = static_cast<int>(component.shapeType);
+        if (ImGui::Combo("Shape Type", &shapeIdx, shapes, 3)) {
+            component.shapeType = static_cast<TriggerShapeType>(shapeIdx);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        // Offset
+        float offsetArr[3] = { component.offset.x, component.offset.y, component.offset.z };
+        if (ImGui::DragFloat3("Offset##Trigger", offsetArr, 0.05f)) {
+            component.offset = { offsetArr[0], offsetArr[1], offsetArr[2] };
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        // Dimensions based on shape
+        if (component.shapeType == TriggerShapeType::Box) {
+            float sizeArr[3] = { component.boxSize.x, component.boxSize.y, component.boxSize.z };
+            if (ImGui::DragFloat3("Box Size", sizeArr, 0.05f)) {
+                component.boxSize = { std::max(0.01f, sizeArr[0]), std::max(0.01f, sizeArr[1]), std::max(0.01f, sizeArr[2]) };
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+            if (component.boxSize.x < 0.01f || component.boxSize.y < 0.01f || component.boxSize.z < 0.01f) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Box Size axes must be >= 0.01");
+            }
+        } else if (component.shapeType == TriggerShapeType::Sphere) {
+            float radius = component.sphereRadius;
+            if (ImGui::DragFloat("Radius##SphereTrigger", &radius, 0.05f)) {
+                component.sphereRadius = std::max(0.01f, radius);
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+            if (component.sphereRadius < 0.01f) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Radius must be >= 0.01");
+            }
+        } else if (component.shapeType == TriggerShapeType::Capsule) {
+            float radius = component.capsuleRadius;
+            float height = component.capsuleHeight;
+            bool capsChanged = false;
+            if (ImGui::DragFloat("Radius##CapsuleTrigger", &radius, 0.05f)) {
+                component.capsuleRadius = std::max(0.01f, radius);
+                capsChanged = true;
+            }
+            if (ImGui::DragFloat("Height##CapsuleTrigger", &height, 0.05f)) {
+                component.capsuleHeight = std::max(0.01f, height);
+                capsChanged = true;
+            }
+            if (capsChanged) {
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+            if (component.capsuleRadius < 0.01f) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Radius must be >= 0.01");
+            }
+            if (component.capsuleHeight < 2.0f * component.capsuleRadius) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Height must be >= 2 * Radius (%.2f)", 2.0f * component.capsuleRadius);
+            }
+        }
+
+        ImGui::Separator();
+
+        // Event settings
+        char eventNameBuf[128];
+        snprintf(eventNameBuf, sizeof(eventNameBuf), "%s", component.eventName.c_str());
+        if (ImGui::InputText("Event Name", eventNameBuf, sizeof(eventNameBuf))) {
+            component.eventName = eventNameBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Fire Enter", &component.fireEnter)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Fire Stay", &component.fireStay)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Fire Exit", &component.fireExit)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawInteractable(InteractableComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        if (ImGui::Checkbox("Enabled##Interactable", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        char interactionNameBuf[128];
+        snprintf(interactionNameBuf, sizeof(interactionNameBuf), "%s", component.interactionName.c_str());
+        if (ImGui::InputText("Interaction Name", interactionNameBuf, sizeof(interactionNameBuf))) {
+            component.interactionName = interactionNameBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        char onTriggerEnterEventBuf[128];
+        snprintf(onTriggerEnterEventBuf, sizeof(onTriggerEnterEventBuf), "%s", component.onTriggerEnterEvent.c_str());
+        if (ImGui::InputText("On Trigger Enter Event", onTriggerEnterEventBuf, sizeof(onTriggerEnterEventBuf))) {
+            component.onTriggerEnterEvent = onTriggerEnterEventBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawDirectionalLight(DirectionalLightComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        if (ImGui::Checkbox("Enabled##DirectionalLight", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float colArr[3] = { component.color.x, component.color.y, component.color.z };
+        if (ImGui::ColorEdit3("Color##DirectionalLight", colArr)) {
+            component.color = { std::clamp(colArr[0], 0.0f, 1.0f), std::clamp(colArr[1], 0.0f, 1.0f), std::clamp(colArr[2], 0.0f, 1.0f) };
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float intensity = component.intensity;
+        if (ImGui::DragFloat("Intensity##DirectionalLight", &intensity, 0.05f, 0.0f, 20.0f)) {
+            component.intensity = std::max(0.0f, intensity);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Cast Shadows##DirectionalLight", &component.castShadows)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawPointLight(PointLightComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        if (ImGui::Checkbox("Enabled##PointLight", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float colArr[3] = { component.color.x, component.color.y, component.color.z };
+        if (ImGui::ColorEdit3("Color##PointLight", colArr)) {
+            component.color = { std::clamp(colArr[0], 0.0f, 1.0f), std::clamp(colArr[1], 0.0f, 1.0f), std::clamp(colArr[2], 0.0f, 1.0f) };
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float intensity = component.intensity;
+        if (ImGui::DragFloat("Intensity##PointLight", &intensity, 0.1f, 0.0f, 100.0f)) {
+            component.intensity = std::max(0.0f, intensity);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float radius = component.radius;
+        if (ImGui::DragFloat("Radius##PointLight", &radius, 0.05f, 0.01f, 100.0f)) {
+            component.radius = std::max(0.01f, radius);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Cast Shadows##PointLight", &component.castShadows)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawAmbientLight(AmbientLightComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        if (ImGui::Checkbox("Enabled##AmbientLight", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float colArr[3] = { component.color.x, component.color.y, component.color.z };
+        if (ImGui::ColorEdit3("Color##AmbientLight", colArr)) {
+            component.color = { std::clamp(colArr[0], 0.0f, 1.0f), std::clamp(colArr[1], 0.0f, 1.0f), std::clamp(colArr[2], 0.0f, 1.0f) };
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float intensity = component.intensity;
+        if (ImGui::DragFloat("Intensity##AmbientLight", &intensity, 0.02f, 0.0f, 5.0f)) {
+            component.intensity = std::max(0.0f, intensity);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawSpotLight(SpotLightComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        if (ImGui::Checkbox("Enabled##SpotLight", &component.enabled)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float colArr[3] = { component.color.x, component.color.y, component.color.z };
+        if (ImGui::ColorEdit3("Color##SpotLight", colArr)) {
+            component.color = { std::clamp(colArr[0], 0.0f, 1.0f), std::clamp(colArr[1], 0.0f, 1.0f), std::clamp(colArr[2], 0.0f, 1.0f) };
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float intensity = component.intensity;
+        if (ImGui::DragFloat("Intensity##SpotLight", &intensity, 0.1f, 0.0f, 100.0f)) {
+            component.intensity = std::max(0.0f, intensity);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float range = component.range;
+        if (ImGui::DragFloat("Range##SpotLight", &range, 0.05f, 0.01f, 100.0f)) {
+            component.range = std::max(0.01f, range);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float inner = component.innerConeAngle;
+        float outer = component.outerConeAngle;
+        bool anglesChanged = false;
+        if (ImGui::DragFloat("Inner Angle##SpotLight", &inner, 0.5f, 0.0f, 89.0f)) {
+            component.innerConeAngle = std::clamp(inner, 0.0f, outer);
+            anglesChanged = true;
+        }
+        if (ImGui::DragFloat("Outer Angle##SpotLight", &outer, 0.5f, 0.0f, 90.0f)) {
+            component.outerConeAngle = std::max(inner, std::clamp(outer, 0.0f, 90.0f));
+            anglesChanged = true;
+        }
+
+        if (anglesChanged) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Cast Shadows##SpotLight", &component.castShadows)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
         return changed;
     }
 

@@ -78,8 +78,8 @@ private:
 
 class TriggerEnterEvent : public PhysicsEvent {
 public:
-    TriggerEnterEvent(uint32_t triggerID, uint32_t bodyID, uint8_t priority = 150)
-        : PhysicsEvent(priority), triggerID(triggerID), bodyID(bodyID) {
+    TriggerEnterEvent(uint32_t triggerID, uint32_t bodyID, const std::string& eventName, uint8_t priority = 150)
+        : PhysicsEvent(priority), triggerID(triggerID), bodyID(bodyID), eventName(eventName) {
         assert(triggerID != 0 && "Trigger ID cannot be zero");
         assert(bodyID != 0 && "Body ID cannot be zero");
     }
@@ -88,10 +88,83 @@ public:
 
     uint32_t getTriggerID() const { return triggerID; }
     uint32_t getBodyID() const { return bodyID; }
+    const std::string& getEventName() const { return eventName; }
 
 private:
     uint32_t triggerID;
     uint32_t bodyID;
+    std::string eventName;
+};
+
+// ============================================================================
+// TRIGGER EXIT EVENT
+// ============================================================================
+
+class TriggerExitEvent : public PhysicsEvent {
+public:
+    TriggerExitEvent(uint32_t triggerID, uint32_t bodyID, const std::string& eventName, uint8_t priority = 150)
+        : PhysicsEvent(priority), triggerID(triggerID), bodyID(bodyID), eventName(eventName) {
+        assert(triggerID != 0 && "Trigger ID cannot be zero");
+        assert(bodyID != 0 && "Body ID cannot be zero");
+    }
+
+    DEFINE_EVENT_TYPE(TriggerExitEvent, EventType::PHYSICS_TRIGGER_EXIT, "TriggerExit")
+
+    uint32_t getTriggerID() const { return triggerID; }
+    uint32_t getBodyID() const { return bodyID; }
+    const std::string& getEventName() const { return eventName; }
+
+private:
+    uint32_t triggerID;
+    uint32_t bodyID;
+    std::string eventName;
+};
+
+// ============================================================================
+// TRIGGER STAY EVENT
+// ============================================================================
+
+class TriggerStayEvent : public PhysicsEvent {
+public:
+    TriggerStayEvent(uint32_t triggerID, uint32_t bodyID, const std::string& eventName, uint8_t priority = 150)
+        : PhysicsEvent(priority), triggerID(triggerID), bodyID(bodyID), eventName(eventName) {
+        assert(triggerID != 0 && "Trigger ID cannot be zero");
+        assert(bodyID != 0 && "Body ID cannot be zero");
+    }
+
+    DEFINE_EVENT_TYPE(TriggerStayEvent, EventType::PHYSICS_TRIGGER_STAY, "TriggerStay")
+
+    uint32_t getTriggerID() const { return triggerID; }
+    uint32_t getBodyID() const { return bodyID; }
+    const std::string& getEventName() const { return eventName; }
+
+private:
+    uint32_t triggerID;
+    uint32_t bodyID;
+    std::string eventName;
+};
+
+// ============================================================================
+// GAMEPLAY EVENT
+// ============================================================================
+
+class GameplayEvent : public GameEvent {
+public:
+    GameplayEvent(const std::string& eventName, uint32_t sourceID = 0, uint32_t targetID = 0, uint8_t priority = 100)
+        : GameEvent(priority), eventName(eventName), sourceID(sourceID), targetID(targetID) {
+        assert(!eventName.empty() && "Event name cannot be empty");
+    }
+
+    DEFINE_EVENT_TYPE(GameplayEvent, EventType::GAMEPLAY_EVENT, "Gameplay")
+
+    const std::string& getEventName() const { return eventName; }
+    uint32_t getSourceID() const { return sourceID; }
+    uint32_t getTargetID() const { return targetID; }
+
+private:
+    std::string eventName;
+    uint32_t sourceID;
+    uint32_t targetID;
 };
 
 } // namespace Omnix

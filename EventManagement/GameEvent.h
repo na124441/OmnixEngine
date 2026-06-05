@@ -45,6 +45,9 @@ enum class EventType : uint16_t {
     PHYSICS_COLLISION_ENTER = 300,
     PHYSICS_COLLISION_EXIT = 301,
     PHYSICS_TRIGGER_ENTER = 302,
+    PHYSICS_TRIGGER_EXIT = 303,
+    PHYSICS_TRIGGER_STAY = 304,
+    GAMEPLAY_EVENT = 305,
 
     // Custom events start here (1000+)
     CUSTOM_START = 1000

@@ -7,11 +7,33 @@
 
 namespace eng::renderer {
 
+namespace detail {
+    inline glm::vec3 GetPos(const glm::vec3& v) { return v; }
+    inline glm::vec3 GetPos(const Vertex& v) { return v.pos; }
+    inline glm::vec3 GetPos(const PbrVertex& v) { return v.pos; }
+}
+
 template<typename VertexT, typename IndexT>
 bool Mesh::init(const VertexT* vertices, size_t vertexCount,
                 const IndexT* indices,   size_t indexCount,
                 EngineResources& eng)
 {
+    // Compute AABB bounds
+    if (vertexCount > 0) {
+        glm::vec3 minP = detail::GetPos(vertices[0]);
+        glm::vec3 maxP = minP;
+        for (size_t i = 1; i < vertexCount; ++i) {
+            glm::vec3 p = detail::GetPos(vertices[i]);
+            minP = glm::min(minP, p);
+            maxP = glm::max(maxP, p);
+        }
+        minBounds = minP;
+        maxBounds = maxP;
+    } else {
+        minBounds = glm::vec3(0.0f);
+        maxBounds = glm::vec3(0.0f);
+    }
+
     // -----------------------------------------------------------------
     // 1️⃣ Determine sizes
     VkDeviceSize vSize = sizeof(VertexT) * vertexCount;

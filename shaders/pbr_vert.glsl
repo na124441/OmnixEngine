@@ -11,11 +11,13 @@ layout(push_constant) uniform PushConstants {
 layout(set = 0, binding = 0) uniform GlobalUBO {
     mat4 view;
     mat4 proj;
+    vec4 cameraPos; // xyz = world-space camera position
 } cam;
 
 layout(location = 0) out vec3 vWorldPos;
 layout(location = 1) out vec3 vNormal;
 layout(location = 2) out vec2 vUV;
+layout(location = 3) out vec3 vCameraPos;
 
 void main()
 {
@@ -28,5 +30,6 @@ void main()
     vNormal = normalize(normalMat * inNormal);
 
     vUV = inUV;
+    vCameraPos = cam.cameraPos.xyz;
     gl_Position = cam.proj * cam.view * worldPos;
 }

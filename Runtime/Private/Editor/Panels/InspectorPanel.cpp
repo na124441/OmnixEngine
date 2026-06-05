@@ -6,6 +6,10 @@
 #include "ECS/ECSComponents.h"
 #include "ECS/Public/IECSWorld.h"
 #include "ThirdParty/imgui/imgui.h"
+#include "Runtime/Public/AssetRegistry.h"
+#include "RenderingEngine/Runtime/engine/EngineLoop.h"
+#include "RenderingEngine/Renderer/SceneRenderer.h"
+#include "RenderingEngine/Renderer/scene/Mesh.h"
 
 namespace eng::runtime {
 
@@ -191,8 +195,92 @@ namespace eng::runtime {
                     auto& comp = coordinator.GetComponent<RenderableMeshComponent>(selectedEntity);
                     ComponentWidgets::DrawRenderableMesh(comp, *m_Context->assetRegistry, dirtyState);
                     ImGui::Spacing();
+                    if (comp.meshAssetHandle.IsValid()) {
+                        if (ImGui::Button("Fit Box Collider To Mesh")) {
+                            auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+                            if (engineLoop && engineLoop->GetSceneRenderer()) {
+                                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                                
+                                eng::renderer::Mesh* meshPtr = nullptr;
+                                auto it = sceneRenderer->m_EcsMeshCache.find(comp.meshAssetHandle.value);
+                                if (it != sceneRenderer->m_EcsMeshCache.end() && it->second) {
+                                    meshPtr = it->second;
+                                } else {
+                                    if (m_Context->assetRegistry) {
+                                        const auto* meta = m_Context->assetRegistry->GetMetadata(comp.meshAssetHandle);
+                                        if (meta && meta->type == AssetType::Mesh) {
+                                            meshPtr = sceneRenderer->getScene().createMeshFromOBJ(meta->sourcePath, sceneRenderer->resources);
+                                            if (meshPtr) {
+                                                sceneRenderer->m_EcsMeshCache[comp.meshAssetHandle.value] = meshPtr;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (meshPtr) {
+                                    glm::vec3 minB = meshPtr->minBounds;
+                                    glm::vec3 maxB = meshPtr->maxBounds;
+                                    
+                                    glm::vec3 size = maxB - minB;
+                                    glm::vec3 center = (minB + maxB) * 0.5f;
+                                    
+                                    if (!sig.test(coordinator.GetComponentType<BoxColliderComponent>())) {
+                                        coordinator.AddComponent<BoxColliderComponent>(selectedEntity, BoxColliderComponent());
+                                        sig = coordinator.GetSignature(selectedEntity);
+                                    }
+                                    auto& bcc = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
+                                    bcc.size = Vector3(size.x, size.y, size.z);
+                                    bcc.offset = Vector3(center.x, center.y, center.z);
+                                    bcc.debugDraw = true;
+                                    
+                                    if (!sig.test(coordinator.GetComponentType<StaticBodyComponent>())) {
+                                        coordinator.AddComponent<StaticBodyComponent>(selectedEntity, StaticBodyComponent());
+                                        sig = coordinator.GetSignature(selectedEntity);
+                                    }
+                                    
+                                    dirtyState.MarkSceneDirty();
+                                    if (m_Context->physicsWorld) {
+                                        m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        ImGui::SameLine();
+                        if (ImGui::Button("Add Static Body")) {
+                            if (!sig.test(coordinator.GetComponentType<StaticBodyComponent>())) {
+                                coordinator.AddComponent<StaticBodyComponent>(selectedEntity, StaticBodyComponent());
+                                sig = coordinator.GetSignature(selectedEntity);
+                                dirtyState.MarkSceneDirty();
+                                if (m_Context->physicsWorld) {
+                                    m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
+                                }
+                            }
+                        }
+                        
+                        ImGui::SameLine();
+                        if (sig.test(coordinator.GetComponentType<BoxColliderComponent>())) {
+                            auto& bcc = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
+                            bool showBounds = bcc.debugDraw;
+                            if (ImGui::Checkbox("Show Collider Bounds", &showBounds)) {
+                                bcc.debugDraw = showBounds;
+                                dirtyState.MarkSceneDirty();
+                            }
+                        } else {
+                            if (ImGui::Button("Show Collider Bounds")) {
+                                coordinator.AddComponent<BoxColliderComponent>(selectedEntity, BoxColliderComponent());
+                                sig = coordinator.GetSignature(selectedEntity);
+                                auto& bcc = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
+                                bcc.debugDraw = true;
+                                dirtyState.MarkSceneDirty();
+                            }
+                        }
+                        ImGui::Spacing();
+                    }
+
                     if (ImGui::Button("Remove Renderable Mesh Component")) {
                         coordinator.RemoveComponent<RenderableMeshComponent>(selectedEntity);
+                        sig = coordinator.GetSignature(selectedEntity);
                         dirtyState.MarkSceneDirty();
                     }
                 }
@@ -244,6 +332,56 @@ namespace eng::runtime {
                         }
                     }
                     ImGui::Spacing();
+                    
+                    if (sig.test(coordinator.GetComponentType<RenderableMeshComponent>())) {
+                        auto& meshComp = coordinator.GetComponent<RenderableMeshComponent>(selectedEntity);
+                        if (meshComp.meshAssetHandle.IsValid()) {
+                            if (ImGui::Button("Fit Box Collider to Mesh Bounds")) {
+                                auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+                                if (engineLoop && engineLoop->GetSceneRenderer()) {
+                                    auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                                    
+                                                                    eng::renderer::Mesh* meshPtr = nullptr;
+                                    auto it = sceneRenderer->m_EcsMeshCache.find(meshComp.meshAssetHandle.value);
+                                    if (it != sceneRenderer->m_EcsMeshCache.end() && it->second) {
+                                        meshPtr = it->second;
+                                    } else {
+                                        if (m_Context->assetRegistry) {
+                                            const auto* meta = m_Context->assetRegistry->GetMetadata(meshComp.meshAssetHandle);
+                                            if (meta && meta->type == AssetType::Mesh) {
+                                                meshPtr = sceneRenderer->getScene().createMeshFromOBJ(meta->sourcePath, sceneRenderer->resources);
+                                                if (meshPtr) {
+                                                    sceneRenderer->m_EcsMeshCache[meshComp.meshAssetHandle.value] = meshPtr;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (meshPtr) {
+                                        glm::vec3 minB = meshPtr->minBounds;
+                                        glm::vec3 maxB = meshPtr->maxBounds;
+                                        
+                                        glm::vec3 size = maxB - minB;
+                                        glm::vec3 center = (minB + maxB) * 0.5f;
+                                        
+                                        comp.size = Vector3(size.x, size.y, size.z);
+                                        comp.offset = Vector3(center.x, center.y, center.z);
+                                        
+                                        if (!sig.test(coordinator.GetComponentType<StaticBodyComponent>())) {
+                                            coordinator.AddComponent<StaticBodyComponent>(selectedEntity, StaticBodyComponent());
+                                        }
+                                        
+                                        dirtyState.MarkSceneDirty();
+                                        if (m_Context->physicsWorld) {
+                                            m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ImGui::Spacing();
                     if (ImGui::Button("Remove Box Collider Component")) {
                         coordinator.RemoveComponent<BoxColliderComponent>(selectedEntity);
                         dirtyState.MarkSceneDirty();
@@ -292,6 +430,146 @@ namespace eng::runtime {
                         if (m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // PlayerStart Component
+            if (sig.test(coordinator.GetComponentType<PlayerStartComponent>())) {
+                if (ImGui::CollapsingHeader("Player Start Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<PlayerStartComponent>(selectedEntity);
+                    ComponentWidgets::DrawPlayerStart(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Player Start Component")) {
+                        coordinator.RemoveComponent<PlayerStartComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // CharacterController Component
+            if (sig.test(coordinator.GetComponentType<CharacterControllerComponent>())) {
+                if (ImGui::CollapsingHeader("Character Controller Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<CharacterControllerComponent>(selectedEntity);
+                    ComponentWidgets::DrawCharacterController(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Character Controller Component")) {
+                        coordinator.RemoveComponent<CharacterControllerComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Camera Component
+            if (sig.test(coordinator.GetComponentType<CameraComponent>())) {
+                if (ImGui::CollapsingHeader("Camera Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<CameraComponent>(selectedEntity);
+                    ComponentWidgets::DrawCamera(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Camera Component")) {
+                        coordinator.RemoveComponent<CameraComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Input Component
+            if (sig.test(coordinator.GetComponentType<InputComponent>())) {
+                if (ImGui::CollapsingHeader("Input Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<InputComponent>(selectedEntity);
+                    ComponentWidgets::DrawInput(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Input Component")) {
+                        coordinator.RemoveComponent<InputComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Trigger Component
+            if (sig.test(coordinator.GetComponentType<TriggerComponent>())) {
+                if (ImGui::CollapsingHeader("Trigger Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<TriggerComponent>(selectedEntity);
+                    ComponentWidgets::DrawTrigger(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Trigger Component")) {
+                        coordinator.RemoveComponent<TriggerComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Interactable Component
+            if (sig.test(coordinator.GetComponentType<InteractableComponent>())) {
+                if (ImGui::CollapsingHeader("Interactable Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<InteractableComponent>(selectedEntity);
+                    ComponentWidgets::DrawInteractable(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Interactable Component")) {
+                        coordinator.RemoveComponent<InteractableComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Directional Light Component
+            if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                if (ImGui::CollapsingHeader("Directional Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<DirectionalLightComponent>(selectedEntity);
+                    ComponentWidgets::DrawDirectionalLight(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Directional Light Component")) {
+                        coordinator.RemoveComponent<DirectionalLightComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Point Light Component
+            if (sig.test(coordinator.GetComponentType<PointLightComponent>())) {
+                if (ImGui::CollapsingHeader("Point Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<PointLightComponent>(selectedEntity);
+                    ComponentWidgets::DrawPointLight(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Point Light Component")) {
+                        coordinator.RemoveComponent<PointLightComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Ambient Light Component
+            if (sig.test(coordinator.GetComponentType<AmbientLightComponent>())) {
+                if (ImGui::CollapsingHeader("Ambient Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<AmbientLightComponent>(selectedEntity);
+                    ComponentWidgets::DrawAmbientLight(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Ambient Light Component")) {
+                        coordinator.RemoveComponent<AmbientLightComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Spot Light Component
+            if (sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
+                if (ImGui::CollapsingHeader("Spot Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<SpotLightComponent>(selectedEntity);
+                    ComponentWidgets::DrawSpotLight(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Spot Light Component")) {
+                        coordinator.RemoveComponent<SpotLightComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
                     }
                 }
                 ImGui::Separator();
@@ -404,6 +682,66 @@ namespace eng::runtime {
                         if (m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<PlayerStartComponent>())) {
+                    if (ImGui::MenuItem("PlayerStart Component")) {
+                        coordinator.AddComponent<PlayerStartComponent>(selectedEntity, PlayerStartComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<CharacterControllerComponent>())) {
+                    if (ImGui::MenuItem("CharacterController Component")) {
+                        coordinator.AddComponent<CharacterControllerComponent>(selectedEntity, CharacterControllerComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<CameraComponent>())) {
+                    if (ImGui::MenuItem("Camera Component")) {
+                        coordinator.AddComponent<CameraComponent>(selectedEntity, CameraComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<InputComponent>())) {
+                    if (ImGui::MenuItem("Input Component")) {
+                        coordinator.AddComponent<InputComponent>(selectedEntity, InputComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<TriggerComponent>())) {
+                    if (ImGui::MenuItem("Trigger Component")) {
+                        coordinator.AddComponent<TriggerComponent>(selectedEntity, TriggerComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<InteractableComponent>())) {
+                    if (ImGui::MenuItem("Interactable Component")) {
+                        coordinator.AddComponent<InteractableComponent>(selectedEntity, InteractableComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                    if (ImGui::MenuItem("DirectionalLight Component")) {
+                        coordinator.AddComponent<DirectionalLightComponent>(selectedEntity, DirectionalLightComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<PointLightComponent>())) {
+                    if (ImGui::MenuItem("PointLight Component")) {
+                        coordinator.AddComponent<PointLightComponent>(selectedEntity, PointLightComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<AmbientLightComponent>())) {
+                    if (ImGui::MenuItem("AmbientLight Component")) {
+                        coordinator.AddComponent<AmbientLightComponent>(selectedEntity, AmbientLightComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
+                    if (ImGui::MenuItem("SpotLight Component")) {
+                        coordinator.AddComponent<SpotLightComponent>(selectedEntity, SpotLightComponent());
+                        dirtyState.MarkSceneDirty();
                     }
                 }
                 ImGui::EndPopup();

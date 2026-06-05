@@ -4,11 +4,16 @@
 #include <string>
 #include <memory>
 #include "Scene/Public/ISceneManager.h"
+#include "SceneValidationReport.h"
 
 // Forward declarations
 class Coordinator;
 class Scene;
 class SceneObject;
+
+namespace eng::runtime {
+    class AssetRegistry;
+}
 
 /**
  * @brief SceneManager - Singleton scene lifecycle manager
@@ -161,6 +166,13 @@ public:
      */
     void PrintDebugInfo() const;
 
+    void SetAssetRegistry(eng::runtime::AssetRegistry* registry) { m_AssetRegistry = registry; }
+    const SceneValidationReport& GetLastValidationReport() const { return m_LastValidationReport; }
+    void SetLastValidationReport(const SceneValidationReport& report) { m_LastValidationReport = report; }
+    bool ShowValidationFailedModal() const { return m_ShowValidationFailedModal; }
+    void ClearValidationFailedModalFlag() { m_ShowValidationFailedModal = false; }
+    void TriggerValidationFailedModal() { m_ShowValidationFailedModal = true; }
+
 private:
     Coordinator* m_Coordinator = nullptr;
     std::unique_ptr<Coordinator> m_OwnedCoordinator;
@@ -219,6 +231,11 @@ private:
 
     // Configuration
     bool transitionsEnabled;      // Enable visual fade transitions
+
+    // Validation State
+    eng::runtime::AssetRegistry* m_AssetRegistry = nullptr;
+    SceneValidationReport m_LastValidationReport;
+    bool m_ShowValidationFailedModal = false;
 };
 
 //============================================================================

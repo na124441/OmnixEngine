@@ -13,6 +13,17 @@ namespace eng::runtime {
         return newEntity;
     }
 
+    Entity EditorEntityCommands::CreatePlayerStart(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+        Entity newEntity = coordinator.CreateEntity();
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("PlayerStart"));
+        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        coordinator.AddComponent<PlayerStartComponent>(newEntity, PlayerStartComponent());
+        
+        dirtyState.MarkSceneDirty();
+        selection.Select(newEntity);
+        return newEntity;
+    }
+
     void EditorEntityCommands::Delete(Coordinator& coordinator, Entity entity, EditorDirtyState& dirtyState, EditorSelection& selection) {
         if (entity != 0 && coordinator.IsEntityAlive(entity)) {
             coordinator.DestroyEntity(entity);
@@ -123,9 +134,113 @@ namespace eng::runtime {
             coordinator.AddComponent<CapsuleColliderComponent>(duplicate, srcComp);
         }
 
+        // Copy PlayerStart
+        if (srcSignature.test(coordinator.GetComponentType<PlayerStartComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<PlayerStartComponent>(source);
+            coordinator.AddComponent<PlayerStartComponent>(duplicate, srcComp);
+        }
+
+        // Copy CharacterController
+        if (srcSignature.test(coordinator.GetComponentType<CharacterControllerComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<CharacterControllerComponent>(source);
+            coordinator.AddComponent<CharacterControllerComponent>(duplicate, srcComp);
+        }
+
+        // Copy CameraComponent
+        if (srcSignature.test(coordinator.GetComponentType<CameraComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<CameraComponent>(source);
+            coordinator.AddComponent<CameraComponent>(duplicate, srcComp);
+        }
+
+        // Copy Input
+        if (srcSignature.test(coordinator.GetComponentType<InputComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<InputComponent>(source);
+            coordinator.AddComponent<InputComponent>(duplicate, srcComp);
+        }
+
+        // Copy Trigger
+        if (srcSignature.test(coordinator.GetComponentType<TriggerComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<TriggerComponent>(source);
+            coordinator.AddComponent<TriggerComponent>(duplicate, srcComp);
+        }
+
+        // Copy Interactable
+        if (srcSignature.test(coordinator.GetComponentType<InteractableComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<InteractableComponent>(source);
+            coordinator.AddComponent<InteractableComponent>(duplicate, srcComp);
+        }
+
+        // Copy DirectionalLight
+        if (srcSignature.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<DirectionalLightComponent>(source);
+            coordinator.AddComponent<DirectionalLightComponent>(duplicate, srcComp);
+        }
+
+        // Copy PointLight
+        if (srcSignature.test(coordinator.GetComponentType<PointLightComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<PointLightComponent>(source);
+            coordinator.AddComponent<PointLightComponent>(duplicate, srcComp);
+        }
+
+        // Copy AmbientLight
+        if (srcSignature.test(coordinator.GetComponentType<AmbientLightComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<AmbientLightComponent>(source);
+            coordinator.AddComponent<AmbientLightComponent>(duplicate, srcComp);
+        }
+
+        // Copy SpotLight
+        if (srcSignature.test(coordinator.GetComponentType<SpotLightComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<SpotLightComponent>(source);
+            coordinator.AddComponent<SpotLightComponent>(duplicate, srcComp);
+        }
+
         dirtyState.MarkSceneDirty();
         selection.Select(duplicate);
         return duplicate;
+    }
+
+    Entity EditorEntityCommands::CreateDirectionalLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+        Entity newEntity = coordinator.CreateEntity();
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Directional Light"));
+        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        coordinator.AddComponent<DirectionalLightComponent>(newEntity, DirectionalLightComponent());
+        
+        dirtyState.MarkSceneDirty();
+        selection.Select(newEntity);
+        return newEntity;
+    }
+
+    Entity EditorEntityCommands::CreatePointLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+        Entity newEntity = coordinator.CreateEntity();
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Point Light"));
+        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        coordinator.AddComponent<PointLightComponent>(newEntity, PointLightComponent());
+        
+        dirtyState.MarkSceneDirty();
+        selection.Select(newEntity);
+        return newEntity;
+    }
+
+    Entity EditorEntityCommands::CreateAmbientLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+        Entity newEntity = coordinator.CreateEntity();
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Ambient Light"));
+        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        coordinator.AddComponent<AmbientLightComponent>(newEntity, AmbientLightComponent());
+        
+        dirtyState.MarkSceneDirty();
+        selection.Select(newEntity);
+        return newEntity;
+    }
+
+    Entity EditorEntityCommands::CreateSpotLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+        Entity newEntity = coordinator.CreateEntity();
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Spot Light"));
+        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        coordinator.AddComponent<SpotLightComponent>(newEntity, SpotLightComponent());
+        
+        dirtyState.MarkSceneDirty();
+        selection.Select(newEntity);
+        return newEntity;
     }
 
 } // namespace eng::runtime

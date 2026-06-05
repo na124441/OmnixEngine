@@ -24,6 +24,8 @@ PrefabRegistry::PrefabRegistry()
               << prefabDirectory_ << std::endl;
 }
 
+PrefabRegistry::~PrefabRegistry() = default;
+
 //============================================================================
 // CORE ALGORITHM: Get
 //============================================================================

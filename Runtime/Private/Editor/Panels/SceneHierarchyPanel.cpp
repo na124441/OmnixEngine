@@ -34,6 +34,10 @@ namespace eng::runtime {
         if (ImGui::Button("Create Empty")) {
             EditorEntityCommands::CreateEmpty(coordinator, dirtyState, selection);
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Create Player Start")) {
+            EditorEntityCommands::CreatePlayerStart(coordinator, dirtyState, selection);
+        }
         
         ImGui::SameLine();
         bool hasSelection = (selectedEntity != 0 && coordinator.IsEntityAlive(selectedEntity));
@@ -80,6 +84,29 @@ namespace eng::runtime {
             if (opened) {
                 ImGui::TreePop();
             }
+        }
+
+        if (ImGui::BeginPopupContextWindow()) {
+            if (ImGui::MenuItem("Create Empty Entity")) {
+                EditorEntityCommands::CreateEmpty(coordinator, dirtyState, selection);
+            }
+            if (ImGui::MenuItem("Create Player Start")) {
+                EditorEntityCommands::CreatePlayerStart(coordinator, dirtyState, selection);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Create Directional Light")) {
+                EditorEntityCommands::CreateDirectionalLight(coordinator, dirtyState, selection);
+            }
+            if (ImGui::MenuItem("Create Point Light")) {
+                EditorEntityCommands::CreatePointLight(coordinator, dirtyState, selection);
+            }
+            if (ImGui::MenuItem("Create Ambient Light")) {
+                EditorEntityCommands::CreateAmbientLight(coordinator, dirtyState, selection);
+            }
+            if (ImGui::MenuItem("Create Spot Light")) {
+                EditorEntityCommands::CreateSpotLight(coordinator, dirtyState, selection);
+            }
+            ImGui::EndPopup();
         }
 
         ImGui::End();

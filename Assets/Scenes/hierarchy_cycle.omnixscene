@@ -1,0 +1,47 @@
+{
+  "name": "HierarchyCycleScene",
+  "version": 1,
+  "objects": [
+    {
+      "name": "A",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": []
+    },
+    {
+      "name": "B",
+      "transform": {
+        "position": { "x": 1.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": []
+    },
+    {
+      "name": "C",
+      "transform": {
+        "position": { "x": 2.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": []
+    }
+  ],
+  "hierarchy": [
+    {
+      "parent": "A",
+      "child": "B"
+    },
+    {
+      "parent": "B",
+      "child": "C"
+    },
+    {
+      "parent": "C",
+      "child": "A"
+    }
+  ]
+}

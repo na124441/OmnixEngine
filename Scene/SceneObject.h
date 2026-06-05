@@ -217,6 +217,36 @@ public:
     bool m_HasCapsuleCollider = false;
     CapsuleColliderComponent m_CapsuleCollider;
 
+    bool m_HasPlayerStart = false;
+    PlayerStartComponent m_PlayerStart;
+
+    bool m_HasCharacterController = false;
+    CharacterControllerComponent m_CharacterController;
+
+    bool m_HasCameraComponent = false;
+    CameraComponent m_CameraComponent;
+
+    bool m_HasInputComponent = false;
+    InputComponent m_InputComponent;
+
+    bool m_HasTrigger = false;
+    TriggerComponent m_Trigger;
+
+    bool m_HasInteractable = false;
+    InteractableComponent m_Interactable;
+
+    bool m_HasDirectionalLight = false;
+    DirectionalLightComponent m_DirectionalLight;
+
+    bool m_HasPointLight = false;
+    PointLightComponent m_PointLight;
+
+    bool m_HasAmbientLight = false;
+    AmbientLightComponent m_AmbientLight;
+
+    bool m_HasSpotLight = false;
+    SpotLightComponent m_SpotLight;
+
     void SetRenderableMesh(AssetHandle handle) { m_MeshAssetHandle = handle; m_HasRenderableMesh = true; }
     void ClearRenderableMesh() { m_HasRenderableMesh = false; }
 
@@ -234,6 +264,36 @@ public:
 
     void SetCapsuleCollider(const CapsuleColliderComponent& comp) { m_CapsuleCollider = comp; m_HasCapsuleCollider = true; }
     void ClearCapsuleCollider() { m_HasCapsuleCollider = false; }
+
+    void SetPlayerStart(const PlayerStartComponent& comp) { m_PlayerStart = comp; m_HasPlayerStart = true; }
+    void ClearPlayerStart() { m_HasPlayerStart = false; }
+
+    void SetCharacterController(const CharacterControllerComponent& comp) { m_CharacterController = comp; m_HasCharacterController = true; }
+    void ClearCharacterController() { m_HasCharacterController = false; }
+
+    void SetCameraComponent(const CameraComponent& comp) { m_CameraComponent = comp; m_HasCameraComponent = true; }
+    void ClearCameraComponent() { m_HasCameraComponent = false; }
+
+    void SetInputComponent(const InputComponent& comp) { m_InputComponent = comp; m_HasInputComponent = true; }
+    void ClearInputComponent() { m_HasInputComponent = false; }
+
+    void SetTrigger(const TriggerComponent& comp) { m_Trigger = comp; m_HasTrigger = true; }
+    void ClearTrigger() { m_HasTrigger = false; }
+
+    void SetInteractable(const InteractableComponent& comp) { m_Interactable = comp; m_HasInteractable = true; }
+    void ClearInteractable() { m_HasInteractable = false; }
+
+    void SetDirectionalLight(const DirectionalLightComponent& comp) { m_DirectionalLight = comp; m_HasDirectionalLight = true; }
+    void ClearDirectionalLight() { m_HasDirectionalLight = false; }
+
+    void SetPointLight(const PointLightComponent& comp) { m_PointLight = comp; m_HasPointLight = true; }
+    void ClearPointLight() { m_HasPointLight = false; }
+
+    void SetAmbientLight(const AmbientLightComponent& comp) { m_AmbientLight = comp; m_HasAmbientLight = true; }
+    void ClearAmbientLight() { m_HasAmbientLight = false; }
+
+    void SetSpotLight(const SpotLightComponent& comp) { m_SpotLight = comp; m_HasSpotLight = true; }
+    void ClearSpotLight() { m_HasSpotLight = false; }
 
 private:
     //========================================================================

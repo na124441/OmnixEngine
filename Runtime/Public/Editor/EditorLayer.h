@@ -61,11 +61,14 @@ namespace eng::runtime {
         Scene* m_EditSceneBackup = nullptr;
         std::unique_ptr<eng::runtime::IECSWorld> m_EditWorldBackup = nullptr;
         bool m_ShowColliders = true;
+        bool m_ShowDiagnostics = false;
         bool m_ResetLayout = false;
+        bool m_ShowInteractPrompt = false;
 
         float m_LastViewportWidth = 1280.0f;
         float m_LastViewportHeight = 720.0f;
         EditorCamera m_EditorCamera;
+        bool m_CursorCaptured = false;
 
         // Subsystems
         EditorSelection m_Selection;

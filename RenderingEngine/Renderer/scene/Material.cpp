@@ -74,6 +74,10 @@ bool Material::create(const std::string& vertPath,
         }
     }
 
+    uboData.hasAlbedoMap = albedoTexture ? 1.0f : 0.0f;
+    uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
+    updateUniform(res);
+
     // --------------------------------------------------------------
     // 4️⃣ Allocate descriptor set
     if (!allocateDescriptorSet(res)) return false;
@@ -260,9 +264,9 @@ bool Material::allocateDescriptorSet(const EngineResources& resources)
         normalInfo.imageView   = normalTexture->view();
         normalInfo.sampler     = normalTexture->sampler();
     } else {
-        Texture* white = Texture::getWhiteTexture(resources);
-        normalInfo.imageView   = white->view();
-        normalInfo.sampler     = white->sampler();
+        Texture* flatNormal = Texture::getFlatNormalTexture(resources);
+        normalInfo.imageView   = flatNormal->view();
+        normalInfo.sampler     = flatNormal->sampler();
     }
 
     VkWriteDescriptorSet normalWrite{};

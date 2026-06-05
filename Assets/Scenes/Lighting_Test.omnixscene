@@ -1,0 +1,104 @@
+{
+  "name": "Lighting_Test",
+  "version": 1,
+  "objects": [
+    {
+      "name": "Floor",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 20.0, "y": 0.2, "z": 20.0 }
+      },
+      "components": [
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 20.0, "y": 0.2, "z": 20.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "Cube",
+      "transform": {
+        "position": { "x": 0.0, "y": 1.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 2.0, "y": 2.0, "z": 2.0 }
+      },
+      "components": [
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 2.0, "y": 2.0, "z": 2.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "DirectionalLight",
+      "transform": {
+        "position": { "x": 0.0, "y": 10.0, "z": 0.0 },
+        "rotation": { "x": 0.2588, "y": 0.0, "z": 0.0, "w": 0.9659 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "DirectionalLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 1.0, "z": 0.0 },
+          "intensity": 3.0,
+          "castShadows": true
+        }
+      ]
+    },
+    {
+      "name": "AmbientLight",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "AmbientLight",
+          "enabled": true,
+          "color": { "x": 0.7, "y": 0.8, "z": 0.9 },
+          "intensity": 0.35
+        }
+      ]
+    },
+    {
+      "name": "PointLight",
+      "transform": {
+        "position": { "x": 2.0, "y": 1.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "PointLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 0.5, "z": 0.0 },
+          "intensity": 10.0,
+          "radius": 5.0,
+          "castShadows": false
+        }
+      ]
+    }
+  ],
+  "hierarchy": []
+}

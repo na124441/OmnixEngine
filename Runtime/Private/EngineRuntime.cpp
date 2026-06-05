@@ -28,6 +28,7 @@
 // Subsystem Concrete Headers
 #include "Core/World.h"
 #include "Input/InputManager.h"
+#include "EventManagement/EventManager.h"
 #include "Systems/Scheduler/SystemScheduler.h"
 #include "Scene/SceneManager.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
@@ -188,6 +189,11 @@ namespace eng::runtime {
         RegisterSystemStartup("Input");
         m_Input->Initialize();
 
+        // Event System Initialization
+        m_EventManager = std::make_unique<Omnix::EventManager>();
+        TrackAllocation("Events", sizeof(Omnix::EventManager));
+        RegisterSystemStartup("Events");
+
         // 3. Spawning Input Thread
         m_InputThreadRunning.store(true, std::memory_order_relaxed);
         m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
@@ -255,7 +261,9 @@ namespace eng::runtime {
         }
 
         // 8. Scene System (refactored to standard instanced class)
-        m_Scenes = std::make_unique<SceneManager>(&m_ECS->getCoordinator());
+        auto sceneManager = std::make_unique<SceneManager>(&m_ECS->getCoordinator());
+        sceneManager->SetAssetRegistry(m_AssetRegistry.get());
+        m_Scenes = std::move(sceneManager);
         TrackAllocation("Scene", sizeof(SceneManager));
         RegisterSystemStartup("Scene");
 
@@ -274,6 +282,7 @@ namespace eng::runtime {
         m_Context.scheduler = m_Scheduler.get();
         m_Context.ecs = m_ECS.get();
         m_Context.input = m_Input.get();
+        m_Context.events = m_EventManager.get();
         m_Context.timing = &m_Timing;
         m_Context.currentStage = &m_CurrentStage;
 
@@ -371,7 +380,9 @@ namespace eng::runtime {
             RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
             {
                 OMNIX_PROFILE_SCOPE("Events");
-                // Event processing logic
+                if (m_EventManager) {
+                    m_EventManager->processQueue();
+                }
             }
 
             // PreUpdate Stage
@@ -431,6 +442,29 @@ namespace eng::runtime {
                                       (m_Context.mode == RuntimeMode::Editor && m_Context.editorSimulationState == EditorSimulationState::Play);
                 if (shouldSimulate && m_PhysicsWorld) {
                     m_PhysicsWorld->FixedUpdate(static_cast<float>(dt));
+                    auto& coordinator = m_ECS->getCoordinator();
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        auto playerControllerSys = world->GetSystem<PlayerControllerSystem>();
+                        auto triggerSys = world->GetSystem<TriggerSystem>();
+                        int steps = m_PhysicsWorld->GetStepsThisFrame();
+                        float fixedDt = m_PhysicsWorld->GetFixedTimestep();
+                        for (int i = 0; i < steps; ++i) {
+                            if (playerControllerSys) {
+                                playerControllerSys->FixedUpdate(m_PhysicsWorld.get(), coordinator, fixedDt);
+                            }
+                            if (triggerSys) {
+                                triggerSys->FixedUpdate(m_Context, fixedDt);
+                            }
+                        }
+                    }
+                } else {
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        if (auto triggerSys = world->GetSystem<TriggerSystem>()) {
+                            triggerSys->ClearOverlaps();
+                        }
+                    }
                 }
             }
 
@@ -594,6 +628,13 @@ namespace eng::runtime {
             RegisterSystemShutdown("Input");
             m_Input.reset();
             TrackDeallocation("Input", sizeof(InputManager));
+        }
+
+        // Event System Shutdown
+        if (m_EventManager) {
+            RegisterSystemShutdown("Events");
+            m_EventManager.reset();
+            TrackDeallocation("Events", sizeof(Omnix::EventManager));
         }
 
         LOG_INFO("[Runtime] EngineRuntime Subsystem Shutdown Complete.");

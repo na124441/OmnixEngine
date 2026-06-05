@@ -1,10 +1,17 @@
 #include "Runtime/Public/Editor/EditorLayer.h"
+#include "Runtime/Public/Editor/EditorTheme.h"
+#include "Runtime/Public/Editor/EditorLayout.h"
+#include "Runtime/Public/Editor/EditorEntityCommands.h"
+#include "Runtime/Public/Editor/PlatformFileDialog.h"
+#include "Runtime/Public/Editor/AssetImportService.h"
 #include "Core/Logging/Logger.h"
+#include "Core/World.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
 #include "RenderingEngine/Core/Engine/EngineResources.h"
 #include "RenderingEngine/Platform/window/Window.h"
 #include "ECS/Coordinator.h"
 #include "ECS/ECSComponents.h"
+#include "ECS/TriggerSystem.h"
 #include "ECS/Public/IECSWorld.h"
 #include "RenderingEngine/Vulkan/VulkanSwapChain.h"
 #include "Runtime/Public/AssetRegistry.h"
@@ -33,6 +40,8 @@
 #include "Scene/SceneManager.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneObject.h"
+#include "Scene/SceneValidator.h"
+#include "Scene/PrefabRegistry.h"
 
 namespace {
     struct DiagnosticsPhysicsState {
@@ -89,21 +98,7 @@ namespace eng::runtime {
         io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;        // Disable Multi-Viewports to prevent Vulkan surface errors
 
         // Premium Dark Theme Setup
-        ImGui::StyleColorsDark();
-
-        // Style tweaks for a premium look
-        ImGuiStyle& style = ImGui::GetStyle();
-        style.WindowRounding = 5.0f;
-        style.FrameRounding = 4.0f;
-        style.GrabRounding = 4.0f;
-        style.PopupRounding = 4.0f;
-        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.09f, 0.10f, 1.00f);
-        style.Colors[ImGuiCol_Header] = ImVec4(0.20f, 0.20f, 0.25f, 1.00f);
-        style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.26f, 0.35f, 1.00f);
-        style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.30f, 0.30f, 0.40f, 1.00f);
-        style.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.18f, 0.22f, 1.00f);
-        style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.25f, 0.25f, 0.30f, 1.00f);
-        style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.30f, 0.30f, 0.40f, 1.00f);
+        EditorTheme::ApplyDarkTheme();
 
         // 2. Create dedicated descriptor pool for ImGui
         VkDescriptorPoolSize pool_sizes[] =
@@ -244,6 +239,8 @@ namespace eng::runtime {
     }
 
     void EditorLayer::Render() {
+        m_ShowInteractPrompt = false;
+
         // 1. Check if viewport panel size has changed, and trigger recreation if so
         auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
         if (engineLoop && engineLoop->GetSceneRenderer()) {
@@ -272,10 +269,23 @@ namespace eng::runtime {
 
         // Update the Editor Camera
         float dt = ImGui::GetIO().DeltaTime;
-        m_EditorCamera.Update(dt, m_ViewportPanel.IsHovered(), m_ViewportPanel.IsFocused());
+        if (m_SimulationState == EditorSimulationState::Edit) {
+            auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+            bool wasDragging = m_EditorCamera.m_IsDraggingRMB;
+            m_EditorCamera.Update(dt, m_ViewportPanel.IsHovered(), m_ViewportPanel.IsFocused());
+            bool isDragging = m_EditorCamera.m_IsDraggingRMB;
+
+            if (engineLoop && engineLoop->GetWindow()) {
+                if (isDragging && !wasDragging) {
+                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Disabled);
+                } else if (!isDragging && wasDragging) {
+                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Normal);
+                }
+            }
+        }
 
         // Handle focusing on selected entity with 'F' key
-        if ((m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused()) && ImGui::IsKeyPressed(ImGuiKey_F)) {
+        if (m_SimulationState == EditorSimulationState::Edit && (m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused()) && ImGui::IsKeyPressed(ImGuiKey_F)) {
             Entity selectedEntity = m_Selection.GetSelectedEntity();
             if (selectedEntity != 0 && m_Context && m_Context->ecs && m_Context->ecs->getCoordinator().IsEntityAlive(selectedEntity)) {
                 auto& coordinator = m_Context->ecs->getCoordinator();
@@ -284,9 +294,9 @@ namespace eng::runtime {
                     const auto& transform = coordinator.GetComponent<TransformComponent>(selectedEntity);
                     glm::vec3 entityPos(transform.position.x, transform.position.y, transform.position.z);
                     
-                    // Focus framing: move camera to look at the entity from 5 units back
-                    m_EditorCamera.position = entityPos - m_EditorCamera.getForward() * 5.0f;
-                    m_EditorCamera.LookAt(entityPos);
+                    // Focus framing: move camera to look at the entity using FrameEntity
+                    float boundsRadius = 1.0f;
+                    m_EditorCamera.FrameEntity(entityPos, boundsRadius);
                 }
             }
         }
@@ -305,6 +315,108 @@ namespace eng::runtime {
             }
         }
 
+        // If in Play Mode, handle cursor capturing, update character controller look, and override SceneRenderer camera parameters
+        if (m_SimulationState == EditorSimulationState::Play && m_Context && m_Context->renderer) {
+            auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+            if (engineLoop && engineLoop->GetWindow()) {
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    m_CursorCaptured = false;
+                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Normal);
+                } else if (m_ViewportPanel.IsHovered() && ImGui::IsMouseClicked(0)) {
+                    m_CursorCaptured = true;
+                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Disabled);
+                }
+            }
+
+            if (m_Context->ecs) {
+                auto* world = dynamic_cast<World*>(m_Context->ecs);
+                if (world) {
+                    if (auto playerControllerSys = world->GetSystem<PlayerControllerSystem>()) {
+                        playerControllerSys->UpdateCameraLook(m_Context->ecs->getCoordinator(), m_CursorCaptured);
+                        
+                        if (engineLoop && engineLoop->GetSceneRenderer()) {
+                            auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                            auto& coordinator = m_Context->ecs->getCoordinator();
+                            Entity playerEnt = playerControllerSys->GetPlayerEntity();
+                            if (playerEnt != 0 && coordinator.IsEntityAlive(playerEnt)) {
+                                const auto& transform = coordinator.GetComponent<TransformComponent>(playerEnt);
+                                const auto& ccc = coordinator.GetComponent<CharacterControllerComponent>(playerEnt);
+                                const auto& cameraComp = coordinator.GetComponent<CameraComponent>(playerEnt);
+
+                                float yawRad = glm::radians(ccc.yaw);
+                                float pitchRad = glm::radians(ccc.pitch);
+                                
+                                glm::vec3 forwardDir(
+                                    std::cos(pitchRad) * std::cos(yawRad),
+                                    std::sin(pitchRad),
+                                    std::cos(pitchRad) * std::sin(yawRad)
+                                );
+                                forwardDir = glm::normalize(forwardDir);
+
+                                glm::vec3 rightDir = glm::normalize(glm::vec3(-std::sin(yawRad), 0.0f, std::cos(yawRad)));
+                                glm::vec3 forwardDirXZ = glm::normalize(glm::vec3(std::cos(yawRad), 0.0f, std::sin(yawRad)));
+                                glm::vec3 rotatedOffset = 
+                                    cameraComp.localOffset.x * rightDir + 
+                                    cameraComp.localOffset.y * glm::vec3(0.0f, 1.0f, 0.0f) + 
+                                    cameraComp.localOffset.z * forwardDirXZ;
+
+                                glm::vec3 eyePos(transform.position.x, transform.position.y, transform.position.z);
+                                eyePos += rotatedOffset;
+
+                                sceneRenderer->camera.position = eyePos;
+                                sceneRenderer->camera.target = eyePos + forwardDir;
+                                
+                                glm::vec3 upDir = glm::normalize(glm::cross(rightDir, forwardDir));
+                                sceneRenderer->camera.up = upDir;
+
+                                sceneRenderer->camera.fovY = glm::radians(cameraComp.fov);
+                                sceneRenderer->camera.nearPlane = cameraComp.nearPlane;
+                                sceneRenderer->camera.farPlane = cameraComp.farPlane;
+                            }
+                        }
+                    }
+
+                    // Check trigger volume overlaps for ConsoleTrigger
+                    if (auto triggerSys = world->GetSystem<eng::runtime::TriggerSystem>()) {
+                        auto& coordinator = m_Context->ecs->getCoordinator();
+                        const auto& overlaps = triggerSys->GetCurrentOverlaps();
+                        for (const auto& pair : overlaps) {
+                            if (coordinator.IsEntityAlive(pair.triggerEntity)) {
+                                auto sig = coordinator.GetSignature(pair.triggerEntity);
+                                if (sig.test(coordinator.GetComponentType<TriggerComponent>())) {
+                                    const auto& trigger = coordinator.GetComponent<TriggerComponent>(pair.triggerEntity);
+                                    if (trigger.eventName == "ConsoleTrigger") {
+                                        m_ShowInteractPrompt = true;
+
+                                        // Listen for interaction key 'E'
+                                        if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                                            CORE_LOG_INFO("[Gameplay] Terminal Activated...");
+                                            // Find PointLightComponent with name containing "Lamp" / "lamp"
+                                            for (Entity ent : coordinator.GetActiveEntities()) {
+                                                if (ent != 0 && coordinator.IsEntityAlive(ent)) {
+                                                    auto entSig = coordinator.GetSignature(ent);
+                                                    if (entSig.test(coordinator.GetComponentType<NameComponent>()) &&
+                                                        entSig.test(coordinator.GetComponentType<PointLightComponent>())) {
+                                                        auto& nameComp = coordinator.GetComponent<NameComponent>(ent);
+                                                        if (nameComp.name.find("Lamp") != std::string::npos || 
+                                                            nameComp.name.find("lamp") != std::string::npos) {
+                                                            auto& pointLight = coordinator.GetComponent<PointLightComponent>(ent);
+                                                            pointLight.color = { 0.0f, 1.0f, 0.0f }; // Change to Green
+                                                            CORE_LOG_INFO("[Gameplay] Changed color of light '{}' to Green", nameComp.name);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         RenderDockspace();
 
         // Sync colliders toggle state from the ViewportPanel toolbar checkbox
@@ -317,20 +429,52 @@ namespace eng::runtime {
                 if (sceneRenderer) {
                     auto& camera = sceneRenderer->getCamera();
                     glm::mat4 view = camera.getViewMatrix();
-                    VkExtent2D extent = engineLoop->GetSharedResources().swapChainExtent;
-                    if (extent.width > 0 && extent.height > 0) {
-                        float aspectRatio = (float)extent.width / (float)extent.height;
+                    float vpWidth = m_ViewportPanel.GetViewportWidth();
+                    float vpHeight = m_ViewportPanel.GetViewportHeight();
+                    if (vpWidth > 0 && vpHeight > 0) {
+                        float aspectRatio = vpWidth / vpHeight;
                         glm::mat4 proj = camera.getProjMatrix(aspectRatio);
                         eng::physics::PhysicsDebugDraw::Render(
                             m_Context->ecs->getCoordinator(),
                             view,
                             proj,
-                            (float)extent.width,
-                            (float)extent.height
+                            vpWidth,
+                            vpHeight,
+                            m_ViewportPanel.GetViewportScreenX(),
+                            m_ViewportPanel.GetViewportScreenY()
                         );
                     }
                 }
             }
+        }
+
+        // Draw centered HUD interaction prompt in Play Mode
+        if (m_SimulationState == EditorSimulationState::Play && m_ShowInteractPrompt) {
+            float vpX = m_ViewportPanel.GetViewportScreenX();
+            float vpY = m_ViewportPanel.GetViewportScreenY();
+            float vpW = m_ViewportPanel.GetViewportWidth();
+            float vpH = m_ViewportPanel.GetViewportHeight();
+
+            ImGui::SetNextWindowPos(ImVec2(vpX + vpW * 0.5f - 150.0f, vpY + vpH * 0.7f));
+            ImGui::SetNextWindowSize(ImVec2(300.0f, 60.0f));
+            ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
+                                     ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
+                                     ImGuiWindowFlags_NoInputs;
+            ImGui::Begin("##InteractPrompt", nullptr, flags);
+            
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            ImVec2 pMin = ImGui::GetWindowPos();
+            ImVec2 pMax = ImVec2(pMin.x + 300.0f, pMin.y + 60.0f);
+            drawList->AddRectFilled(pMin, pMax, IM_COL32(20, 20, 25, 200), 8.0f);
+            drawList->AddRect(pMin, pMax, IM_COL32(100, 100, 120, 150), 8.0f, 0, 1.5f);
+            
+            const char* promptText = "Press E to interact";
+            ImVec2 textSize = ImGui::CalcTextSize(promptText);
+            ImGui::SetCursorPos(ImVec2((300.0f - textSize.x) * 0.5f, (60.0f - textSize.y) * 0.5f));
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 1.0f, 1.0f), promptText);
+            
+            ImGui::End();
         }
 
         ImGui::Render();
@@ -455,6 +599,78 @@ namespace eng::runtime {
         static bool opt_padding = false;
         static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
 
+        // Static parameters for popups and lambdas defined at top for scope access
+        static char newSceneName[128] = "Untitled";
+        static char openPath[256] = "Assets/Scenes/";
+        static char savePath[256] = "Assets/Scenes/new_scene.omnixscene";
+
+        enum class PendingAction { None, New, Open, Reload, Exit };
+        static PendingAction pendingAction = PendingAction::None;
+
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+
+        auto triggerNewScene = [&]() {
+            if (m_DirtyState.IsSceneDirty()) {
+                pendingAction = PendingAction::New;
+                ImGui::OpenPopup("Unsaved Changes");
+            } else {
+                ImGui::OpenPopup("New Scene Name");
+            }
+        };
+
+        auto triggerOpenScene = [&]() {
+            if (m_DirtyState.IsSceneDirty()) {
+                pendingAction = PendingAction::Open;
+                ImGui::OpenPopup("Unsaved Changes");
+            } else {
+                ImGui::OpenPopup("Open Scene");
+            }
+        };
+
+        auto triggerSaveScene = [&]() {
+            if (sceneMgr && sceneMgr->GetActiveScene()) {
+                std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
+                if (currentPath.empty()) {
+                    ImGui::OpenPopup("Save Scene As");
+                } else {
+                    if (sceneMgr->SaveActiveScene(currentPath)) {
+                        m_DirtyState.ClearSceneDirty();
+                    }
+                }
+            }
+        };
+
+        auto triggerSaveAsScene = [&]() {
+            ImGui::OpenPopup("Save Scene As");
+        };
+
+        auto triggerReloadScene = [&]() {
+            if (m_DirtyState.IsSceneDirty()) {
+                pendingAction = PendingAction::Reload;
+                ImGui::OpenPopup("Unsaved Changes");
+            } else {
+                if (sceneMgr) {
+                    sceneMgr->ReloadCurrentScene();
+                    m_DirtyState.ClearSceneDirty();
+                    m_Selection.Clear();
+                }
+            }
+        };
+
+        auto triggerExit = [&]() {
+            if (m_DirtyState.IsSceneDirty()) {
+                pendingAction = PendingAction::Exit;
+                ImGui::OpenPopup("Unsaved Changes");
+            } else {
+                if (m_Context && m_Context->renderer) {
+                    auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+                    if (engineLoop) {
+                        engineLoop->RequestExit();
+                    }
+                }
+            }
+        };
+
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
         if (opt_fullscreen)
         {
@@ -473,7 +689,7 @@ namespace eng::runtime {
         
         static bool open = true;
 
-        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
         static Scene* lastActiveScene = nullptr;
         static bool firstFrame = true;
         if (firstFrame) {
@@ -544,6 +760,185 @@ namespace eng::runtime {
 
         // Submit the DockSpace
         ImGuiIO& io = ImGui::GetIO();
+        // Draw top toolbar
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 6.0f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.06f, 0.06f, 0.07f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.18f, 0.18f, 0.20f, 1.00f));
+        
+        float toolbarHeight = ImGui::GetFrameHeightWithSpacing() + 4.0f;
+        if (ImGui::BeginChild("##ToolbarChild", ImVec2(0.0f, toolbarHeight), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_MenuBar)) 
+        {
+            if (ImGui::BeginMenuBar()) 
+            {
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+                
+                // Save/Load
+                if (ImGui::Button("Save")) {
+                    triggerSaveScene();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Load")) {
+                    triggerOpenScene();
+                }
+                ImGui::SameLine();
+                ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+                ImGui::SameLine();
+                
+                // Play / Stop
+                bool isPlayMode = (m_SimulationState == EditorSimulationState::Play);
+                if (isPlayMode) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.20f, 0.20f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.30f, 0.30f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.90f, 0.40f, 0.40f, 1.00f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.20f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.25f, 1.00f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.75f, 0.30f, 1.00f));
+                }
+                if (ImGui::Button(isPlayMode ? "Stop" : "Play")) {
+                    if (isPlayMode) {
+                        m_SimulationState = EditorSimulationState::Edit;
+                        ExitPlayMode();
+                    } else {
+                        m_SimulationState = EditorSimulationState::Play;
+                        EnterPlayMode();
+                    }
+                }
+                ImGui::PopStyleColor(3);
+                
+                ImGui::SameLine();
+                ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+                ImGui::SameLine();
+                
+                if (ImGui::Button("Import Asset")) {
+                    CORE_LOG_INFO("[Editor] Import Asset clicked.");
+                    std::string selectedFile = eng::editor::PlatformFileDialog::ShowOpenDialog("Wavefront OBJ (*.obj)\0*.obj\0All Files (*.*)\0*.*\0");
+                    if (!selectedFile.empty()) {
+                        std::string relPath = eng::runtime::AssetImportService::ImportModel(selectedFile, m_Context->assetRegistry);
+                        if (!relPath.empty()) {
+                            m_Context->assetRegistry->ScanProjectAssets();
+                            AssetHandle handle = GenerateAssetUUID(relPath, AssetType::Mesh);
+                            if (handle.IsValid()) {
+                                CreateEntityFromMesh(handle);
+                            }
+                        }
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Create Test Cube")) {
+                    AssetHandle cubeHandle = GenerateAssetUUID("Assets/Models/cube.obj", AssetType::Mesh);
+                    AssetHandle woodHandle = GenerateAssetUUID("Assets/Materials/wood.omnixmat", AssetType::Material);
+                    
+                    auto& coordinator = m_Context->ecs->getCoordinator();
+                    Entity newEntity = coordinator.CreateEntity();
+                    
+                    coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Test Cube"));
+                    
+                    TransformComponent tc;
+                    tc.position = Vector3(0.0f, 0.5f, 0.0f);
+                    tc.scale = Vector3(2.0f, 2.0f, 2.0f);
+                    tc.dirty = true;
+                    coordinator.AddComponent<TransformComponent>(newEntity, tc);
+                    
+                    coordinator.AddComponent<MeshRendererComponent>(newEntity, MeshRendererComponent());
+                    coordinator.AddComponent<RenderableMeshComponent>(newEntity, RenderableMeshComponent(cubeHandle));
+                    coordinator.AddComponent<MaterialComponent>(newEntity, MaterialComponent(woodHandle));
+                    
+                    m_Selection.Select(newEntity);
+                    m_DirtyState.MarkSceneDirty();
+                    
+                    // Frame selected automatically
+                    m_EditorCamera.FrameEntity(glm::vec3(0.0f, 0.5f, 0.0f), 2.0f);
+                    m_EditorCamera.LookAt(glm::vec3(0.0f, 0.5f, 0.0f));
+                    
+                    CORE_LOG_INFO("[Editor] Successfully created Test Cube!");
+                }
+                ImGui::SameLine();
+                // One-click setup: floor plane + PlayerStart so Play mode works immediately
+                if (ImGui::Button("Create Play Setup")) {
+                    auto& coord = m_Context->ecs->getCoordinator();
+
+                    // --- Floor entity (large flat cube used as ground) ---
+                    AssetHandle cubeHandle = GenerateAssetUUID("Assets/Models/cube.obj", AssetType::Mesh);
+                    Entity floorEnt = coord.CreateEntity();
+                    coord.AddComponent<NameComponent>(floorEnt, NameComponent("Floor"));
+
+                    TransformComponent floorTc;
+                    floorTc.position = Vector3(0.0f, -0.25f, 0.0f);  // centred at origin, sits at Y=0
+                    floorTc.scale    = Vector3(20.0f, 0.5f, 20.0f);  // 20x0.5x20 flat slab
+                    floorTc.dirty    = true;
+                    coord.AddComponent<TransformComponent>(floorEnt, floorTc);
+
+                    coord.AddComponent<MeshRendererComponent>(floorEnt, MeshRendererComponent());
+                    coord.AddComponent<RenderableMeshComponent>(floorEnt, RenderableMeshComponent(cubeHandle));
+
+                    // Default material
+                    std::filesystem::create_directories("Assets/Materials");
+                    std::string defaultMatPath = "Assets/Materials/default.omnixmat";
+                    if (!std::filesystem::exists(defaultMatPath)) {
+                        OmnixMaterial dmat; dmat.name = "default";
+                        dmat.header.blendMode = 0; dmat.header.cullMode = 0; dmat.header.depthTest = 1;
+                        SerializeMaterial(dmat, defaultMatPath);
+                    }
+                    AssetHandle defMatH = m_Context->assetRegistry->RegisterAsset(defaultMatPath, AssetType::Material);
+                    coord.AddComponent<MaterialComponent>(floorEnt, MaterialComponent(defMatH));
+
+                    // Box collider matching the floor slab (half-extents = scale/2)
+                    BoxColliderComponent floorCol;
+                    floorCol.size   = { 20.0f, 0.5f, 20.0f };
+                    floorCol.offset = { 0.0f, 0.0f, 0.0f };
+                    coord.AddComponent<BoxColliderComponent>(floorEnt, floorCol);
+
+                    // --- PlayerStart entity ---
+                    Entity psEnt = coord.CreateEntity();
+                    coord.AddComponent<NameComponent>(psEnt, NameComponent("PlayerStart"));
+                    TransformComponent psTc;
+                    psTc.position = Vector3(0.0f, 2.0f, 5.0f);  // spawn 2 m above floor, 5 m back
+                    psTc.dirty    = true;
+                    coord.AddComponent<TransformComponent>(psEnt, psTc);
+                    coord.AddComponent<PlayerStartComponent>(psEnt, PlayerStartComponent());
+
+                    m_DirtyState.MarkSceneDirty();
+                    // Frame camera on the floor so it's immediately visible
+                    m_EditorCamera.position = glm::vec3(0.0f, 6.0f, 14.0f);
+                    m_EditorCamera.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+
+                    CORE_LOG_INFO("[Editor] Created play setup: Floor + PlayerStart.");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Create Mesh Entity")) {
+                    AssetHandle selectedAsset = m_AssetBrowserPanel.GetSelectedAsset();
+                    if (selectedAsset.IsValid()) {
+                        CreateEntityFromMesh(selectedAsset);
+                    } else {
+                        auto& coordinator = m_Context->ecs->getCoordinator();
+                        EditorEntityCommands::CreateEmpty(coordinator, m_DirtyState, m_Selection);
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Validate Scene")) {
+                    if (sceneMgr && sceneMgr->GetActiveScene()) {
+                        std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
+                        if (!currentPath.empty()) {
+                            SceneValidator validator;
+                            auto report = validator.ValidateSceneFile(currentPath, m_Context->assetRegistry, &PrefabRegistry::Get());
+                            auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
+                            if (casted) {
+                                casted->SetLastValidationReport(report);
+                                casted->TriggerValidationFailedModal();
+                            }
+                        }
+                    }
+                }
+
+                ImGui::EndMenuBar();
+            }
+            ImGui::EndChild();
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+
+        // Submit the DockSpace
         if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
         {
             ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
@@ -553,95 +948,9 @@ namespace eng::runtime {
             if (m_ResetLayout || ImGui::DockBuilderGetNode(dockspace_id) == NULL)
             {
                 m_ResetLayout = false;
-                ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out previous configuration
-                ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
-                ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->WorkSize);
-
-                ImGuiID dock_main_id = dockspace_id;
-                ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, NULL, &dock_main_id);
-                ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, NULL, &dock_main_id);
-                ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.25f, NULL, &dock_main_id);
-
-                ImGui::DockBuilderDockWindow("Scene Hierarchy", dock_id_left);
-                ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
-                ImGui::DockBuilderDockWindow("Asset Browser", dock_id_bottom);
-                ImGui::DockBuilderDockWindow("Console", dock_id_bottom);
-                ImGui::DockBuilderDockWindow("Play Mode Diagnostics", dock_id_bottom);
-                ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
-
-                ImGui::DockBuilderFinish(dockspace_id);
+                EditorLayout::BuildDefaultDockspace(dockspace_id);
             }
         }
-
-        // Static parameters for popups
-        static char newSceneName[128] = "Untitled";
-        static char openPath[256] = "Assets/Scenes/";
-        static char savePath[256] = "Assets/Scenes/new_scene.omnixscene";
-
-        enum class PendingAction { None, New, Open, Reload, Exit };
-        static PendingAction pendingAction = PendingAction::None;
-
-        auto triggerNewScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::New;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                ImGui::OpenPopup("New Scene Name");
-            }
-        };
-
-        auto triggerOpenScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::Open;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                ImGui::OpenPopup("Open Scene");
-            }
-        };
-
-        auto triggerSaveScene = [&]() {
-            if (sceneMgr && sceneMgr->GetActiveScene()) {
-                std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
-                if (currentPath.empty()) {
-                    ImGui::OpenPopup("Save Scene As");
-                } else {
-                    if (sceneMgr->SaveActiveScene(currentPath)) {
-                        m_DirtyState.ClearSceneDirty();
-                    }
-                }
-            }
-        };
-
-        auto triggerSaveAsScene = [&]() {
-            ImGui::OpenPopup("Save Scene As");
-        };
-
-        auto triggerReloadScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::Reload;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                if (sceneMgr) {
-                    sceneMgr->ReloadCurrentScene();
-                    m_DirtyState.ClearSceneDirty();
-                    m_Selection.Clear();
-                }
-            }
-        };
-
-        auto triggerExit = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::Exit;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                if (m_Context && m_Context->renderer) {
-                    auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
-                    if (engineLoop) {
-                        engineLoop->RequestExit();
-                    }
-                }
-            }
-        };
 
         bool isPlaying = (m_SimulationState == EditorSimulationState::Play);
 
@@ -680,6 +989,22 @@ namespace eng::runtime {
                 if (ImGui::MenuItem("Reload Scene", NULL, false, !isPlaying)) {
                     triggerReloadScene();
                 }
+                if (ImGui::MenuItem("Validate Scene", NULL, false, !isPlaying)) {
+                    if (sceneMgr && sceneMgr->GetActiveScene()) {
+                        std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
+                        if (!currentPath.empty()) {
+                            SceneValidator validator;
+                            auto report = validator.ValidateSceneFile(currentPath, m_Context->assetRegistry, &PrefabRegistry::Get());
+                            auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
+                            if (casted) {
+                                casted->SetLastValidationReport(report);
+                                casted->TriggerValidationFailedModal();
+                            }
+                        } else {
+                            CORE_LOG_WARN("[Editor] Active scene has no saved file path to validate.");
+                        }
+                    }
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit", "Alt+F4")) {
                     triggerExit();
@@ -692,6 +1017,12 @@ namespace eng::runtime {
                 if (ImGui::MenuItem("Show Colliders", nullptr, &show)) {
                     m_ShowColliders = show;
                     m_ViewportPanel.SetShowColliders(show);
+                }
+
+                bool showDiag = m_ShowDiagnostics;
+                if (ImGui::MenuItem("Show Diagnostics", nullptr, &showDiag)) {
+                    m_ShowDiagnostics = showDiag;
+                    m_ViewportPanel.SetShowDiagnostics(showDiag);
                 }
                 
                 auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
@@ -752,7 +1083,7 @@ namespace eng::runtime {
 
         float panelWidth = 0.0f;
         float panelHeight = 0.0f;
-        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight);
+        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState);
 
         // Save the viewport size for recreation check at the start of the next frame
         m_LastViewportWidth = panelWidth;
@@ -763,6 +1094,7 @@ namespace eng::runtime {
         });
 
         // Render Play Mode Diagnostics
+        if (m_ShowDiagnostics)
         {
             ImGui::Begin("Play Mode Diagnostics");
             ImGui::Text("Simulation Mode: %s", (m_SimulationState == EditorSimulationState::Play) ? "PLAY MODE" : "EDIT MODE");
@@ -792,111 +1124,245 @@ namespace eng::runtime {
             
             // Physics diagnostics
             ImGui::Separator();
-            ImGui::Text("--- PhysX Physics Diagnostics ---");
-            if (m_Context->physicsWorld) {
-                auto* pw = m_Context->physicsWorld;
-                ImGui::Text("PhysX Initialized: %s", pw->IsInitialized() ? "Yes" : "No");
-                
-                bool simEnabled = (m_SimulationState == EditorSimulationState::Play || m_Context->mode == RuntimeMode::Game);
-                ImGui::Text("Simulation Enabled: %s", simEnabled ? "Yes" : "No");
-                ImGui::Text("Active Static Actors: %zu", pw->GetStaticActorCount());
+            if (ImGui::CollapsingHeader("PhysX Physics Diagnostics", ImGuiTreeNodeFlags_None)) {
+                if (m_Context->physicsWorld) {
+                    auto* pw = m_Context->physicsWorld;
+                    ImGui::Text("PhysX Initialized: %s", pw->IsInitialized() ? "Yes" : "No");
+                    
+                    bool simEnabled = (m_SimulationState == EditorSimulationState::Play || m_Context->mode == RuntimeMode::Game);
+                    ImGui::Text("Simulation Enabled: %s", simEnabled ? "Yes" : "No");
+                    ImGui::Text("Active Static Actors: %zu", pw->GetStaticActorCount());
 
-                int ecsColliderCount = 0;
-                if (m_Context->ecs) {
-                    auto& coordinator = m_Context->ecs->getCoordinator();
-                    for (Entity entity : coordinator.GetActiveEntities()) {
-                        auto signature = coordinator.GetSignature(entity);
-                        if (signature.test(coordinator.GetComponentType<StaticBodyComponent>())) {
-                            if (signature.test(coordinator.GetComponentType<BoxColliderComponent>()) ||
-                                signature.test(coordinator.GetComponentType<SphereColliderComponent>()) ||
-                                signature.test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
-                                ecsColliderCount++;
+                    int ecsColliderCount = 0;
+                    if (m_Context->ecs) {
+                        auto& coordinator = m_Context->ecs->getCoordinator();
+                        for (Entity entity : coordinator.GetActiveEntities()) {
+                            auto signature = coordinator.GetSignature(entity);
+                            if (signature.test(coordinator.GetComponentType<StaticBodyComponent>())) {
+                                if (signature.test(coordinator.GetComponentType<BoxColliderComponent>()) ||
+                                    signature.test(coordinator.GetComponentType<SphereColliderComponent>()) ||
+                                    signature.test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
+                                    ecsColliderCount++;
+                                }
                             }
                         }
                     }
-                }
-                ImGui::Text("ECS Static Collider Count: %d", ecsColliderCount);
-                ImGui::Text("Fixed Timestep: %.4f s (%.1f FPS)", pw->GetFixedTimestep(), 1.0f / pw->GetFixedTimestep());
-                ImGui::Text("Steps This Frame: %d", pw->GetStepsThisFrame());
+                    ImGui::Text("ECS Static Collider Count: %d", ecsColliderCount);
+                    ImGui::Text("Fixed Timestep: %.4f s (%.1f FPS)", pw->GetFixedTimestep(), 1.0f / pw->GetFixedTimestep());
+                    ImGui::Text("Steps This Frame: %d", pw->GetStepsThisFrame());
 
-                if (g_DiagPhysState.lastRaycastPerformed) {
-                    ImGui::Text("Last Raycast: %s", g_DiagPhysState.lastRaycastHit ? "Hit" : "Miss");
-                    if (g_DiagPhysState.lastRaycastHit) {
-                        ImGui::Text("Last Raycast Entity: %u", (unsigned int)g_DiagPhysState.lastRaycastEntity);
+                    if (g_DiagPhysState.lastRaycastPerformed) {
+                        ImGui::Text("Last Raycast: %s", g_DiagPhysState.lastRaycastHit ? "Hit" : "Miss");
+                        if (g_DiagPhysState.lastRaycastHit) {
+                            ImGui::Text("Last Raycast Entity: %u", (unsigned int)g_DiagPhysState.lastRaycastEntity);
+                        } else {
+                            ImGui::Text("Last Raycast Entity: N/A");
+                        }
                     } else {
+                        ImGui::Text("Last Raycast: None yet");
                         ImGui::Text("Last Raycast Entity: N/A");
                     }
-                } else {
-                    ImGui::Text("Last Raycast: None yet");
-                    ImGui::Text("Last Raycast Entity: N/A");
-                }
 
-                if (g_DiagPhysState.lastOverlapPerformed) {
-                    ImGui::Text("Last Overlap Count: %d", g_DiagPhysState.lastOverlapCount);
-                } else {
-                    ImGui::Text("Last Overlap Count: N/A");
-                }
+                    if (g_DiagPhysState.lastOverlapPerformed) {
+                        ImGui::Text("Last Overlap Count: %d", g_DiagPhysState.lastOverlapCount);
+                    } else {
+                        ImGui::Text("Last Overlap Count: N/A");
+                    }
 
-                ImGui::Spacing();
-                
-                if (ImGui::Button("Test Raycast Downward")) {
-                    eng::physics::RaycastHit rHit;
-                    Vector3 origin = {0.0f, 10.0f, 0.0f};
-                    Vector3 direction = {0.0f, -1.0f, 0.0f};
-                    float maxDist = 50.0f;
+                    ImGui::Spacing();
                     
-                    if (pw->Raycast(origin, direction, maxDist, rHit)) {
-                        CORE_LOG_INFO("[Physics Test] Raycast HIT entity ID: {}, Distance: {:.2f}, Position: ({:.2f}, {:.2f}, {:.2f}), Normal: ({:.2f}, {:.2f}, {:.2f})",
-                            rHit.entity, rHit.distance, rHit.position.x, rHit.position.y, rHit.position.z,
-                            rHit.normal.x, rHit.normal.y, rHit.normal.z);
-                        g_DiagPhysState.lastRaycastHit = true;
-                        g_DiagPhysState.lastRaycastEntity = rHit.entity;
-                        // Add to debug visualizer
-                        eng::physics::PhysicsDebugDraw::AddDebugRaycast(origin, direction, rHit.distance, true, rHit.position, rHit.normal);
-                    } else {
-                        CORE_LOG_INFO("[Physics Test] Raycast MISSED everything!");
-                        g_DiagPhysState.lastRaycastHit = false;
-                        g_DiagPhysState.lastRaycastEntity = 0;
-                        // Add to debug visualizer
-                        eng::physics::PhysicsDebugDraw::AddDebugRaycast(origin, direction, maxDist, false, {0,0,0}, {0,0,0});
-                    }
-                    g_DiagPhysState.lastRaycastPerformed = true;
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("Test Overlap Sphere at Origin")) {
-                    std::vector<Entity> overlapped;
-                    Vector3 center = {0.0f, 0.0f, 0.0f};
-                    float radius = 5.0f;
-                    if (pw->OverlapSphere(center, radius, overlapped)) {
-                        CORE_LOG_INFO("[Physics Test] Overlap Sphere HIT {} entities:", overlapped.size());
-                        for (size_t i = 0; i < overlapped.size(); ++i) {
-                            CORE_LOG_INFO("  - Entity ID: {}", overlapped[i]);
+                    if (ImGui::Button("Test Raycast Downward")) {
+                        eng::physics::RaycastHit rHit;
+                        Vector3 origin = {0.0f, 10.0f, 0.0f};
+                        Vector3 direction = {0.0f, -1.0f, 0.0f};
+                        float maxDist = 50.0f;
+                        
+                        if (pw->Raycast(origin, direction, maxDist, rHit)) {
+                            CORE_LOG_INFO("[Physics Test] Raycast HIT entity ID: {}, Distance: {:.2f}, Position: ({:.2f}, {:.2f}, {:.2f}), Normal: ({:.2f}, {:.2f}, {:.2f})",
+                                rHit.entity, rHit.distance, rHit.position.x, rHit.position.y, rHit.position.z,
+                                rHit.normal.x, rHit.normal.y, rHit.normal.z);
+                            g_DiagPhysState.lastRaycastHit = true;
+                            g_DiagPhysState.lastRaycastEntity = rHit.entity;
+                            // Add to debug visualizer
+                            eng::physics::PhysicsDebugDraw::AddDebugRaycast(origin, direction, rHit.distance, true, rHit.position, rHit.normal);
+                        } else {
+                            CORE_LOG_INFO("[Physics Test] Raycast MISSED everything!");
+                            g_DiagPhysState.lastRaycastHit = false;
+                            g_DiagPhysState.lastRaycastEntity = 0;
+                            // Add to debug visualizer
+                            eng::physics::PhysicsDebugDraw::AddDebugRaycast(origin, direction, maxDist, false, {0,0,0}, {0,0,0});
                         }
-                        g_DiagPhysState.lastOverlapCount = (int)overlapped.size();
-                    } else {
-                        CORE_LOG_INFO("[Physics Test] Overlap Sphere MISSED everything!");
-                        g_DiagPhysState.lastOverlapCount = 0;
+                        g_DiagPhysState.lastRaycastPerformed = true;
                     }
-                    g_DiagPhysState.lastOverlapPerformed = true;
-                }
 
-                ImGui::Spacing();
-                if (ImGui::Button("Rebuild Static Actors")) {
-                    if (m_Context->ecs) {
-                        pw->RegisterStaticColliders(m_Context->ecs->getCoordinator());
-                        CORE_LOG_INFO("[Physics Test] Rebuilt all static actors.");
+                    ImGui::SameLine();
+                    if (ImGui::Button("Test Overlap Sphere at Origin")) {
+                        std::vector<Entity> overlapped;
+                        Vector3 center = {0.0f, 0.0f, 0.0f};
+                        float radius = 5.0f;
+                        if (pw->OverlapSphere(center, radius, overlapped)) {
+                            CORE_LOG_INFO("[Physics Test] Overlap Sphere HIT {} entities:", overlapped.size());
+                            for (size_t i = 0; i < overlapped.size(); ++i) {
+                                CORE_LOG_INFO("  - Entity ID: {}", overlapped[i]);
+                            }
+                            g_DiagPhysState.lastOverlapCount = (int)overlapped.size();
+                        } else {
+                            CORE_LOG_INFO("[Physics Test] Overlap Sphere MISSED everything!");
+                            g_DiagPhysState.lastOverlapCount = 0;
+                        }
+                        g_DiagPhysState.lastOverlapPerformed = true;
                     }
-                }
 
-                ImGui::SameLine();
-                if (ImGui::Button("Clear Physics Scene")) {
-                    pw->ClearScene();
-                    eng::physics::PhysicsDebugDraw::ClearDebugVisuals();
-                    CORE_LOG_INFO("[Physics Test] Cleared all static actors from physics scene.");
+                    ImGui::Spacing();
+                    if (ImGui::Button("Rebuild Static Actors")) {
+                        if (m_Context->ecs) {
+                            pw->RegisterStaticColliders(m_Context->ecs->getCoordinator());
+                            CORE_LOG_INFO("[Physics Test] Rebuilt all static actors.");
+                        }
+                    }
+
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear Physics Scene")) {
+                        pw->ClearScene();
+                        eng::physics::PhysicsDebugDraw::ClearDebugVisuals();
+                        CORE_LOG_INFO("[Physics Test] Cleared all static actors from physics scene.");
+                    }
+                } else {
+                    ImGui::Text("PhysX Initialized: No (PhysicsWorld Context pointer is null)");
+                }
+            }
+
+            // Player Controller Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Player Controller Diagnostics", ImGuiTreeNodeFlags_None)) {
+                if (m_SimulationState == EditorSimulationState::Play && m_Context && m_Context->ecs) {
+                    auto* world = dynamic_cast<World*>(m_Context->ecs);
+                    if (world) {
+                        if (auto playerControllerSys = world->GetSystem<PlayerControllerSystem>()) {
+                            Entity playerEnt = playerControllerSys->GetPlayerEntity();
+                            if (playerEnt != 0 && m_Context->ecs->getCoordinator().IsEntityAlive(playerEnt)) {
+                                auto& coordinator = m_Context->ecs->getCoordinator();
+                                const auto& transform = coordinator.GetComponent<TransformComponent>(playerEnt);
+                                const auto& ccc = coordinator.GetComponent<CharacterControllerComponent>(playerEnt);
+
+                                ImGui::Text("Player Entity: %u", playerEnt);
+                                ImGui::Text("Position: (%.2f, %.2f, %.2f)", transform.position.x, transform.position.y, transform.position.z);
+                                ImGui::Text("Velocity: (%.2f, %.2f, %.2f)", ccc.velocity.x, ccc.velocity.y, ccc.velocity.z);
+                                ImGui::Text("Yaw: %.1f, Pitch: %.1f", ccc.yaw, ccc.pitch);
+                                ImGui::Text("Grounded: %s", ccc.isGrounded ? "Yes" : "No");
+                                ImGui::Text("Wall Blocked: %s", playerControllerSys->IsBlocked() ? "Yes" : "No");
+                                ImGui::Text("Cursor Captured: %s", m_CursorCaptured ? "Yes" : "No");
+                            } else {
+                                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Player Entity not alive or not found.");
+                            }
+                        } else {
+                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "PlayerControllerSystem not found in world.");
+                        }
+                    }
+                } else {
+                    ImGui::Text("Not in Play Mode. Cursor Captured: %s", m_CursorCaptured ? "Yes" : "No");
+                }
+            }
+
+            // Trigger Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Trigger Diagnostics", ImGuiTreeNodeFlags_None)) {
+                if (m_SimulationState == EditorSimulationState::Play && m_Context && m_Context->ecs) {
+                    auto* world = dynamic_cast<World*>(m_Context->ecs);
+                    if (world) {
+                        if (auto triggerSys = world->GetSystem<eng::runtime::TriggerSystem>()) {
+                            const auto& overlaps = triggerSys->GetCurrentOverlaps();
+                            ImGui::Text("Active Overlap Pairs: %zu", overlaps.size());
+                            
+                            auto& coordinator = m_Context->ecs->getCoordinator();
+                            for (const auto& pair : overlaps) {
+                                std::string triggerName = "Trigger " + std::to_string(pair.triggerEntity);
+                                std::string otherName = "Entity " + std::to_string(pair.otherEntity);
+                                
+                                if (coordinator.GetSignature(pair.triggerEntity).test(coordinator.GetComponentType<NameComponent>())) {
+                                    triggerName = coordinator.GetComponent<NameComponent>(pair.triggerEntity).name;
+                                }
+                                if (coordinator.GetSignature(pair.otherEntity).test(coordinator.GetComponentType<NameComponent>())) {
+                                    otherName = coordinator.GetComponent<NameComponent>(pair.otherEntity).name;
+                                }
+                                
+                                ImGui::Text("- %s overlapping with %s", triggerName.c_str(), otherName.c_str());
+                            }
+
+                            // Display list of all trigger entities in scene
+                            ImGui::Spacing();
+                            ImGui::Text("Trigger Zones in Scene:");
+                            for (Entity ent : coordinator.GetActiveEntities()) {
+                                if (coordinator.IsEntityAlive(ent)) {
+                                    auto sig = coordinator.GetSignature(ent);
+                                    if (sig.test(coordinator.GetComponentType<TriggerComponent>())) {
+                                        const auto& trigger = coordinator.GetComponent<TriggerComponent>(ent);
+                                        std::string trigName = "Trigger " + std::to_string(ent);
+                                        if (sig.test(coordinator.GetComponentType<NameComponent>())) {
+                                            trigName = coordinator.GetComponent<NameComponent>(ent).name;
+                                        }
+                                        
+                                        bool isActive = triggerSys->IsTriggerActive(ent);
+                                        ImGui::Text("  [%s] %s (Event: %s)", 
+                                            isActive ? "OVERLAPPED" : "IDLE", 
+                                            trigName.c_str(), 
+                                            trigger.eventName.c_str());
+                                    }
+                                }
+                            }
+                        } else {
+                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "TriggerSystem not found in world.");
+                        }
+                    }
+                } else {
+                    ImGui::Text("Not in Play Mode.");
+                }
+            }
+
+            ImGui::End();
+        }
+
+        // Render Renderer Light Diagnostics
+        if (m_ShowDiagnostics)
+        {
+            ImGui::Begin("Renderer Light Diagnostics");
+            auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+            if (engineLoop && engineLoop->GetSceneRenderer()) {
+                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                auto lightData = sceneRenderer->getLastLightData();
+                bool isFallback = sceneRenderer->isFallbackLightingActive();
+
+                ImGui::Text("Lighting Mode: %s", isFallback ? "FALLBACK DEFAULT" : "ECS SCENE LIGHTS");
+                ImGui::Text("Shader Mode: Lit (PBR Shading with LightUBO)");
+                ImGui::Separator();
+
+                // Ambient Light
+                ImGui::Text("Ambient Light Color: (%.2f, %.2f, %.2f)", lightData.ambientColorIntensity.x, lightData.ambientColorIntensity.y, lightData.ambientColorIntensity.z);
+                ImGui::Text("Ambient Light Intensity: %.2f", lightData.ambientColorIntensity.w);
+                ImGui::Separator();
+
+                // Directional Light
+                ImGui::Text("Directional Light Dir: (%.2f, %.2f, %.2f)", lightData.directionalDirectionIntensity.x, lightData.directionalDirectionIntensity.y, lightData.directionalDirectionIntensity.z);
+                ImGui::Text("Directional Light Color: (%.2f, %.2f, %.2f)", lightData.directionalColor.x, lightData.directionalColor.y, lightData.directionalColor.z);
+                ImGui::Text("Directional Light Intensity: %.2f", lightData.directionalDirectionIntensity.w);
+                ImGui::Separator();
+
+                // Point Lights
+                ImGui::Text("Point Lights Uploaded: %u / 16", lightData.pointLightCount);
+                for (uint32_t i = 0; i < lightData.pointLightCount && i < 16; ++i) {
+                    ImGui::PushID(i);
+                    std::string label = "Point Light " + std::to_string(i);
+                    if (ImGui::TreeNode(label.c_str())) {
+                        ImGui::Text("Position: (%.2f, %.2f, %.2f)", lightData.pointPositionsRadius[i].x, lightData.pointPositionsRadius[i].y, lightData.pointPositionsRadius[i].z);
+                        ImGui::Text("Radius: %.2f", lightData.pointPositionsRadius[i].w);
+                        ImGui::Text("Color: (%.2f, %.2f, %.2f)", lightData.pointColorsIntensity[i].x, lightData.pointColorsIntensity[i].y, lightData.pointColorsIntensity[i].z);
+                        ImGui::Text("Intensity: %.2f", lightData.pointColorsIntensity[i].w);
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
                 }
             } else {
-                ImGui::Text("PhysX Initialized: No (PhysicsWorld Context pointer is null)");
+                ImGui::Text("SceneRenderer not available.");
             }
             ImGui::End();
         }
@@ -922,6 +1388,78 @@ namespace eng::runtime {
         // --------------------------------------------------------------------
         // POPUP MODALS FOR SCENE OPERATIONS
         // --------------------------------------------------------------------
+        if (sceneMgr) {
+            auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
+            if (casted && casted->ShowValidationFailedModal()) {
+                ImGui::OpenPopup("Scene Load Blocked");
+                casted->ClearValidationFailedModalFlag();
+            }
+        }
+
+        if (ImGui::BeginPopupModal("Scene Load Blocked", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (sceneMgr) {
+                auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
+                if (casted) {
+                    const auto& report = casted->GetLastValidationReport();
+                    if (report.HasErrors()) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Scene failed validation and loading was blocked!");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Scene validation passed successfully!");
+                    }
+                    ImGui::Separator();
+                    ImGui::Spacing();
+
+                    ImGui::Text("Validation Report (%zu issues):", report.issues.size());
+                    
+                    if (report.issues.empty()) {
+                        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "No issues found. Scene is completely clean.");
+                    } else {
+                        ImGui::BeginChild("ValidationIssuesList", ImVec2(500, 250), true);
+                        for (const auto& issue : report.issues) {
+                            ImVec4 color;
+                            std::string prefix;
+                            switch (issue.severity) {
+                                case SceneValidationSeverity::Info:
+                                    color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                                    prefix = "[Info]";
+                                    break;
+                                case SceneValidationSeverity::Warning:
+                                    color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+                                    prefix = "[Warning]";
+                                    break;
+                                case SceneValidationSeverity::Error:
+                                    color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
+                                    prefix = "[Error]";
+                                    break;
+                                case SceneValidationSeverity::Fatal:
+                                    color = ImVec4(1.0f, 0.1f, 0.1f, 1.0f);
+                                    prefix = "[Fatal]";
+                                    break;
+                            }
+                            ImGui::TextColored(color, "%s %s", prefix.c_str(), issue.code.c_str());
+                            if (!issue.entityName.empty()) {
+                                ImGui::SameLine();
+                                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "(Entity: %s)", issue.entityName.c_str());
+                            }
+                            if (!issue.path.empty()) {
+                                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  Path: %s", issue.path.c_str());
+                            }
+                            ImGui::TextWrapped("  %s", issue.message.c_str());
+                            ImGui::Separator();
+                        }
+                        ImGui::EndChild();
+                    }
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            if (ImGui::Button("Close", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
         if (ImGui::BeginPopupModal("Unsaved Changes", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text("You have unsaved changes.\nDo you want to save them before proceeding?");
             ImGui::Separator();
@@ -1117,6 +1655,92 @@ namespace eng::runtime {
             eng::physics::PhysicsDebugDraw::ClearDebugVisuals();
         }
 
+        // 7. Find PlayerStartComponent to get spawn position.
+        //    If none exists, auto-create a floor collider + PlayerStart so the
+        //    player always has solid ground to stand on.
+        auto& simCoordinator = m_Context->ecs->getCoordinator();
+        glm::vec3 spawnPos(0.0f, 2.0f, 0.0f);
+
+        const auto& activeEntities = simCoordinator.GetActiveEntities();
+        auto playerStartType  = simCoordinator.GetComponentType<PlayerStartComponent>();
+        auto transformType    = simCoordinator.GetComponentType<TransformComponent>();
+        auto boxColliderType  = simCoordinator.GetComponentType<BoxColliderComponent>();
+
+        bool foundPlayerStart = false;
+        bool foundFloorCollider = false;
+
+        for (Entity entity : activeEntities) {
+            if (entity == 0 || !simCoordinator.IsEntityAlive(entity)) continue;
+            auto sig = simCoordinator.GetSignature(entity);
+            if (sig.test(playerStartType) && sig.test(transformType)) {
+                const auto& transformComp = simCoordinator.GetComponent<TransformComponent>(entity);
+                spawnPos = glm::vec3(transformComp.position.x, transformComp.position.y, transformComp.position.z);
+                foundPlayerStart = true;
+            }
+            if (sig.test(boxColliderType)) {
+                foundFloorCollider = true;
+            }
+        }
+
+        // Auto-inject floor collider if the scene has no static colliders at all
+        if (!foundFloorCollider) {
+            CORE_LOG_WARN("[Editor] No BoxCollider found in scene — auto-creating floor collider for Play mode.");
+            Entity autoFloor = simCoordinator.CreateEntity();
+            simCoordinator.AddComponent<NameComponent>(autoFloor, NameComponent("[AutoFloor]"));
+            TransformComponent ftc;
+            ftc.position = Vector3(0.0f, -0.25f, 0.0f);
+            ftc.scale    = Vector3(20.0f, 0.5f, 20.0f);
+            ftc.dirty    = true;
+            simCoordinator.AddComponent<TransformComponent>(autoFloor, ftc);
+            BoxColliderComponent bcc;
+            bcc.size   = { 20.0f, 0.5f, 20.0f };
+            bcc.offset = { 0.0f, 0.0f, 0.0f };
+            simCoordinator.AddComponent<BoxColliderComponent>(autoFloor, bcc);
+            // Re-register colliders so the auto-floor is included
+            if (m_Context->physicsWorld) {
+                m_Context->physicsWorld->ClearScene();
+                m_Context->physicsWorld->RegisterStaticColliders(simCoordinator);
+            }
+        }
+
+        // Auto-inject PlayerStart if none was found
+        if (!foundPlayerStart) {
+            CORE_LOG_WARN("[Editor] No PlayerStart found — spawning player at default position (0, 2, 0).");
+        }
+
+        // 8. Create temporary runtime player entity
+        Entity playerEntity = simCoordinator.CreateEntity();
+        simCoordinator.AddComponent<NameComponent>(playerEntity, NameComponent("RuntimePlayer"));
+
+        TransformComponent tc;
+        tc.position = { spawnPos.x, spawnPos.y, spawnPos.z };
+        simCoordinator.AddComponent<TransformComponent>(playerEntity, tc);
+
+        CharacterControllerComponent ccc;
+        simCoordinator.AddComponent<CharacterControllerComponent>(playerEntity, ccc);
+
+        CameraComponent cameraComp;
+        cameraComp.isPrimary = true;
+        cameraComp.localOffset = { 0.0f, 1.6f, 0.0f };
+        simCoordinator.AddComponent<CameraComponent>(playerEntity, cameraComp);
+
+        InputComponent inputComp;
+        simCoordinator.AddComponent<InputComponent>(playerEntity, inputComp);
+
+        auto* world = dynamic_cast<World*>(m_Context->ecs);
+        if (world) {
+            if (auto playerControllerSys = world->GetSystem<PlayerControllerSystem>()) {
+                playerControllerSys->SetPlayerEntity(playerEntity);
+            }
+        }
+
+        // Lock/capture the cursor when entering play mode
+        m_CursorCaptured = true;
+        auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+        if (engineLoop && engineLoop->GetWindow()) {
+            engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Disabled);
+        }
+
         CORE_LOG_INFO("[Editor] Entering Play Mode. In-memory simulation started.");
         return true;
     }
@@ -1126,6 +1750,13 @@ namespace eng::runtime {
 
         auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
         if (!sceneMgr) return false;
+
+        // Release cursor capture
+        m_CursorCaptured = false;
+        auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+        if (engineLoop && engineLoop->GetWindow()) {
+            engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Normal);
+        }
 
         // 1. Stop simulation
         m_Context->editorSimulationState = EditorSimulationState::Edit;
@@ -1178,7 +1809,14 @@ namespace eng::runtime {
         }
 
         coordinator.AddComponent<NameComponent>(newEntity, NameComponent(entityName));
-        coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
+        
+        // Spawn entity in front of the editor camera
+        glm::vec3 entityPos = m_EditorCamera.position + m_EditorCamera.getForward() * 5.0f;
+        TransformComponent tc;
+        tc.position = Vector3(entityPos.x, entityPos.y, entityPos.z);
+        tc.dirty = true;
+        coordinator.AddComponent<TransformComponent>(newEntity, tc);
+        
         coordinator.AddComponent<MeshRendererComponent>(newEntity, MeshRendererComponent());
         coordinator.AddComponent<RenderableMeshComponent>(newEntity, RenderableMeshComponent(meshHandle));
 
@@ -1201,7 +1839,6 @@ namespace eng::runtime {
         m_DirtyState.MarkSceneDirty();
 
         // Frame camera on the new entity immediately!
-        glm::vec3 entityPos = glm::vec3(0.0f, 0.0f, 0.0f);
         m_EditorCamera.position = entityPos - m_EditorCamera.getForward() * 5.0f;
         m_EditorCamera.LookAt(entityPos);
 

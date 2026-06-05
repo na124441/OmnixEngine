@@ -1,5 +1,6 @@
 #include "Physics/Public/PhysicsDebugDraw.h"
 #include "ECS/ECSComponents.h"
+#include "ECS/TriggerSystem.h"
 #include "ThirdParty/imgui/imgui.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -17,6 +18,10 @@ namespace eng::physics {
         return result;
     }
 
+    // Viewport offset: top-left corner of the viewport panel in screen space
+    static float s_ViewportOffsetX = 0.0f;
+    static float s_ViewportOffsetY = 0.0f;
+
     static glm::vec2 ProjectPoint(const glm::vec3& localPoint, const glm::mat4& entityTransform, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, bool& outBehindCamera) {
         glm::vec4 worldPos = entityTransform * glm::vec4(localPoint, 1.0f);
         glm::vec4 viewPos = view * worldPos;
@@ -30,8 +35,8 @@ namespace eng::physics {
         
         glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
         
-        float x = (ndc.x + 1.0f) * 0.5f * screenWidth;
-        float y = (1.0f - ndc.y) * 0.5f * screenHeight;
+        float x = s_ViewportOffsetX + (ndc.x + 1.0f) * 0.5f * screenWidth;
+        float y = s_ViewportOffsetY + (1.0f - ndc.y) * 0.5f * screenHeight;
         return glm::vec2(x, y);
     }
 
@@ -83,8 +88,10 @@ namespace eng::physics {
         }
     }
 
-    void PhysicsDebugDraw::Render(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight) {
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    void PhysicsDebugDraw::Render(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX, float viewportOffsetY) {
+        s_ViewportOffsetX = viewportOffsetX;
+        s_ViewportOffsetY = viewportOffsetY;
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
         if (!drawList) return;
 
         ImU32 colliderColor = IM_COL32(0, 255, 0, 255); // Green for standard colliders
@@ -199,6 +206,170 @@ namespace eng::physics {
                     // Bottom dome: XY and YZ semicircles
                     DrawArc(offset + glm::vec3(0, -halfCylHeight, 0), glm::vec3(1,0,0), glm::vec3(0,-1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
                     DrawArc(offset + glm::vec3(0, -halfCylHeight, 0), glm::vec3(0,0,1), glm::vec3(0,-1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                }
+            }
+
+            // 4. Trigger Volumes
+            if (signature.test(coordinator.GetComponentType<TriggerComponent>())) {
+                const auto& trigger = coordinator.GetComponent<TriggerComponent>(entity);
+                if (trigger.enabled) {
+                    ImU32 color = IM_COL32(255, 255, 0, 255); // Yellow default
+
+                    auto triggerSys = coordinator.GetSystem<eng::runtime::TriggerSystem>();
+                    if (triggerSys) {
+                        if (!triggerSys->IsDimensionsValid(trigger)) {
+                            color = IM_COL32(255, 0, 0, 255); // Red for invalid
+                        } else if (triggerSys->IsTriggerActive(entity)) {
+                            color = IM_COL32(0, 255, 0, 255); // Green for active
+                        }
+                    }
+
+                    glm::vec3 offset = glm::vec3(trigger.offset.x, trigger.offset.y, trigger.offset.z);
+
+                    if (trigger.shapeType == TriggerShapeType::Box) {
+                        glm::vec3 halfSize = glm::vec3(trigger.boxSize.x, trigger.boxSize.y, trigger.boxSize.z) * 0.5f;
+                        glm::vec3 v[8];
+                        v[0] = offset + glm::vec3(-halfSize.x, -halfSize.y, -halfSize.z);
+                        v[1] = offset + glm::vec3( halfSize.x, -halfSize.y, -halfSize.z);
+                        v[2] = offset + glm::vec3( halfSize.x,  halfSize.y, -halfSize.z);
+                        v[3] = offset + glm::vec3(-halfSize.x,  halfSize.y, -halfSize.z);
+                        v[4] = offset + glm::vec3(-halfSize.x, -halfSize.y,  halfSize.z);
+                        v[5] = offset + glm::vec3( halfSize.x, -halfSize.y,  halfSize.z);
+                        v[6] = offset + glm::vec3( halfSize.x,  halfSize.y,  halfSize.z);
+                        v[7] = offset + glm::vec3(-halfSize.x,  halfSize.y,  halfSize.z);
+
+                        int indices[12][2] = {
+                            {0,1}, {1,2}, {2,3}, {3,0},
+                            {4,5}, {5,6}, {6,7}, {7,4},
+                            {0,4}, {1,5}, {2,6}, {3,7}
+                        };
+
+                        for (int i = 0; i < 12; ++i) {
+                            bool behind1 = false, behind2 = false;
+                            glm::vec2 p1 = ProjectPoint(v[indices[i][0]], entityTransform, view, proj, screenWidth, screenHeight, behind1);
+                            glm::vec2 p2 = ProjectPoint(v[indices[i][1]], entityTransform, view, proj, screenWidth, screenHeight, behind2);
+                            if (!behind1 && !behind2) {
+                                drawList->AddLine(ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), color, 2.0f);
+                            }
+                        }
+                    }
+                    else if (trigger.shapeType == TriggerShapeType::Sphere) {
+                        float r = trigger.sphereRadius;
+                        DrawCircle(offset, glm::vec3(1,0,0), glm::vec3(0,1,0), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XY
+                        DrawCircle(offset, glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XZ
+                        DrawCircle(offset, glm::vec3(0,1,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // YZ
+                    }
+                    else if (trigger.shapeType == TriggerShapeType::Capsule) {
+                        float r = trigger.capsuleRadius;
+                        float cylinderHeight = trigger.capsuleHeight - 2.0f * r;
+                        if (cylinderHeight < 0.0f) cylinderHeight = 0.0f;
+                        float halfCylHeight = cylinderHeight * 0.5f;
+
+                        glm::vec3 v1_top = offset + glm::vec3(r, halfCylHeight, 0);
+                        glm::vec3 v1_bot = offset + glm::vec3(r, -halfCylHeight, 0);
+                        glm::vec3 v2_top = offset + glm::vec3(-r, halfCylHeight, 0);
+                        glm::vec3 v2_bot = offset + glm::vec3(-r, -halfCylHeight, 0);
+                        glm::vec3 v3_top = offset + glm::vec3(0, halfCylHeight, r);
+                        glm::vec3 v3_bot = offset + glm::vec3(0, -halfCylHeight, r);
+                        glm::vec3 v4_top = offset + glm::vec3(0, halfCylHeight, -r);
+                        glm::vec3 v4_bot = offset + glm::vec3(0, -halfCylHeight, -r);
+
+                        glm::vec3 lines[4][2] = {
+                            {v1_top, v1_bot},
+                            {v2_top, v2_bot},
+                            {v3_top, v3_bot},
+                            {v4_top, v4_bot}
+                        };
+
+                        for (int i = 0; i < 4; ++i) {
+                            bool behind1 = false, behind2 = false;
+                            glm::vec2 p1 = ProjectPoint(lines[i][0], entityTransform, view, proj, screenWidth, screenHeight, behind1);
+                            glm::vec2 p2 = ProjectPoint(lines[i][1], entityTransform, view, proj, screenWidth, screenHeight, behind2);
+                            if (!behind1 && !behind2) {
+                                drawList->AddLine(ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), color, 2.0f);
+                            }
+                        }
+
+                        DrawCircle(offset + glm::vec3(0, halfCylHeight, 0), glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                        DrawCircle(offset + glm::vec3(0, -halfCylHeight, 0), glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+
+                        DrawArc(offset + glm::vec3(0, halfCylHeight, 0), glm::vec3(1,0,0), glm::vec3(0,1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                        DrawArc(offset + glm::vec3(0, halfCylHeight, 0), glm::vec3(0,0,1), glm::vec3(0,1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+
+                        DrawArc(offset + glm::vec3(0, -halfCylHeight, 0), glm::vec3(1,0,0), glm::vec3(0,-1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                        DrawArc(offset + glm::vec3(0, -halfCylHeight, 0), glm::vec3(0,0,1), glm::vec3(0,-1,0), r, 0.0f, 3.14159265f, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                    }
+                }
+            }
+
+            // 5. Directional Light Debug Visuals
+            if (signature.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                const auto& dirLight = coordinator.GetComponent<DirectionalLightComponent>(entity);
+                if (dirLight.enabled) {
+                    ImU32 color = IM_COL32(255, 255, 0, 255); // Yellow
+                    glm::vec3 start = glm::vec3(0.0f);
+                    glm::vec3 end = glm::vec3(0.0f, 0.0f, -2.0f);
+                    bool behindStart = false, behindEnd = false;
+                    glm::vec2 pStart = ProjectPoint(start, entityTransform, view, proj, screenWidth, screenHeight, behindStart);
+                    glm::vec2 pEnd = ProjectPoint(end, entityTransform, view, proj, screenWidth, screenHeight, behindEnd);
+                    if (!behindStart && !behindEnd) {
+                        drawList->AddLine(ImVec2(pStart.x, pStart.y), ImVec2(pEnd.x, pEnd.y), color, 2.0f);
+                        drawList->AddCircle(ImVec2(pStart.x, pStart.y), 4.0f, color, 12, 2.0f);
+                    }
+                }
+            }
+
+            // 6. Point Light Debug Visuals
+            if (signature.test(coordinator.GetComponentType<PointLightComponent>())) {
+                const auto& ptLight = coordinator.GetComponent<PointLightComponent>(entity);
+                if (ptLight.enabled) {
+                    ImU32 color = IM_COL32(255, 128, 0, 255); // Orange
+                    float r = ptLight.radius;
+                    DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,1,0), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XY
+                    DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XZ
+                    DrawCircle(glm::vec3(0.0f), glm::vec3(0,1,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // YZ
+                }
+            }
+
+            // 7. Ambient Light Debug Visuals
+            if (signature.test(coordinator.GetComponentType<AmbientLightComponent>())) {
+                const auto& ambLight = coordinator.GetComponent<AmbientLightComponent>(entity);
+                if (ambLight.enabled) {
+                    ImU32 color = IM_COL32(0, 128, 255, 255); // Blue
+                    bool behind = false;
+                    glm::vec2 pCenter = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behind);
+                    if (!behind) {
+                        drawList->AddCircle(ImVec2(pCenter.x, pCenter.y), 8.0f, color, 12, 2.0f);
+                    }
+                }
+            }
+
+            // 8. Spot Light Debug Visuals
+            if (signature.test(coordinator.GetComponentType<SpotLightComponent>())) {
+                const auto& spotLight = coordinator.GetComponent<SpotLightComponent>(entity);
+                if (spotLight.enabled) {
+                    ImU32 color = IM_COL32(255, 255, 255, 255); // White
+                    float r = spotLight.range;
+                    float angleRad = glm::radians(spotLight.outerConeAngle);
+                    float baseRadius = r * tanf(angleRad);
+                    glm::vec3 tip = glm::vec3(0.0f);
+                    glm::vec3 baseCenter = glm::vec3(0.0f, 0.0f, -r);
+                    DrawCircle(baseCenter, glm::vec3(1,0,0), glm::vec3(0,1,0), baseRadius, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                    
+                    glm::vec3 directions[4] = {
+                        glm::vec3(baseRadius, 0.0f, -r),
+                        glm::vec3(-baseRadius, 0.0f, -r),
+                        glm::vec3(0.0f, baseRadius, -r),
+                        glm::vec3(0.0f, -baseRadius, -r)
+                    };
+                    for (int i = 0; i < 4; ++i) {
+                        bool behindTip = false, behindBase = false;
+                        glm::vec2 pTip = ProjectPoint(tip, entityTransform, view, proj, screenWidth, screenHeight, behindTip);
+                        glm::vec2 pBase = ProjectPoint(directions[i], entityTransform, view, proj, screenWidth, screenHeight, behindBase);
+                        if (!behindTip && !behindBase) {
+                            drawList->AddLine(ImVec2(pTip.x, pTip.y), ImVec2(pBase.x, pBase.y), color, 2.0f);
+                        }
+                    }
                 }
             }
         }

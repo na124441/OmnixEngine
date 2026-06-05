@@ -64,6 +64,7 @@ set(ENGINE_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/ThirdParty/nlohmann
     ${CMAKE_SOURCE_DIR}/ThirdParty/imgui
     ${CMAKE_SOURCE_DIR}/ThirdParty/imgui/backends
+    ${CMAKE_SOURCE_DIR}/ThirdParty/ImGuizmo
     ${Vulkan_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/Physics/Public
 )
@@ -144,6 +145,7 @@ add_library(Scene
     Scene/ComponentFactory.cpp
     Scene/SceneLoader.cpp
     Scene/SceneSerializer.cpp
+    Scene/SceneValidator.cpp
 )
 target_link_libraries(Scene PUBLIC EngineCore ECS)
 target_include_directories(Scene PUBLIC ${ENGINE_INCLUDE_DIRS})
@@ -207,6 +209,11 @@ endif()
 add_library(EngineRuntime
     Runtime/Private/EngineRuntime.cpp
     Runtime/Private/Editor/EditorLayer.cpp
+    Runtime/Private/Editor/EditorTheme.cpp
+    Runtime/Private/Editor/EditorLayout.cpp
+    Runtime/Private/Editor/PlatformFileDialog.cpp
+    Runtime/Private/Editor/AssetImportService.cpp
+    ThirdParty/ImGuizmo/ImGuizmo.cpp
     Runtime/Private/Editor/EditorSelection.cpp
     Runtime/Private/Editor/EditorDirtyState.cpp
     Runtime/Private/Editor/Utils/EditorMath.cpp

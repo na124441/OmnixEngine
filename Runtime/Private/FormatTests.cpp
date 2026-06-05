@@ -14,6 +14,7 @@
 #include "Scene/SceneSerializer.h"
 #include "Scene/SceneLoader.h"
 #include "Scene/SceneManager.h"
+#include "Scene/SceneValidator.h"
 #include "ECS/Coordinator.h"
 #include "ECS/ECSComponents.h"
 #include "ECS/PhysicsSystem.h"
@@ -1069,6 +1070,51 @@ namespace eng::runtime {
 
             physicsWorld.Shutdown();
             LOG_INFO("[FormatTest] Test 10 Passed: PhysX Static Actor registration, queries, and reload lifecycle safety verified successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 11 — Scene Validator & Load Gate
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 11: Scene Validator & Load Gate...");
+        {
+            SceneValidator validator;
+            
+            // 1. Verify invalid scenes are caught and block loading (have errors)
+            SceneValidationReport reportDup = validator.ValidateSceneFile("Assets/Scenes/duplicate_names.omnixscene", nullptr);
+            if (!reportDup.HasErrors()) {
+                LOG_ERROR("[FormatTest] Test 11 FAILED: Expected duplicate_names.omnixscene to have errors!");
+                return false;
+            }
+            LOG_INFO("[FormatTest] duplicate_names.omnixscene validation blocked correctly.");
+
+            SceneValidationReport reportCycle = validator.ValidateSceneFile("Assets/Scenes/hierarchy_cycle.omnixscene", nullptr);
+            if (!reportCycle.HasErrors()) {
+                LOG_ERROR("[FormatTest] Test 11 FAILED: Expected hierarchy_cycle.omnixscene to have errors!");
+                return false;
+            }
+            LOG_INFO("[FormatTest] hierarchy_cycle.omnixscene validation blocked correctly.");
+
+            SceneValidationReport reportTransform = validator.ValidateSceneFile("Assets/Scenes/invalid_transform.omnixscene", nullptr);
+            if (!reportTransform.HasErrors()) {
+                LOG_ERROR("[FormatTest] Test 11 FAILED: Expected invalid_transform.omnixscene to have errors!");
+                return false;
+            }
+            LOG_INFO("[FormatTest] invalid_transform.omnixscene validation blocked correctly.");
+
+            // 2. Verify a valid scene passes validation
+            SceneValidationReport reportValid = validator.ValidateSceneFile("Assets/Scenes/Lighting_Renderer_Test.omnixscene", nullptr);
+            if (reportValid.HasErrors()) {
+                LOG_ERROR("[FormatTest] Test 11 FAILED: Expected Lighting_Renderer_Test.omnixscene to pass validation, but got errors:\n%s", reportValid.ToString().c_str());
+                return false;
+            }
+            SceneValidationReport reportRoom = validator.ValidateSceneFile("Assets/Scenes/test_room.omnixscene", nullptr);
+            if (reportRoom.HasErrors()) {
+                LOG_ERROR("[FormatTest] Test 11 FAILED: Expected test_room.omnixscene to pass validation, but got errors:\n%s", reportRoom.ToString().c_str());
+                return false;
+            }
+            LOG_INFO("[FormatTest] test_room.omnixscene validation passed correctly.");
+
+            LOG_INFO("[FormatTest] Test 11 Passed: SceneValidator blocks invalid scenes and allows valid scenes to proceed.");
         }
 
         LOG_INFO("================================================================================");

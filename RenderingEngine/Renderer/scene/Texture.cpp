@@ -316,4 +316,110 @@ Texture* Texture::getWhiteTexture(const EngineResources& res)
     return whiteTex.get();
 }
 
+Texture* Texture::getFlatNormalTexture(const EngineResources& res)
+{
+    static std::unique_ptr<Texture> normalTex = nullptr;
+    if (normalTex) return normalTex.get();
+
+    LOG_INFO("Creating fallback 1x1 flat normal texture...");
+    normalTex = std::make_unique<Texture>();
+    normalTex->device = res.device;
+    normalTex->allocator = res.allocator;
+
+    uint8_t normalPixel[4] = { 128, 128, 255, 255 }; // Flat normal vector: (0, 0, 1) mapped to 0-255 range
+    VkDeviceSize imageSize = 4;
+
+    // 1. Staging buffer
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAlloc;
+    VkBufferCreateInfo bufInfo{};
+    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufInfo.size  = imageSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo bufAllocInfo{};
+    bufAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    VK_CHECK(vmaCreateBuffer(res.allocator, &bufInfo, &bufAllocInfo, &stagingBuffer, &stagingAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    void* data = nullptr;
+    vmaMapMemory(res.allocator, stagingAlloc, &data);
+    std::memcpy(data, normalPixel, 4);
+    vmaUnmapMemory(res.allocator, stagingAlloc);
+
+    // 2. Image
+    VkImageCreateInfo imgInfo{};
+    imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgInfo.imageType = VK_IMAGE_TYPE_2D;
+    imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imgInfo.extent = {1, 1, 1};
+    imgInfo.mipLevels = 1;
+    imgInfo.arrayLayers = 1;
+    imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imgInfo.tiling  = VK_IMAGE_TILING_OPTIMAL;
+    imgInfo.usage   = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo imgAllocInfo{};
+    imgAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    VK_CHECK(vmaCreateImage(res.allocator, &imgInfo, &imgAllocInfo, &normalTex->image, &normalTex->allocation, nullptr));
+    ::eng::ResourceTracker::incImage();
+
+    // 3. Upload
+    VkCommandBuffer cmd = res.beginSingleTimeCommands();
+    
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.image = normalTex->image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {1, 1, 1};
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, normalTex->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    res.endSingleTimeCommands(cmd);
+
+    vmaDestroyBuffer(res.allocator, stagingBuffer, stagingAlloc);
+    ::eng::ResourceTracker::decBuffer();
+
+    // 4. View & Sampler
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = normalTex->image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    VK_CHECK(vkCreateImageView(res.device, &viewInfo, nullptr, &normalTex->imageView));
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    VK_CHECK(vkCreateSampler(res.device, &samplerInfo, nullptr, &normalTex->samplerHandle));
+
+    LOG_INFO("Fallback 1x1 flat normal texture ready.");
+    return normalTex.get();
+}
+
 } // namespace eng::renderer

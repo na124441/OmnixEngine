@@ -439,6 +439,36 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
         if (oldObj->m_HasCapsuleCollider) {
             clonedObj->SetCapsuleCollider(oldObj->m_CapsuleCollider);
         }
+        if (oldObj->m_HasPlayerStart) {
+            clonedObj->SetPlayerStart(oldObj->m_PlayerStart);
+        }
+        if (oldObj->m_HasCharacterController) {
+            clonedObj->SetCharacterController(oldObj->m_CharacterController);
+        }
+        if (oldObj->m_HasCameraComponent) {
+            clonedObj->SetCameraComponent(oldObj->m_CameraComponent);
+        }
+        if (oldObj->m_HasInputComponent) {
+            clonedObj->SetInputComponent(oldObj->m_InputComponent);
+        }
+        if (oldObj->m_HasTrigger) {
+            clonedObj->SetTrigger(oldObj->m_Trigger);
+        }
+        if (oldObj->m_HasInteractable) {
+            clonedObj->SetInteractable(oldObj->m_Interactable);
+        }
+        if (oldObj->m_HasDirectionalLight) {
+            clonedObj->SetDirectionalLight(oldObj->m_DirectionalLight);
+        }
+        if (oldObj->m_HasPointLight) {
+            clonedObj->SetPointLight(oldObj->m_PointLight);
+        }
+        if (oldObj->m_HasAmbientLight) {
+            clonedObj->SetAmbientLight(oldObj->m_AmbientLight);
+        }
+        if (oldObj->m_HasSpotLight) {
+            clonedObj->SetSpotLight(oldObj->m_SpotLight);
+        }
         clonedObj->SetActive(oldObj->IsActive());
 
         objectMapping[oldObj.get()] = clonedObj;
@@ -497,6 +527,33 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
             }
             if (signature.test(srcCoordinator.GetComponentType<PlayerControllerComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<PlayerControllerComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<PlayerStartComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<PlayerStartComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<CharacterControllerComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<CharacterControllerComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<InputComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<InputComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<TriggerComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<TriggerComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<InteractableComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<InteractableComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<DirectionalLightComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<DirectionalLightComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<PointLightComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<PointLightComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<AmbientLightComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<AmbientLightComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<SpotLightComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<SpotLightComponent>(oldECSEntity));
             }
         }
     }

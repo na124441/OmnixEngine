@@ -173,7 +173,7 @@ std::unique_ptr<Material> GltfModel::createMaterial(const tinygltf::Material& gl
         int imgIdx = model.textures[gltfMat.normalTexture.index].source;
         mat->normalTexture = loadTexture(imgIdx, model, resources);
     } else {
-        mat->normalTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
+        mat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
     }
 
     mat->uboData.metallic  = static_cast<float>(gltfMat.pbrMetallicRoughness.metallicFactor);
@@ -263,7 +263,7 @@ bool GltfModel::load(const std::string& filename,
                 if (!defaultMat) {
                     defaultMat = scene.createMaterial();
                     defaultMat->albedoTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
-                    defaultMat->normalTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
+                    defaultMat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
                     defaultMat->uboData.metallic  = 0.0f;
                     defaultMat->uboData.roughness = 0.5f;
                     defaultMat->dirty = true;

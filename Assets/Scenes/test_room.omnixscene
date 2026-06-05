@@ -1,0 +1,282 @@
+{
+  "name": "test_room",
+  "version": 1,
+  "objects": [
+    {
+      "name": "Floor",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 20.0, "y": 0.2, "z": 20.0 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 8497705309788101149
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "NorthWall",
+      "transform": {
+        "position": { "x": 0.0, "y": 2.0, "z": 10.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 20.0, "y": 4.0, "z": 0.2 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 15570065021787186981
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "SouthWall",
+      "transform": {
+        "position": { "x": 0.0, "y": 2.0, "z": -10.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 20.0, "y": 4.0, "z": 0.2 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 15570065021787186981
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "EastWall",
+      "transform": {
+        "position": { "x": 10.0, "y": 2.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 0.2, "y": 4.0, "z": 20.0 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 15570065021787186981
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "WestWall",
+      "transform": {
+        "position": { "x": -10.0, "y": 2.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 0.2, "y": 4.0, "z": 20.0 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 15570065021787186981
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "PlayerStart",
+      "transform": {
+        "position": { "x": 0.0, "y": 1.5, "z": -5.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "PlayerStart",
+          "active": true
+        }
+      ]
+    },
+    {
+      "name": "TerminalConsole",
+      "transform": {
+        "position": { "x": 0.0, "y": 1.0, "z": 5.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.5, "y": 1.5, "z": 1.5 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 13368210448611474745
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 8497705309788101149
+        },
+        {
+          "type": "StaticBody",
+          "enabled": true,
+          "collisionLayer": 1,
+          "collisionMask": 4294967295
+        },
+        {
+          "type": "BoxCollider",
+          "size": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "isTrigger": false,
+          "debugDraw": true
+        }
+      ]
+    },
+    {
+      "name": "ConsoleTrigger",
+      "transform": {
+        "position": { "x": 0.0, "y": 1.0, "z": 5.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "Trigger",
+          "enabled": true,
+          "shapeType": "Box",
+          "boxSize": [ 3.5, 2.0, 3.5 ],
+          "sphereRadius": 1.0,
+          "capsuleRadius": 1.0,
+          "capsuleHeight": 2.0,
+          "offset": [ 0.0, 0.0, 0.0 ],
+          "eventName": "ConsoleTrigger",
+          "fireEnter": true,
+          "fireStay": false,
+          "fireExit": true
+        }
+      ]
+    },
+    {
+      "name": "ConsoleLamp",
+      "transform": {
+        "position": { "x": 0.0, "y": 3.0, "z": 5.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "PointLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 0.0, "z": 0.0 },
+          "intensity": 15.0,
+          "radius": 6.0,
+          "castShadows": false
+        }
+      ]
+    },
+    {
+      "name": "DirectionalLight",
+      "transform": {
+        "position": { "x": 0.0, "y": 15.0, "z": 0.0 },
+        "rotation": { "x": 0.2588, "y": 0.0, "z": 0.0, "w": 0.9659 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "DirectionalLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 0.95, "z": 0.9 },
+          "intensity": 1.5,
+          "castShadows": false
+        }
+      ]
+    },
+    {
+      "name": "AmbientLight",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "AmbientLight",
+          "enabled": true,
+          "color": { "x": 0.2, "y": 0.2, "z": 0.25 },
+          "intensity": 0.2
+        }
+      ]
+    }
+  ],
+  "hierarchy": []
+}

@@ -1,8 +1,10 @@
 #include "SceneManager.h"
-#include "SceneLoader.h"
-#include "SceneSerializer.h"
 #include "Scene.h"
 #include "SceneObject.h"
+#include "SceneLoader.h"
+#include "SceneSerializer.h"
+#include "SceneValidator.h"
+#include "PrefabRegistry.h"
 #include "../ECS/Coordinator.h"
 #include "../ECS/ECSComponents.h"
 #include <iostream>
@@ -71,6 +73,15 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<BoxColliderComponent>();
     m_Coordinator->RegisterComponent<SphereColliderComponent>();
     m_Coordinator->RegisterComponent<CapsuleColliderComponent>();
+    m_Coordinator->RegisterComponent<PlayerStartComponent>();
+    m_Coordinator->RegisterComponent<CharacterControllerComponent>();
+    m_Coordinator->RegisterComponent<InputComponent>();
+    m_Coordinator->RegisterComponent<TriggerComponent>();
+    m_Coordinator->RegisterComponent<InteractableComponent>();
+    m_Coordinator->RegisterComponent<DirectionalLightComponent>();
+    m_Coordinator->RegisterComponent<PointLightComponent>();
+    m_Coordinator->RegisterComponent<AmbientLightComponent>();
+    m_Coordinator->RegisterComponent<SpotLightComponent>();
 
     std::cout << "[SceneManager] ECS initialized successfully" << std::endl;
 }
@@ -151,6 +162,19 @@ void SceneManager::ProcessLoading() {
     std::cout << "[SceneManager] Loading: " << targetSceneName << std::endl;
 
     try {
+        // Run SceneValidator first!
+        SceneValidator validator;
+        m_LastValidationReport = validator.ValidateSceneFile(targetSceneName, m_AssetRegistry, &PrefabRegistry::Get());
+        
+        if (m_LastValidationReport.HasErrors()) {
+            std::cerr << "[SceneManager] ERROR: Scene validation failed for file '" 
+                      << targetSceneName << "':\n" << m_LastValidationReport.ToString() << std::endl;
+            m_ShowValidationFailedModal = true;
+            throw std::runtime_error("Scene validation failed");
+        }
+
+        std::cout << "[SceneManager] Scene validation passed successfully!" << std::endl;
+
         loadingScene = SceneLoader::LoadFromFile(targetSceneName);
 
         if (!loadingScene) {
@@ -447,6 +471,76 @@ void SceneManager::SyncECSToScene() {
             } else {
                 foundObj->ClearCapsuleCollider();
             }
+
+            // Sync PlayerStartComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PlayerStartComponent>())) {
+                foundObj->SetPlayerStart(coordinator.GetComponent<PlayerStartComponent>(entity));
+            } else {
+                foundObj->ClearPlayerStart();
+            }
+
+            // Sync CharacterControllerComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CharacterControllerComponent>())) {
+                foundObj->SetCharacterController(coordinator.GetComponent<CharacterControllerComponent>(entity));
+            } else {
+                foundObj->ClearCharacterController();
+            }
+
+            // Sync CameraComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CameraComponent>())) {
+                foundObj->SetCameraComponent(coordinator.GetComponent<CameraComponent>(entity));
+            } else {
+                foundObj->ClearCameraComponent();
+            }
+
+            // Sync InputComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InputComponent>())) {
+                foundObj->SetInputComponent(coordinator.GetComponent<InputComponent>(entity));
+            } else {
+                foundObj->ClearInputComponent();
+            }
+
+            // Sync TriggerComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TriggerComponent>())) {
+                foundObj->SetTrigger(coordinator.GetComponent<TriggerComponent>(entity));
+            } else {
+                foundObj->ClearTrigger();
+            }
+
+            // Sync InteractableComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InteractableComponent>())) {
+                foundObj->SetInteractable(coordinator.GetComponent<InteractableComponent>(entity));
+            } else {
+                foundObj->ClearInteractable();
+            }
+
+            // Sync DirectionalLightComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                foundObj->SetDirectionalLight(coordinator.GetComponent<DirectionalLightComponent>(entity));
+            } else {
+                foundObj->ClearDirectionalLight();
+            }
+
+            // Sync PointLightComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PointLightComponent>())) {
+                foundObj->SetPointLight(coordinator.GetComponent<PointLightComponent>(entity));
+            } else {
+                foundObj->ClearPointLight();
+            }
+
+            // Sync AmbientLightComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AmbientLightComponent>())) {
+                foundObj->SetAmbientLight(coordinator.GetComponent<AmbientLightComponent>(entity));
+            } else {
+                foundObj->ClearAmbientLight();
+            }
+
+            // Sync SpotLightComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SpotLightComponent>())) {
+                foundObj->SetSpotLight(coordinator.GetComponent<SpotLightComponent>(entity));
+            } else {
+                foundObj->ClearSpotLight();
+            }
         } else {
             // Create a new SceneObject for this entity
             std::string name = "Entity_" + std::to_string(entity);
@@ -486,6 +580,46 @@ void SceneManager::SyncECSToScene() {
 
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
                 newObj->SetCapsuleCollider(coordinator.GetComponent<CapsuleColliderComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PlayerStartComponent>())) {
+                newObj->SetPlayerStart(coordinator.GetComponent<PlayerStartComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CharacterControllerComponent>())) {
+                newObj->SetCharacterController(coordinator.GetComponent<CharacterControllerComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CameraComponent>())) {
+                newObj->SetCameraComponent(coordinator.GetComponent<CameraComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InputComponent>())) {
+                newObj->SetInputComponent(coordinator.GetComponent<InputComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TriggerComponent>())) {
+                newObj->SetTrigger(coordinator.GetComponent<TriggerComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InteractableComponent>())) {
+                newObj->SetInteractable(coordinator.GetComponent<InteractableComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                newObj->SetDirectionalLight(coordinator.GetComponent<DirectionalLightComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PointLightComponent>())) {
+                newObj->SetPointLight(coordinator.GetComponent<PointLightComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AmbientLightComponent>())) {
+                newObj->SetAmbientLight(coordinator.GetComponent<AmbientLightComponent>(entity));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SpotLightComponent>())) {
+                newObj->SetSpotLight(coordinator.GetComponent<SpotLightComponent>(entity));
             }
 
             activeScene->AddSceneObject(newObj);
