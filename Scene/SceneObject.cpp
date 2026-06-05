@@ -95,6 +95,11 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
         coordinator.AddComponent(m_ECSEntity, m_Interactable);
     }
 
+    // Add ObjectiveComponent if assigned
+    if (m_HasObjective) {
+        coordinator.AddComponent(m_ECSEntity, m_Objective);
+    }
+
     // 16. Add DirectionalLightComponent if assigned
     if (m_HasDirectionalLight) {
         coordinator.AddComponent(m_ECSEntity, m_DirectionalLight);

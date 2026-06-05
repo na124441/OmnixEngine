@@ -54,6 +54,8 @@ public:
     void SubscribeToAction(const std::string& actionName, ActionCallback callback);
     void UnsubscribeFromAction(const std::string& actionName);
 
+    void SetActionStateForTest(const std::string& actionName, bool pressed);
+
     KeyboardInput* GetKeyboardDevice() { return keyboardDevice; }
     MouseInput* GetMouseDevice() { return mouseDevice; }
     GamepadInput* GetGamepadDevice() { return gamepadDevice; }

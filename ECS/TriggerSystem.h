@@ -12,6 +12,8 @@
 #include "ECS/Public/IECSWorld.h"
 #include "EventManagement/PhysicsEventTypes.h"
 #include "EventManagement/EventManager.h"
+#include "Runtime/Public/Gameplay/GameplayEvent.h"
+#include "Runtime/Public/Gameplay/GameplayEventBus.h"
 #include <unordered_set>
 #include <vector>
 #include <string>
@@ -135,22 +137,20 @@ public:
                         context.events->queueEvent(std::make_unique<Omnix::TriggerEnterEvent>(
                             pair.triggerEntity, pair.otherEntity, trigComp.eventName));
                     }
+                    if (context.gameplayEventBus) {
+                        eng::runtime::GameplayEvent gpEvent;
+                        gpEvent.Type = eng::runtime::GameplayEventType::TriggerEnter;
+                        gpEvent.Source = pair.otherEntity;
+                        gpEvent.Target = pair.triggerEntity;
+                        gpEvent.ObjectiveID = trigComp.eventName;
+                        context.gameplayEventBus->QueueEvent(gpEvent);
+                    }
                     std::cout << "[TriggerSystem] Enter overlap: Trigger entity " << pair.triggerEntity 
                               << " overlapped by Player entity " << pair.otherEntity 
                               << " (Event: " << trigComp.eventName << ")" << std::endl;
                 }
 
-                // If trigger has InteractableComponent, fire a prototype GameplayEvent
-                auto sig = coordinator.GetSignature(pair.triggerEntity);
-                if (sig.test(coordinator.GetComponentType<InteractableComponent>())) {
-                    const auto& interact = coordinator.GetComponent<InteractableComponent>(pair.triggerEntity);
-                    if (interact.enabled && !interact.onTriggerEnterEvent.empty()) {
-                        if (context.events) {
-                            context.events->queueEvent(std::make_unique<Omnix::GameplayEvent>(
-                                interact.onTriggerEnterEvent, pair.triggerEntity, pair.otherEntity));
-                        }
-                    }
-                }
+
             } else {
                 // Stay event!
                 if (trigComp.fireStay) {
@@ -173,6 +173,14 @@ public:
                         if (context.events) {
                             context.events->queueEvent(std::make_unique<Omnix::TriggerExitEvent>(
                                 pair.triggerEntity, pair.otherEntity, trigComp.eventName));
+                        }
+                        if (context.gameplayEventBus) {
+                            eng::runtime::GameplayEvent gpEvent;
+                            gpEvent.Type = eng::runtime::GameplayEventType::TriggerExit;
+                            gpEvent.Source = pair.otherEntity;
+                            gpEvent.Target = pair.triggerEntity;
+                            gpEvent.ObjectiveID = trigComp.eventName;
+                            context.gameplayEventBus->QueueEvent(gpEvent);
                         }
                         std::cout << "[TriggerSystem] Exit overlap: Trigger entity " << pair.triggerEntity 
                                   << " exited by Player entity " << pair.otherEntity 

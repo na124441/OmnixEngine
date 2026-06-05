@@ -10,6 +10,7 @@
 #include "SystemManager.h"
 #include "../ECS/ECSComponents.h"
 #include "ECS/Public/IECSWorld.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
 
 // System Includes
 #include "../Components/Behavior/MovementCapability.h"
@@ -20,6 +21,7 @@
 #include "../ECS/PlayerControllerSystem.h"
 #include "../ECS/TriggerSystem.h"
 #include "../ECS/LightCollectionSystem.h"
+#include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
 
 namespace eng::runtime {
 
@@ -62,6 +64,9 @@ public:
         m_coordinator.RegisterComponent<PointLightComponent>();
         m_coordinator.RegisterComponent<AmbientLightComponent>();
         m_coordinator.RegisterComponent<SpotLightComponent>();
+        m_coordinator.RegisterComponent<PlayerStateComponent>();
+        m_coordinator.RegisterComponent<PlayerTagComponent>();
+        m_coordinator.RegisterComponent<ObjectiveComponent>();
 
         // 2. Register Systems & Signatures
 
@@ -127,6 +132,15 @@ public:
             ::Signature sig;
             sig.set(m_coordinator.GetComponentType<TransformComponent>());
             m_coordinator.SetSystemSignature<LightCollectionSystem>(sig);
+        }
+
+        // --- InteractionSystem ---
+        {
+            auto interactionSys = m_coordinator.RegisterSystem<InteractionSystem>();
+            ::Signature sig;
+            sig.set(m_coordinator.GetComponentType<TransformComponent>());
+            sig.set(m_coordinator.GetComponentType<InteractableComponent>());
+            m_coordinator.SetSystemSignature<InteractionSystem>(sig);
         }
 
         CORE_LOG_INFO("World: Golden Scene ECS initialized");

@@ -519,6 +519,20 @@ namespace eng::runtime {
                 ImGui::Separator();
             }
 
+            // Objective Component
+            if (sig.test(coordinator.GetComponentType<ObjectiveComponent>())) {
+                if (ImGui::CollapsingHeader("Objective Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<ObjectiveComponent>(selectedEntity);
+                    ComponentWidgets::DrawObjective(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Objective Component")) {
+                        coordinator.RemoveComponent<ObjectiveComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
             // Directional Light Component
             if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
                 if (ImGui::CollapsingHeader("Directional Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -741,6 +755,12 @@ namespace eng::runtime {
                 if (!sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
                     if (ImGui::MenuItem("SpotLight Component")) {
                         coordinator.AddComponent<SpotLightComponent>(selectedEntity, SpotLightComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<ObjectiveComponent>())) {
+                    if (ImGui::MenuItem("Objective Component")) {
+                        coordinator.AddComponent<ObjectiveComponent>(selectedEntity, ObjectiveComponent());
                         dirtyState.MarkSceneDirty();
                     }
                 }

@@ -11,6 +11,18 @@
 #include "Components/Logical/Health.h"
 #include "Components/Spatial/Transform.h"
 #include "Components/Physical/RigidBody.h"
+#include "Runtime/Public/Gameplay/VerticalSliceGameMode.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
+#include "Runtime/Public/Gameplay/Components/InteractableComponent.h"
+#include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
+#include "Runtime/Public/Gameplay/Components/ObjectiveComponent.h"
+#include "Runtime/Public/Gameplay/Objectives/ObjectiveSystem.h"
+#include "Runtime/Public/Gameplay/UI/GameplayHUD.h"
+#include "Input/InputManager.h"
+#include "Runtime/Public/RuntimeContext.h"
+#include "Runtime/Public/Gameplay/GameState.h"
+#include "Runtime/Public/Gameplay/GameplayEvent.h"
+#include "Runtime/Public/Gameplay/GameplayEventBus.h"
 #include <atomic>
 #include <vector>
 #include <memory>
@@ -281,7 +293,701 @@ namespace eng::diagnostics {
         LOG_INFO("[Stress] Serialization Staging Integration Test passed successfully.");
 
         // -----------------------------------------------------------------------------
-        // 4. MEMORY LEAK CHECK
+        // 4. GAMEPLAY AND PLAYER STATE INTEGRATION TEST
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[Stress] Starting Gameplay and Player State Integration Test...");
+        {
+            auto world = std::make_unique<eng::runtime::World>();
+            world->Initialize();
+
+            // Create player entity
+            ::Entity player = world->CreateEntity();
+
+            eng::runtime::PlayerTagComponent ptc;
+            ptc.active = true;
+            world->AddComponent<eng::runtime::PlayerTagComponent>(player, ptc);
+
+            eng::runtime::PlayerStateComponent psc;
+            psc.Health = 100.0f;
+            psc.IsAlive = true;
+            world->AddComponent<eng::runtime::PlayerStateComponent>(player, psc);
+
+            // Initialize Event Bus
+            auto eventBus = std::make_unique<eng::runtime::GameplayEventBus>(nullptr);
+
+            // Set up a runtime context
+            eng::runtime::RuntimeContext context;
+            context.ecs = world.get();
+            context.scenes = nullptr;
+            context.gameplayEventBus = eventBus.get();
+
+            // Create game mode
+            auto gameMode = std::make_unique<eng::runtime::VerticalSliceGameMode>();
+            gameMode->OnLevelStart(&context);
+
+            // Verify player discovery
+            ::Entity discovered = gameMode->FindPlayerEntity();
+            if (discovered != player) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Player discovery failed! Expected %u, got %u", player, discovered);
+                world->Shutdown();
+                return false;
+            }
+
+            // Verify initial state
+            const auto& gs = gameMode->GetGameState();
+            if (gs.SessionState != eng::runtime::GameSessionState::Playing) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected Playing state, got %d", (int)gs.SessionState);
+                world->Shutdown();
+                return false;
+            }
+            if (gs.ActiveObjectiveID != "OBJ_001") {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected objective OBJ_001, got %s", gs.ActiveObjectiveID.c_str());
+                world->Shutdown();
+                return false;
+            }
+
+            // Collect events to verify pub/sub
+            std::vector<eng::runtime::GameplayEventType> receivedEvents;
+            eventBus->Subscribe(eng::runtime::GameplayEventType::ObjectiveCompleted, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev.Type);
+            });
+            eventBus->Subscribe(eng::runtime::GameplayEventType::CheckpointReached, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev.Type);
+            });
+            eventBus->Subscribe(eng::runtime::GameplayEventType::LevelCompleted, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev.Type);
+            });
+            eventBus->Subscribe(eng::runtime::GameplayEventType::PlayerDied, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev.Type);
+            });
+
+            // 1. Progress OBJ_001 using TriggerEnter
+            {
+                eng::runtime::GameplayEvent ev;
+                ev.Type = eng::runtime::GameplayEventType::TriggerEnter;
+                ev.Source = player;
+                ev.ObjectiveID = "OBJ_001_Trigger";
+                eventBus->QueueEvent(ev);
+            }
+            
+            // Queueing shouldn't process until flush
+            if (gs.ActiveObjectiveID != "OBJ_001") {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Active objective changed before flush!");
+                world->Shutdown();
+                return false;
+            }
+
+            eventBus->FlushEvents();
+
+            if (gs.ActiveObjectiveID != "OBJ_002") {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected OBJ_002, got %s", gs.ActiveObjectiveID.c_str());
+                world->Shutdown();
+                return false;
+            }
+            if (receivedEvents.size() != 1 || receivedEvents[0] != eng::runtime::GameplayEventType::ObjectiveCompleted) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected 1 ObjectiveCompleted event, got %zu", receivedEvents.size());
+                world->Shutdown();
+                return false;
+            }
+
+            // 2. Progress OBJ_002 using Interaction
+            {
+                eng::runtime::GameplayEvent ev;
+                ev.Type = eng::runtime::GameplayEventType::Interaction;
+                ev.Source = player;
+                ev.Target = 42; // dummy target console
+                eventBus->QueueEvent(ev);
+            }
+            eventBus->FlushEvents();
+
+            if (gs.ActiveObjectiveID != "OBJ_003") {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected OBJ_003, got %s", gs.ActiveObjectiveID.c_str());
+                world->Shutdown();
+                return false;
+            }
+
+            // 3. Progress OBJ_003 using CheckpointReached
+            {
+                // First: Checkpoint trigger enter -> CheckpointReached event
+                eng::runtime::GameplayEvent ev;
+                ev.Type = eng::runtime::GameplayEventType::TriggerEnter;
+                ev.Source = player;
+                ev.ObjectiveID = "Checkpoint_CP_001";
+                eventBus->QueueEvent(ev);
+            }
+            eventBus->FlushEvents(); // This should trigger CheckpointReached event
+            
+            // Queue has now a CheckpointReached event. Let's flush it.
+            eventBus->FlushEvents();
+
+            if (!gs.ActiveObjectiveID.empty()) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected empty active objective, got %s", gs.ActiveObjectiveID.c_str());
+                world->Shutdown();
+                return false;
+            }
+            if (gs.SessionState != eng::runtime::GameSessionState::Completed) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected Completed state, got %d", (int)gs.SessionState);
+                world->Shutdown();
+                return false;
+            }
+            if (gs.CurrentCheckpointID != "CP_001") {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected checkpoint CP_001, got %s", gs.CurrentCheckpointID.c_str());
+                world->Shutdown();
+                return false;
+            }
+
+            // 4. Test PlayerDied event flow
+            // Restart game mode and verify full reset
+            gameMode->RestartLevel();
+            gameMode->OnLevelStart(&context);
+            receivedEvents.clear();
+
+            // Damage player to 0 HP
+            {
+                auto& coord = world->getCoordinator();
+                auto& pState = coord.GetComponent<eng::runtime::PlayerStateComponent>(player);
+                pState.Health = 0.0f;
+            }
+
+            // GameMode::Tick should detect health <= 0, and queue PlayerDied event
+            gameMode->Tick(0.1f);
+            
+            if (gameMode->GetState() != eng::runtime::GameSessionState::Playing) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: State changed to Failed before event bus flush!");
+                world->Shutdown();
+                return false;
+            }
+
+            eventBus->FlushEvents();
+
+            if (gameMode->GetState() != eng::runtime::GameSessionState::Failed) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected state to transition to Failed after flush, got %d", (int)gameMode->GetState());
+                world->Shutdown();
+                return false;
+            }
+            if (receivedEvents.size() != 1 || receivedEvents[0] != eng::runtime::GameplayEventType::PlayerDied) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Expected PlayerDied event, got %zu", receivedEvents.size());
+                world->Shutdown();
+                return false;
+            }
+
+            // 30x Play/Stop cycles
+            LOG_INFO("[Stress] Running 30x Play/Stop stability cycles...");
+            for (int i = 0; i < 30; ++i) {
+                auto tempGameMode = std::make_unique<eng::runtime::VerticalSliceGameMode>();
+                tempGameMode->OnLevelStart(&context);
+                tempGameMode->Tick(0.016f);
+                tempGameMode->OnLevelEnd();
+            }
+
+            // 30x Restart cycles
+            LOG_INFO("[Stress] Running 30x Restart stability cycles...");
+            for (int i = 0; i < 30; ++i) {
+                gameMode->RestartLevel();
+                gameMode->OnLevelStart(&context);
+                gameMode->Tick(0.016f);
+            }
+
+            // Safe fallback with deleted player
+            LOG_INFO("[Stress] Testing safe fallback with deleted player entity...");
+            world->DestroyEntity(player);
+
+            // Ticking the game mode after the player is deleted should NOT crash
+            float timeBeforeTick = gameMode->GetGameState().ElapsedGameplayTime;
+            gameMode->Tick(0.1f);
+
+            // Check that ElapsedGameplayTime has not advanced (since tick should return early due to missing player)
+            if (gameMode->GetGameState().ElapsedGameplayTime != timeBeforeTick) {
+                LOG_ERROR("[Stress] Gameplay Test FAILED: Elapsed gameplay time advanced when player entity was deleted!");
+                world->Shutdown();
+                return false;
+            }
+
+            gameMode->OnLevelEnd();
+            world->Shutdown();
+        }
+        LOG_INFO("[Stress] Gameplay and Player State Integration Test passed successfully.");
+
+        // -----------------------------------------------------------------------------
+        // 5. INTERACTION SYSTEM INTEGRATION TEST
+        // -----------------------------------------------------------------------------
+        {
+            using namespace eng::runtime;
+            LOG_INFO("[Stress] Starting Interaction System Integration Test...");
+
+            auto world = std::make_unique<World>();
+            world->Initialize();
+
+            RuntimeContext context;
+            context.mode = RuntimeMode::Editor;
+            context.editorSimulationState = EditorSimulationState::Edit;
+            context.ecs = world.get();
+
+            GameplayEventBus eventBus;
+            context.gameplayEventBus = &eventBus;
+
+            InputManager inputManager;
+            inputManager.Initialize();
+            context.input = &inputManager;
+
+            auto& coord = world->getCoordinator();
+            auto interactionSys = world->GetSystem<InteractionSystem>();
+            if (!interactionSys) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: InteractionSystem not found!");
+                world->Shutdown();
+                return false;
+            }
+
+            // Create player
+            Entity player = world->CreateEntity();
+            TransformComponent playerTrans;
+            playerTrans.position = { 0.0f, 0.0f, 0.0f };
+            world->AddComponent<TransformComponent>(player, playerTrans);
+
+            CharacterControllerComponent playerCCC;
+            playerCCC.yaw = -90.0f; // looking forward in negative Z
+            playerCCC.pitch = 0.0f;
+            world->AddComponent<CharacterControllerComponent>(player, playerCCC);
+
+            PlayerStateComponent playerState;
+            world->AddComponent<PlayerStateComponent>(player, playerState);
+
+            // Create interactable
+            Entity terminal = world->CreateEntity();
+            TransformComponent termTrans;
+            termTrans.position = { 0.0f, 0.0f, -1.5f }; // in front of player
+            world->AddComponent<TransformComponent>(terminal, termTrans);
+
+            InteractableComponent termInteract;
+            termInteract.PromptText = "Use Terminal";
+            termInteract.Enabled = true;
+            termInteract.InteractionRadius = 2.0f;
+            termInteract.Type = InteractionType::Use;
+            world->AddComponent<InteractableComponent>(terminal, termInteract);
+
+            // 1. Edit Mode restriction test
+            interactionSys->Update(0.016f, context);
+            auto& pState1 = coord.GetComponent<PlayerStateComponent>(player);
+            if (pState1.CurrentInteractionTarget != INVALID_ENTITY || context.interactionPrompt.Visible) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: Target updated or prompt visible in Edit Mode!");
+                world->Shutdown();
+                return false;
+            }
+
+            // Switch to Play Mode
+            context.editorSimulationState = EditorSimulationState::Play;
+
+            // 2. Target selection test
+            interactionSys->Update(0.016f, context);
+            auto& pState2 = coord.GetComponent<PlayerStateComponent>(player);
+            if (pState2.CurrentInteractionTarget != terminal) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: Target was not resolved to terminal! Got %u, expected %u",
+                          pState2.CurrentInteractionTarget, terminal);
+                world->Shutdown();
+                return false;
+            }
+            if (!context.interactionPrompt.Visible || context.interactionPrompt.Text != "Use Terminal" || context.interactionPrompt.Target != terminal) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: InteractionPromptData not populated correctly!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 3. Disabled interactable test
+            coord.GetComponent<InteractableComponent>(terminal).Enabled = false;
+            interactionSys->Update(0.016f, context);
+            auto& pState3 = coord.GetComponent<PlayerStateComponent>(player);
+            if (pState3.CurrentInteractionTarget != INVALID_ENTITY || context.interactionPrompt.Visible) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: Target resolved or prompt shown for disabled interactable!");
+                world->Shutdown();
+                return false;
+            }
+            coord.GetComponent<InteractableComponent>(terminal).Enabled = true; // reset
+
+            // 4. Destroyed interactable test
+            interactionSys->Update(0.016f, context); // set target again
+            world->DestroyEntity(terminal);
+            interactionSys->Update(0.016f, context); // process destroyed
+            auto& pState4 = coord.GetComponent<PlayerStateComponent>(player);
+            if (pState4.CurrentInteractionTarget != INVALID_ENTITY || context.interactionPrompt.Visible) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: Target not cleared after interactable was destroyed!");
+                world->Shutdown();
+                return false;
+            }
+
+            // Recreate terminal for event validation
+            terminal = world->CreateEntity();
+            termTrans.position = { 0.0f, 0.0f, -1.5f };
+            world->AddComponent<TransformComponent>(terminal, termTrans);
+            world->AddComponent<InteractableComponent>(terminal, termInteract);
+
+            // 5. Event validation test
+            std::vector<GameplayEventType> receivedEvents;
+            eventBus.Subscribe(GameplayEventType::Interaction, [&](const GameplayEvent& event) {
+                if (event.Source == player && event.Target == terminal) {
+                    receivedEvents.push_back(event.Type);
+                }
+            });
+
+            // Simulate press E
+            inputManager.SetActionStateForTest("Interact", true);
+            interactionSys->Update(0.016f, context);
+            eventBus.FlushEvents();
+
+            if (receivedEvents.size() != 1) {
+                LOG_ERROR("[Stress] Interaction Test FAILED: Expected exactly 1 interaction event, got %zu!", receivedEvents.size());
+                world->Shutdown();
+                return false;
+            }
+
+            world->Shutdown();
+            LOG_INFO("[Stress] Interaction System Integration Test passed successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // 6. OBJECTIVE SYSTEM INTEGRATION TEST
+        // -----------------------------------------------------------------------------
+        {
+            using namespace eng::runtime;
+            LOG_INFO("[Stress] Starting Objective System Integration Test...");
+
+            auto world = std::make_unique<World>();
+            world->Initialize();
+
+            RuntimeContext context;
+            context.mode = RuntimeMode::Editor;
+            context.editorSimulationState = EditorSimulationState::Edit;
+            context.ecs = world.get();
+
+            GameplayEventBus eventBus;
+            context.gameplayEventBus = &eventBus;
+
+            auto gameMode = std::make_unique<VerticalSliceGameMode>();
+            context.gameMode = gameMode.get();
+
+            auto objectiveSys = std::make_unique<ObjectiveSystem>();
+            objectiveSys->Initialize(&context);
+
+            auto& coord = world->getCoordinator();
+
+            // Create entities with ObjectiveComponents
+            Entity terminal = world->CreateEntity();
+            ObjectiveComponent termObj;
+            termObj.ObjectiveID = "OBJ_USE_TERMINAL";
+            termObj.Title = "Use Terminal";
+            termObj.Description = "Interact with the terminal to unlock the door";
+            termObj.CompletionMode = ObjectiveCompletionMode::Interaction;
+            termObj.StartsActive = true;
+            termObj.Repeatable = false;
+            termObj.Completed = false;
+            world->AddComponent<ObjectiveComponent>(terminal, termObj);
+
+            Entity escapeZone = world->CreateEntity();
+            ObjectiveComponent escapeObj;
+            escapeObj.ObjectiveID = "OBJ_REACH_EXIT";
+            escapeObj.Title = "Reach Exit";
+            escapeObj.Description = "Find the way out";
+            escapeObj.CompletionMode = ObjectiveCompletionMode::TriggerEnter;
+            escapeObj.StartsActive = false; // Starts inactive
+            escapeObj.Repeatable = false;
+            escapeObj.Completed = false;
+            world->AddComponent<ObjectiveComponent>(escapeZone, escapeObj);
+
+            // 1. Edit Mode Restriction Test
+            objectiveSys->OnLevelStart();
+            if (!objectiveSys->GetObjectives().empty()) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Objectives registered in Edit Mode!");
+                world->Shutdown();
+                return false;
+            }
+
+            // Switch to Play Mode
+            context.mode = RuntimeMode::Game;
+
+            // 2. Play Mode start activation test
+            objectiveSys->OnLevelStart();
+            const auto& registry = objectiveSys->GetObjectives();
+            if (registry.size() != 2) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Expected 2 registered objectives, got %zu!", registry.size());
+                world->Shutdown();
+                return false;
+            }
+
+            auto itTerm = registry.find("OBJ_USE_TERMINAL");
+            auto itEscape = registry.find("OBJ_REACH_EXIT");
+            if (itTerm == registry.end() || itEscape == registry.end()) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Objectives not found in registry!");
+                world->Shutdown();
+                return false;
+            }
+
+            if (itTerm->second.State != ObjectiveState::Active || itEscape->second.State != ObjectiveState::Inactive) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Initial objective states incorrect!");
+                world->Shutdown();
+                return false;
+            }
+
+            auto& gs = gameMode->GetGameState();
+            if (gs.ActiveObjectiveID != "OBJ_USE_TERMINAL") {
+                LOG_ERROR("[Stress] Objective Test FAILED: GameState active objective was not updated on start!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 3. Interaction completion test
+            {
+                GameplayEvent ev;
+                ev.Type = GameplayEventType::Interaction;
+                ev.Source = 1; // dummy player
+                ev.Target = terminal;
+                eventBus.QueueEvent(ev);
+            }
+            eventBus.FlushEvents();
+
+            if (itTerm->second.State != ObjectiveState::Completed || !gs.ActiveObjectiveID.empty()) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Interaction objective did not complete correctly!");
+                world->Shutdown();
+                return false;
+            }
+
+            bool foundCompleted = false;
+            for (const auto& completed : gs.CompletedObjectives) {
+                if (completed == "OBJ_USE_TERMINAL") foundCompleted = true;
+            }
+            if (!foundCompleted) {
+                LOG_ERROR("[Stress] Objective Test FAILED: OBJ_USE_TERMINAL not added to GameState completed list!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 4. Inactive objective completion prevention
+            {
+                GameplayEvent ev;
+                ev.Type = GameplayEventType::TriggerEnter;
+                ev.Source = 1;
+                ev.Target = escapeZone;
+                ev.ObjectiveID = "OBJ_REACH_EXIT"; // trigger event name matches
+                eventBus.QueueEvent(ev);
+            }
+            eventBus.FlushEvents();
+
+            if (itEscape->second.State != ObjectiveState::Inactive) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Inactive objective was completed by event!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 5. Trigger-based completion (after activation)
+            objectiveSys->StartObjective("OBJ_REACH_EXIT");
+            if (itEscape->second.State != ObjectiveState::Active || gs.ActiveObjectiveID != "OBJ_REACH_EXIT") {
+                LOG_ERROR("[Stress] Objective Test FAILED: Failed to activate escape objective!");
+                world->Shutdown();
+                return false;
+            }
+
+            {
+                GameplayEvent ev;
+                ev.Type = GameplayEventType::TriggerEnter;
+                ev.Source = 1;
+                ev.Target = escapeZone;
+                ev.ObjectiveID = "OBJ_REACH_EXIT";
+                eventBus.QueueEvent(ev);
+            }
+            eventBus.FlushEvents();
+
+            if (itEscape->second.State != ObjectiveState::Completed) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Escape objective was not completed by trigger overlap!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 6. Duplicate Completion Prevention
+            size_t initialCompletedSize = gs.CompletedObjectives.size();
+            objectiveSys->CompleteObjective("OBJ_USE_TERMINAL"); // try complete again
+            if (gs.CompletedObjectives.size() != initialCompletedSize) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Non-repeatable objective completed twice!");
+                world->Shutdown();
+                return false;
+            }
+
+            // 7. Restart Reset Test
+            gameMode->RestartLevel(); // resets GameState
+            objectiveSys->OnLevelRestart();
+
+            if (!gs.CompletedObjectives.empty()) {
+                LOG_ERROR("[Stress] Objective Test FAILED: CompletedObjectives list not cleared on restart!");
+                world->Shutdown();
+                return false;
+            }
+
+            const auto& postRegistry = objectiveSys->GetObjectives();
+            auto itTermPost = postRegistry.find("OBJ_USE_TERMINAL");
+            auto itEscapePost = postRegistry.find("OBJ_REACH_EXIT");
+            if (itTermPost == postRegistry.end() || itEscapePost == postRegistry.end() ||
+                itTermPost->second.State != ObjectiveState::Active || itEscapePost->second.State != ObjectiveState::Inactive) {
+                LOG_ERROR("[Stress] Objective Test FAILED: Objective states not reset on restart!");
+                world->Shutdown();
+                return false;
+            }
+
+
+            world->Shutdown();
+            LOG_INFO("[Stress] Objective System Integration Test passed successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // 7. HUD SYSTEM INTEGRATION TEST
+        // -----------------------------------------------------------------------------
+        {
+            using namespace eng::runtime;
+            LOG_INFO("[Stress] Starting HUD System Integration Test...");
+
+            // Ensure ImGui context is active for HUD drawing tests
+            ImGuiContext* previousContext = ImGui::GetCurrentContext();
+            ImGuiContext* testContext = nullptr;
+            if (previousContext == nullptr) {
+                testContext = ImGui::CreateContext();
+                ImGui::SetCurrentContext(testContext);
+            }
+
+            // Build font atlas to prevent assertions when drawing in mocked contexts
+            if (ImGui::GetCurrentContext() != nullptr) {
+                unsigned char* pixels;
+                int width, height;
+                ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+            }
+
+            auto world = std::make_unique<World>();
+            world->Initialize();
+
+            RuntimeContext context;
+            context.mode = RuntimeMode::Editor;
+            context.editorSimulationState = EditorSimulationState::Edit;
+            context.ecs = world.get();
+
+            GameplayEventBus eventBus;
+            context.gameplayEventBus = &eventBus;
+
+            auto gameMode = std::make_unique<VerticalSliceGameMode>();
+            context.gameMode = gameMode.get();
+
+            // Setup ImGui for rendering
+            ImGuiIO& io = ImGui::GetIO();
+            io.DisplaySize = ImVec2(1280, 720);
+            ImGui::NewFrame();
+
+            // 1. Creation & Edit Mode Isolation
+            gameMode->OnLevelStart(&context);
+            GameplayHUD* hud = gameMode->GetGameplayHUD();
+            if (!hud) {
+                LOG_ERROR("[Stress] HUD Test FAILED: GameplayHUD was not created by GameMode!");
+                world->Shutdown();
+                if (testContext) ImGui::DestroyContext(testContext);
+                return false;
+            }
+
+            // Let's verify visibility defaults
+            if (!hud->IsVisible()) {
+                LOG_ERROR("[Stress] HUD Test FAILED: HUD should default to visible!");
+                world->Shutdown();
+                if (testContext) ImGui::DestroyContext(testContext);
+                return false;
+            }
+
+            // 2. Play mode state connection & rendering
+            context.mode = RuntimeMode::Game;
+            context.editorSimulationState = EditorSimulationState::Play;
+
+            auto& gs = gameMode->GetGameStateMutable();
+            gs.ActiveObjectiveID = "OBJ_USE_TERMINAL";
+
+            // Set up player state
+            auto& coord = world->getCoordinator();
+            Entity player = world->CreateEntity();
+            
+            PlayerTagComponent tag;
+            coord.AddComponent<PlayerTagComponent>(player, tag);
+            
+            PlayerStateComponent psc;
+            psc.Health = 80.0f;
+            psc.MaxHealth = 100.0f;
+            psc.IsAlive = true;
+            coord.AddComponent<PlayerStateComponent>(player, psc);
+
+            // Trigger HUD update to bind context and update timers
+            gameMode->Tick(0.016f);
+
+            // Verify F9 toggle logic using AddKeyEvent
+            ImGui::EndFrame();
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_F9, true);
+            ImGui::NewFrame();
+            hud->Update(0.016f);
+            if (hud->IsVisible()) {
+                LOG_ERROR("[Stress] HUD Test FAILED: F9 key did not toggle visibility off!");
+                world->Shutdown();
+                if (testContext) ImGui::DestroyContext(testContext);
+                return false;
+            }
+
+            // Release F9 key
+            ImGui::EndFrame();
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_F9, false);
+            ImGui::NewFrame();
+            hud->Update(0.016f);
+
+            // Toggle back on
+            ImGui::EndFrame();
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_F9, true);
+            ImGui::NewFrame();
+            hud->Update(0.016f);
+            if (!hud->IsVisible()) {
+                LOG_ERROR("[Stress] HUD Test FAILED: F9 key did not toggle visibility on!");
+                world->Shutdown();
+                if (testContext) ImGui::DestroyContext(testContext);
+                return false;
+            }
+
+            // Release the key and clear frame state
+            ImGui::EndFrame();
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_F9, false);
+            ImGui::NewFrame();
+
+            // 3. Notification triggers & timers
+            hud->ShowNotification("Test Notification", 1.0f);
+            hud->Update(0.4f);
+            hud->Update(0.7f);
+            
+            // 4. Checkpoint & Objective complete event notifications
+            GameplayEvent cpEvent;
+            cpEvent.Type = GameplayEventType::CheckpointReached;
+            cpEvent.CheckpointID = "CP_001";
+            eventBus.Publish(cpEvent); // directly publish to trigger HUD subscriber
+            
+            // 5. Test health DEAD state
+            auto& mutablePsc = coord.GetComponent<PlayerStateComponent>(player);
+            mutablePsc.Health = 0.0f;
+            mutablePsc.IsAlive = false;
+
+            // Run rendering code to make sure it doesn't crash on null elements or dead state
+            hud->Render(0.0f, 0.0f, 1280.0f, 720.0f);
+
+            ImGui::EndFrame();
+
+            // Cleanup level
+            gameMode->OnLevelEnd();
+
+            world->Shutdown();
+            
+            // Restore previous context if we created a temporary one
+            if (testContext) {
+                ImGui::DestroyContext(testContext);
+                ImGui::SetCurrentContext(previousContext);
+            }
+
+            LOG_INFO("[Stress] HUD System Integration Test passed successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // 8. MEMORY LEAK CHECK
         // -----------------------------------------------------------------------------
         LOG_INFO("[Stress] Running memory leak checks...");
         eng::memory::AllocationTracker::DumpLeakReport();

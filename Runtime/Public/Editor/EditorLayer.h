@@ -22,6 +22,8 @@ class Scene;
 
 namespace eng::runtime {
 
+    class GameMode;
+
     class EditorLayer {
     public:
         EditorLayer();
@@ -60,6 +62,7 @@ namespace eng::runtime {
         std::chrono::high_resolution_clock::time_point m_PlaySessionStart;
         Scene* m_EditSceneBackup = nullptr;
         std::unique_ptr<eng::runtime::IECSWorld> m_EditWorldBackup = nullptr;
+        std::unique_ptr<GameMode> m_GameMode;
         bool m_ShowColliders = true;
         bool m_ShowDiagnostics = false;
         bool m_ResetLayout = false;

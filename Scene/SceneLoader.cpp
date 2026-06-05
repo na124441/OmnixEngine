@@ -297,10 +297,22 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     sceneObject->SetTrigger(tc);
                 } else if (compType == "Interactable") {
                     InteractableComponent ic;
-                    if (comp.HasMember("enabled") && comp["enabled"].IsBool()) ic.enabled = comp["enabled"].GetBool();
-                    if (comp.HasMember("interactionName") && comp["interactionName"].IsString()) ic.interactionName = comp["interactionName"].GetString();
-                    if (comp.HasMember("onTriggerEnterEvent") && comp["onTriggerEnterEvent"].IsString()) ic.onTriggerEnterEvent = comp["onTriggerEnterEvent"].GetString();
+                    if (comp.HasMember("enabled") && comp["enabled"].IsBool()) ic.Enabled = comp["enabled"].GetBool();
+                    if (comp.HasMember("promptText") && comp["promptText"].IsString()) ic.PromptText = comp["promptText"].GetString();
+                    else if (comp.HasMember("interactionName") && comp["interactionName"].IsString()) ic.PromptText = comp["interactionName"].GetString();
+                    if (comp.HasMember("interactionRadius") && comp["interactionRadius"].IsNumber()) ic.InteractionRadius = comp["interactionRadius"].GetFloat();
+                    if (comp.HasMember("interactionType") && comp["interactionType"].IsInt()) ic.Type = static_cast<InteractionType>(comp["interactionType"].GetInt());
                     sceneObject->SetInteractable(ic);
+                } else if (compType == "Objective") {
+                    ObjectiveComponent oc;
+                    if (comp.HasMember("objectiveID") && comp["objectiveID"].IsString()) oc.ObjectiveID = comp["objectiveID"].GetString();
+                    if (comp.HasMember("title") && comp["title"].IsString()) oc.Title = comp["title"].GetString();
+                    if (comp.HasMember("description") && comp["description"].IsString()) oc.Description = comp["description"].GetString();
+                    if (comp.HasMember("completionMode") && comp["completionMode"].IsInt()) oc.CompletionMode = static_cast<ObjectiveCompletionMode>(comp["completionMode"].GetInt());
+                    if (comp.HasMember("startsActive") && comp["startsActive"].IsBool()) oc.StartsActive = comp["startsActive"].GetBool();
+                    if (comp.HasMember("repeatable") && comp["repeatable"].IsBool()) oc.Repeatable = comp["repeatable"].GetBool();
+                    if (comp.HasMember("completed") && comp["completed"].IsBool()) oc.Completed = comp["completed"].GetBool();
+                    sceneObject->SetObjective(oc);
                 } else if (compType == "DirectionalLight") {
                     DirectionalLightComponent dlc;
                     if (comp.HasMember("enabled") && comp["enabled"].IsBool()) dlc.enabled = comp["enabled"].GetBool();

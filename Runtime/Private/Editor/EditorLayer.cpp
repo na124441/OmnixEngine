@@ -1,5 +1,11 @@
 #include "Runtime/Public/Editor/EditorLayer.h"
 #include "Runtime/Public/Editor/EditorTheme.h"
+#include "Runtime/Public/Gameplay/VerticalSliceGameMode.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
+#include "Runtime/Public/Gameplay/UI/GameplayHUD.h"
+#include "Runtime/Public/Gameplay/GameplayEvent.h"
+#include "Runtime/Public/Gameplay/GameplayEventBus.h"
+#include "Runtime/Public/Gameplay/Objectives/ObjectiveSystem.h"
 #include "Runtime/Public/Editor/EditorLayout.h"
 #include "Runtime/Public/Editor/EditorEntityCommands.h"
 #include "Runtime/Public/Editor/PlatformFileDialog.h"
@@ -263,7 +269,7 @@ namespace eng::runtime {
                 }
 
                 sceneRenderer->CreateOffscreenResources(targetWidth, targetHeight);
-                CORE_LOG_INFO("[EditorLayer] Recreated viewport offscreen targets: {}x{}", targetWidth, targetHeight);
+                CORE_LOG_INFO("[EditorLayer] Recreated viewport offscreen targets: %ux%u", targetWidth, targetHeight);
             }
         }
 
@@ -312,6 +318,32 @@ namespace eng::runtime {
                 sceneRenderer->camera.fovY = m_EditorCamera.fovY;
                 sceneRenderer->camera.nearPlane = m_EditorCamera.nearPlane;
                 sceneRenderer->camera.farPlane = m_EditorCamera.farPlane;
+            }
+        }
+
+        // Gameplay hotkeys (F1 - F4) in Play/Pause simulation state
+        if ((m_SimulationState == EditorSimulationState::Play || m_SimulationState == EditorSimulationState::Pause) && m_GameMode && m_Context) {
+            if (ImGui::IsKeyPressed(ImGuiKey_F1)) {
+                m_GameMode->CompleteLevel();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
+                m_GameMode->FailLevel();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F3)) {
+                m_GameMode->RestartLevel();
+                ExitPlayMode();
+                EnterPlayMode();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F4)) {
+                if (m_GameMode->GetState() == GameSessionState::Playing) {
+                    m_GameMode->PauseLevel();
+                    m_SimulationState = EditorSimulationState::Pause;
+                    m_Context->editorSimulationState = EditorSimulationState::Pause;
+                } else if (m_GameMode->GetState() == GameSessionState::Paused) {
+                    m_GameMode->ResumeLevel();
+                    m_SimulationState = EditorSimulationState::Play;
+                    m_Context->editorSimulationState = EditorSimulationState::Play;
+                }
             }
         }
 
@@ -376,43 +408,7 @@ namespace eng::runtime {
                         }
                     }
 
-                    // Check trigger volume overlaps for ConsoleTrigger
-                    if (auto triggerSys = world->GetSystem<eng::runtime::TriggerSystem>()) {
-                        auto& coordinator = m_Context->ecs->getCoordinator();
-                        const auto& overlaps = triggerSys->GetCurrentOverlaps();
-                        for (const auto& pair : overlaps) {
-                            if (coordinator.IsEntityAlive(pair.triggerEntity)) {
-                                auto sig = coordinator.GetSignature(pair.triggerEntity);
-                                if (sig.test(coordinator.GetComponentType<TriggerComponent>())) {
-                                    const auto& trigger = coordinator.GetComponent<TriggerComponent>(pair.triggerEntity);
-                                    if (trigger.eventName == "ConsoleTrigger") {
-                                        m_ShowInteractPrompt = true;
 
-                                        // Listen for interaction key 'E'
-                                        if (ImGui::IsKeyPressed(ImGuiKey_E)) {
-                                            CORE_LOG_INFO("[Gameplay] Terminal Activated...");
-                                            // Find PointLightComponent with name containing "Lamp" / "lamp"
-                                            for (Entity ent : coordinator.GetActiveEntities()) {
-                                                if (ent != 0 && coordinator.IsEntityAlive(ent)) {
-                                                    auto entSig = coordinator.GetSignature(ent);
-                                                    if (entSig.test(coordinator.GetComponentType<NameComponent>()) &&
-                                                        entSig.test(coordinator.GetComponentType<PointLightComponent>())) {
-                                                        auto& nameComp = coordinator.GetComponent<NameComponent>(ent);
-                                                        if (nameComp.name.find("Lamp") != std::string::npos || 
-                                                            nameComp.name.find("lamp") != std::string::npos) {
-                                                            auto& pointLight = coordinator.GetComponent<PointLightComponent>(ent);
-                                                            pointLight.color = { 0.0f, 1.0f, 0.0f }; // Change to Green
-                                                            CORE_LOG_INFO("[Gameplay] Changed color of light '{}' to Green", nameComp.name);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -448,33 +444,16 @@ namespace eng::runtime {
             }
         }
 
-        // Draw centered HUD interaction prompt in Play Mode
-        if (m_SimulationState == EditorSimulationState::Play && m_ShowInteractPrompt) {
-            float vpX = m_ViewportPanel.GetViewportScreenX();
-            float vpY = m_ViewportPanel.GetViewportScreenY();
-            float vpW = m_ViewportPanel.GetViewportWidth();
-            float vpH = m_ViewportPanel.GetViewportHeight();
-
-            ImGui::SetNextWindowPos(ImVec2(vpX + vpW * 0.5f - 150.0f, vpY + vpH * 0.7f));
-            ImGui::SetNextWindowSize(ImVec2(300.0f, 60.0f));
-            ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
-                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
-                                     ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
-                                     ImGuiWindowFlags_NoInputs;
-            ImGui::Begin("##InteractPrompt", nullptr, flags);
-            
-            ImDrawList* drawList = ImGui::GetWindowDrawList();
-            ImVec2 pMin = ImGui::GetWindowPos();
-            ImVec2 pMax = ImVec2(pMin.x + 300.0f, pMin.y + 60.0f);
-            drawList->AddRectFilled(pMin, pMax, IM_COL32(20, 20, 25, 200), 8.0f);
-            drawList->AddRect(pMin, pMax, IM_COL32(100, 100, 120, 150), 8.0f, 0, 1.5f);
-            
-            const char* promptText = "Press E to interact";
-            ImVec2 textSize = ImGui::CalcTextSize(promptText);
-            ImGui::SetCursorPos(ImVec2((300.0f - textSize.x) * 0.5f, (60.0f - textSize.y) * 0.5f));
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 1.0f, 1.0f), promptText);
-            
-            ImGui::End();
+        // Draw gameplay HUD in Play Mode
+        if (m_SimulationState == EditorSimulationState::Play && m_GameMode) {
+            auto* gameplayHUD = m_GameMode->GetGameplayHUD();
+            if (gameplayHUD) {
+                float vpX = m_ViewportPanel.GetViewportScreenX();
+                float vpY = m_ViewportPanel.GetViewportScreenY();
+                float vpW = m_ViewportPanel.GetViewportWidth();
+                float vpH = m_ViewportPanel.GetViewportHeight();
+                gameplayHUD->Render(vpX, vpY, vpW, vpH);
+            }
         }
 
         ImGui::Render();
@@ -1121,6 +1100,213 @@ namespace eng::runtime {
             }
             
             ImGui::Text("Play/Stop Cycle Count: %d", m_PlayStopCycleCount);
+                     // GameMode / Gameplay Diagnostics
+            ImGui::Separator();
+            ImGui::TextDisabled("GAME STATE");
+            if (m_GameMode) {
+                const auto& gs = m_GameMode->GetGameState();
+                ImGui::Text("Scene: %s", gs.ActiveSceneName.c_str());
+                
+                const char* sessionStr = "Unknown";
+                switch (gs.SessionState) {
+                    case GameSessionState::None: sessionStr = "None"; break;
+                    case GameSessionState::Starting: sessionStr = "Starting"; break;
+                    case GameSessionState::Playing: sessionStr = "Playing"; break;
+                    case GameSessionState::Paused: sessionStr = "Paused"; break;
+                    case GameSessionState::Completed: sessionStr = "Completed"; break;
+                    case GameSessionState::Failed: sessionStr = "Failed"; break;
+                    case GameSessionState::Restarting: sessionStr = "Restarting"; break;
+                }
+                ImGui::Text("Session: %s", sessionStr);
+                ImGui::Text("Objective: %s", gs.ActiveObjectiveID.empty() ? "None" : gs.ActiveObjectiveID.c_str());
+                ImGui::Text("Checkpoint: %s", gs.CurrentCheckpointID.empty() ? "None" : gs.CurrentCheckpointID.c_str());
+                ImGui::Text("Elapsed Time: %.1fs", gs.ElapsedGameplayTime);
+                
+                // Completed Objectives list
+                if (!gs.CompletedObjectives.empty()) {
+                    ImGui::Text("Completed Objectives:");
+                    for (const auto& obj : gs.CompletedObjectives) {
+                        ImGui::BulletText("%s", obj.c_str());
+                    }
+                }
+            } else {
+                ImGui::Text("Scene: None");
+                ImGui::Text("Session: None");
+                ImGui::Text("Objective: None");
+                ImGui::Text("Checkpoint: None");
+                ImGui::Text("Elapsed Time: 0.0s");
+            }
+            
+            ImGui::Separator();
+            ImGui::TextDisabled("PLAYER STATE");
+            Entity playerEnt = m_GameMode ? m_GameMode->FindPlayerEntity() : INVALID_ENTITY;
+            if (playerEnt != INVALID_ENTITY && m_Context && m_Context->ecs) {
+                auto& coord = m_Context->ecs->getCoordinator();
+                auto pscType = coord.GetComponentType<PlayerStateComponent>();
+                if (coord.GetSignature(playerEnt).test(pscType)) {
+                    const auto& psc = coord.GetComponent<PlayerStateComponent>(playerEnt);
+                    ImGui::Text("Player Entity: %u", psc.ActivePlayer);
+                    ImGui::Text("Health: %.0f", psc.Health);
+                    ImGui::Text("Alive: %s", psc.IsAlive ? "true" : "false");
+                    ImGui::Text("Movement: %s", psc.MovementEnabled ? "Enabled" : "Disabled");
+                    if (psc.CurrentInteractionTarget == INVALID_ENTITY) {
+                        ImGui::Text("Interaction Target: None");
+                    } else {
+                        ImGui::Text("Interaction Target: %u", psc.CurrentInteractionTarget);
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "WARNING: Player entity has no PlayerStateComponent!");
+                }
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "WARNING: No Player entity with PlayerTagComponent found!");
+                ImGui::Text("Player Entity: None");
+                ImGui::Text("Health: 0");
+                ImGui::Text("Alive: false");
+                ImGui::Text("Movement: Disabled");
+                ImGui::Text("Interaction Target: None");
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("INTERACTION");
+            if (m_Context && m_Context->interactionPrompt.Visible) {
+                ImGui::Text("Current Target: Entity %u", m_Context->interactionPrompt.Target);
+                ImGui::Text("Prompt: %s", m_Context->interactionPrompt.Text.c_str());
+                ImGui::Text("Type: %s", InteractionTypeToString(m_Context->interactionPrompt.Type).c_str());
+
+                float distanceVal = 0.0f;
+                bool isTargetEnabled = false;
+                if (m_Context->ecs && m_Context->ecs->getCoordinator().IsEntityAlive(m_Context->interactionPrompt.Target)) {
+                    auto& coord = m_Context->ecs->getCoordinator();
+                    auto targetSig = coord.GetSignature(m_Context->interactionPrompt.Target);
+                    bool hasPlayerTrans = false;
+                    if (playerEnt != INVALID_ENTITY && coord.IsEntityAlive(playerEnt)) {
+                        auto playerSig = coord.GetSignature(playerEnt);
+                        hasPlayerTrans = playerSig.test(coord.GetComponentType<TransformComponent>());
+                    }
+                    if (targetSig.test(coord.GetComponentType<TransformComponent>()) && hasPlayerTrans) {
+                        auto& targetTrans = coord.GetComponent<TransformComponent>(m_Context->interactionPrompt.Target);
+                        auto& playerTrans = coord.GetComponent<TransformComponent>(playerEnt);
+                        float dx = targetTrans.position.x - playerTrans.position.x;
+                        float dy = targetTrans.position.y - playerTrans.position.y;
+                        float dz = targetTrans.position.z - playerTrans.position.z;
+                        distanceVal = std::sqrt(dx*dx + dy*dy + dz*dz);
+                    }
+                    if (targetSig.test(coord.GetComponentType<InteractableComponent>())) {
+                        isTargetEnabled = coord.GetComponent<InteractableComponent>(m_Context->interactionPrompt.Target).Enabled;
+                    }
+                }
+                ImGui::Text("Distance: %.1fm", distanceVal);
+                ImGui::Text("Enabled: %s", isTargetEnabled ? "true" : "false");
+                ImGui::Text("Input Key: E");
+                ImGui::Text("Can Interact: %s", isTargetEnabled ? "true" : "false");
+            } else {
+                ImGui::Text("Current Target: None");
+                ImGui::Text("Prompt: None");
+                ImGui::Text("Type: None");
+                ImGui::Text("Distance: 0.0m");
+                ImGui::Text("Enabled: false");
+                ImGui::Text("Input Key: E");
+                ImGui::Text("Can Interact: false");
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("GAMEPLAY EVENTS");
+            if (m_Context->gameplayEventBus) {
+                const auto& bus = *m_Context->gameplayEventBus;
+                ImGui::Text("Frame Events: %u", bus.GetFrameEventCount());
+                ImGui::Text("Total Events: %llu", bus.GetTotalEventCount());
+                
+                const auto& lastEvent = bus.GetLastEvent();
+                if (lastEvent.Type != GameplayEventType::None) {
+                    ImGui::Text("Last Event: %s", ToString(lastEvent.Type).c_str());
+                    ImGui::Text("Last Source: Entity %u", lastEvent.Source);
+                    ImGui::Text("Last Target: Entity %u", lastEvent.Target);
+                    ImGui::Text("Last Objective: %s", lastEvent.ObjectiveID.c_str());
+                    ImGui::Text("Sequence ID: %llu", lastEvent.SequenceID);
+                } else {
+                    ImGui::Text("Last Event: None");
+                    ImGui::Text("Last Source: None");
+                    ImGui::Text("Last Target: None");
+                    ImGui::Text("Last Objective: None");
+                    ImGui::Text("Sequence ID: 0");
+                }
+            } else {
+                ImGui::Text("Event Bus: Not Available");
+            }
+
+            if (m_GameMode && m_GameMode->GetObjectiveSystem()) {
+                ObjectiveSystem* objSys = m_GameMode->GetObjectiveSystem();
+                const auto& objectives = objSys->GetObjectives();
+
+                ImGui::Separator();
+                ImGui::TextDisabled("OBJECTIVES");
+                
+                ImGui::Text("Active Objective: %s", m_GameMode->GetGameState().ActiveObjectiveID.c_str());
+                ImGui::Text("Completed Count: %zu / %zu", objSys->GetCompletedCount(), objectives.size());
+                
+                ImGui::Spacing();
+                ImGui::Text("Registered Objectives:");
+                for (const auto& pair : objectives) {
+                    const auto& obj = pair.second;
+                    std::string stateStr = ObjectiveStateToString(obj.State);
+                    ImGui::Text("[%s]\t%s", stateStr.c_str(), obj.ID.c_str());
+                }
+
+                ImGui::Spacing();
+                ImGui::Text("Last Objective Event:");
+                ImGui::Text("%s -> %s", objSys->GetLastEventName().c_str(), objSys->GetLastEventObjectiveID().c_str());
+            }
+
+            if (m_GameMode) {
+                ImGui::Separator();
+                ImGui::TextDisabled("DEBUG CONTROLS");
+                if (playerEnt != INVALID_ENTITY && m_Context && m_Context->ecs) {
+                    auto& coord = m_Context->ecs->getCoordinator();
+                    auto pscType = coord.GetComponentType<PlayerStateComponent>();
+                    if (coord.GetSignature(playerEnt).test(pscType)) {
+                        auto& psc = coord.GetComponent<PlayerStateComponent>(playerEnt);
+                        if (ImGui::Button("Damage Player (-25 HP)")) {
+                            if (psc.Health > 0.0f) {
+                                psc.Health -= 25.0f;
+                                if (psc.Health <= 0.0f) {
+                                    psc.Health = 0.0f;
+                                    psc.IsAlive = false;
+                                    m_GameMode->FailLevel();
+                                }
+                            }
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Heal Player (+25 HP)")) {
+                            psc.Health = std::min(psc.Health + 25.0f, 100.0f);
+                            if (psc.Health > 0.0f) {
+                                psc.IsAlive = true;
+                                if (m_GameMode->GetState() == GameSessionState::Failed) {
+                                    m_GameMode->ResumeLevel();
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                auto& gs = m_GameMode->GetGameStateMutable();
+                if (ImGui::Button("Complete Current Objective")) {
+                    if (!gs.ActiveObjectiveID.empty()) {
+                        gs.CompletedObjectives.push_back(gs.ActiveObjectiveID);
+                        if (gs.ActiveObjectiveID == "OBJ_001") {
+                            gs.ActiveObjectiveID = "OBJ_002";
+                        } else if (gs.ActiveObjectiveID == "OBJ_002") {
+                            gs.ActiveObjectiveID = "OBJ_003";
+                        } else {
+                            gs.ActiveObjectiveID = "";
+                            m_GameMode->CompleteLevel();
+                        }
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Set Checkpoint CP_001")) {
+                    gs.CurrentCheckpointID = "CP_001";
+                }
+            }
             
             // Physics diagnostics
             ImGui::Separator();
@@ -1178,7 +1364,7 @@ namespace eng::runtime {
                         float maxDist = 50.0f;
                         
                         if (pw->Raycast(origin, direction, maxDist, rHit)) {
-                            CORE_LOG_INFO("[Physics Test] Raycast HIT entity ID: {}, Distance: {:.2f}, Position: ({:.2f}, {:.2f}, {:.2f}), Normal: ({:.2f}, {:.2f}, {:.2f})",
+                            CORE_LOG_INFO("[Physics Test] Raycast HIT entity ID: %u, Distance: %.2f, Position: (%.2f, %.2f, %.2f), Normal: (%.2f, %.2f, %.2f)",
                                 rHit.entity, rHit.distance, rHit.position.x, rHit.position.y, rHit.position.z,
                                 rHit.normal.x, rHit.normal.y, rHit.normal.z);
                             g_DiagPhysState.lastRaycastHit = true;
@@ -1201,9 +1387,9 @@ namespace eng::runtime {
                         Vector3 center = {0.0f, 0.0f, 0.0f};
                         float radius = 5.0f;
                         if (pw->OverlapSphere(center, radius, overlapped)) {
-                            CORE_LOG_INFO("[Physics Test] Overlap Sphere HIT {} entities:", overlapped.size());
+                            CORE_LOG_INFO("[Physics Test] Overlap Sphere HIT %zu entities:", overlapped.size());
                             for (size_t i = 0; i < overlapped.size(); ++i) {
-                                CORE_LOG_INFO("  - Entity ID: {}", overlapped[i]);
+                                CORE_LOG_INFO("  - Entity ID: %u", overlapped[i]);
                             }
                             g_DiagPhysState.lastOverlapCount = (int)overlapped.size();
                         } else {
@@ -1649,6 +1835,45 @@ namespace eng::runtime {
         m_SimulationState = EditorSimulationState::Play;
         m_Context->editorSimulationState = EditorSimulationState::Play;
 
+        // Spawn GameMode when Play begins
+        m_GameMode = std::make_unique<VerticalSliceGameMode>();
+        m_Context->gameMode = m_GameMode.get();
+        m_GameMode->OnLevelStart(m_Context);
+
+        // Register console interaction event listener
+        if (m_Context->gameplayEventBus) {
+            m_Context->gameplayEventBus->Subscribe(GameplayEventType::Interaction, [this](const GameplayEvent& event) {
+                auto* world = dynamic_cast<World*>(m_Context->ecs);
+                if (world) {
+                    auto& coordinator = world->getCoordinator();
+                    if (coordinator.IsEntityAlive(event.Target)) {
+                        auto sig = coordinator.GetSignature(event.Target);
+                        if (sig.test(coordinator.GetComponentType<TriggerComponent>())) {
+                            const auto& trigger = coordinator.GetComponent<TriggerComponent>(event.Target);
+                            if (trigger.eventName == "ConsoleTrigger") {
+                                // Find PointLightComponent with name containing "Lamp" / "lamp"
+                                for (Entity ent : coordinator.GetActiveEntities()) {
+                                    if (ent != 0 && coordinator.IsEntityAlive(ent)) {
+                                        auto entSig = coordinator.GetSignature(ent);
+                                        if (entSig.test(coordinator.GetComponentType<NameComponent>()) &&
+                                            entSig.test(coordinator.GetComponentType<PointLightComponent>())) {
+                                            auto& nameComp = coordinator.GetComponent<NameComponent>(ent);
+                                            if (nameComp.name.find("Lamp") != std::string::npos || 
+                                                nameComp.name.find("lamp") != std::string::npos) {
+                                                auto& pointLight = coordinator.GetComponent<PointLightComponent>(ent);
+                                                pointLight.color = { 0.0f, 1.0f, 0.0f }; // Change to Green
+                                                CORE_LOG_INFO("[Gameplay] EventBus Triggered: Changed color of light '%s' to Green", nameComp.name.c_str());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         if (m_Context->physicsWorld) {
             m_Context->physicsWorld->ClearScene();
             m_Context->physicsWorld->RegisterStaticColliders(m_Context->ecs->getCoordinator());
@@ -1727,6 +1952,13 @@ namespace eng::runtime {
         InputComponent inputComp;
         simCoordinator.AddComponent<InputComponent>(playerEntity, inputComp);
 
+        PlayerTagComponent ptc;
+        simCoordinator.AddComponent<PlayerTagComponent>(playerEntity, ptc);
+
+        PlayerStateComponent psc;
+        psc.ActivePlayer = playerEntity;
+        simCoordinator.AddComponent<PlayerStateComponent>(playerEntity, psc);
+
         auto* world = dynamic_cast<World*>(m_Context->ecs);
         if (world) {
             if (auto playerControllerSys = world->GetSystem<PlayerControllerSystem>()) {
@@ -1747,6 +1979,17 @@ namespace eng::runtime {
 
     bool EditorLayer::ExitPlayMode() {
         if (m_SimulationState != EditorSimulationState::Play) return false;
+
+        // Destroy GameMode when Stop pressed
+        if (m_GameMode) {
+            m_GameMode->OnLevelEnd();
+            m_GameMode.reset();
+        }
+        m_Context->gameMode = nullptr;
+
+        if (m_Context && m_Context->gameplayEventBus) {
+            m_Context->gameplayEventBus->ClearQueue();
+        }
 
         auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
         if (!sceneMgr) return false;

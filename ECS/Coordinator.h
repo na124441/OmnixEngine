@@ -8,6 +8,7 @@
 #include "ECSComponents.h"
 #include "Public/ComponentTypes.h"
 #include "Logger.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
 
 class Coordinator {
 public:
@@ -109,6 +110,9 @@ public:
         if constexpr (std::is_same_v<T, PointLightComponent>) return POINT_LIGHT_COMPONENT;
         if constexpr (std::is_same_v<T, AmbientLightComponent>) return AMBIENT_LIGHT_COMPONENT;
         if constexpr (std::is_same_v<T, SpotLightComponent>) return SPOT_LIGHT_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::PlayerStateComponent>) return PLAYER_STATE_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::PlayerTagComponent>) return PLAYER_TAG_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::ObjectiveComponent>) return OBJECTIVE_COMPONENT;
         
         // This should not happen if all components are registered and known to the serializer
         CORE_LOG_FATAL("ECS: Attempted to get type ID for unknown component type!");

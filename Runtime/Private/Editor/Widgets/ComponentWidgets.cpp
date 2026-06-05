@@ -640,23 +640,81 @@ namespace eng::runtime {
     bool ComponentWidgets::DrawInteractable(InteractableComponent& component, EditorDirtyState& dirtyState) {
         bool changed = false;
 
-        if (ImGui::Checkbox("Enabled##Interactable", &component.enabled)) {
+        if (ImGui::Checkbox("Enabled##Interactable", &component.Enabled)) {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
 
-        char interactionNameBuf[128];
-        snprintf(interactionNameBuf, sizeof(interactionNameBuf), "%s", component.interactionName.c_str());
-        if (ImGui::InputText("Interaction Name", interactionNameBuf, sizeof(interactionNameBuf))) {
-            component.interactionName = interactionNameBuf;
+        char promptTextBuf[128];
+        snprintf(promptTextBuf, sizeof(promptTextBuf), "%s", component.PromptText.c_str());
+        if (ImGui::InputText("Prompt Text", promptTextBuf, sizeof(promptTextBuf))) {
+            component.PromptText = promptTextBuf;
             dirtyState.MarkSceneDirty();
             changed = true;
         }
 
-        char onTriggerEnterEventBuf[128];
-        snprintf(onTriggerEnterEventBuf, sizeof(onTriggerEnterEventBuf), "%s", component.onTriggerEnterEvent.c_str());
-        if (ImGui::InputText("On Trigger Enter Event", onTriggerEnterEventBuf, sizeof(onTriggerEnterEventBuf))) {
-            component.onTriggerEnterEvent = onTriggerEnterEventBuf;
+        if (ImGui::DragFloat("Interaction Radius", &component.InteractionRadius, 0.1f, 0.0f, 100.0f, "%.1f")) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        const char* typeNames[] = { "None", "Use", "Pickup", "Talk", "Inspect", "Open", "Activate" };
+        int currentType = static_cast<int>(component.Type);
+        if (ImGui::Combo("Interaction Type", &currentType, typeNames, IM_ARRAYSIZE(typeNames))) {
+            component.Type = static_cast<InteractionType>(currentType);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawObjective(ObjectiveComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        char idBuf[128];
+        snprintf(idBuf, sizeof(idBuf), "%s", component.ObjectiveID.c_str());
+        if (ImGui::InputText("Objective ID", idBuf, sizeof(idBuf))) {
+            component.ObjectiveID = idBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        char titleBuf[128];
+        snprintf(titleBuf, sizeof(titleBuf), "%s", component.Title.c_str());
+        if (ImGui::InputText("Title", titleBuf, sizeof(titleBuf))) {
+            component.Title = titleBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        char descBuf[256];
+        snprintf(descBuf, sizeof(descBuf), "%s", component.Description.c_str());
+        if (ImGui::InputText("Description", descBuf, sizeof(descBuf))) {
+            component.Description = descBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        const char* modeNames[] = { "None", "Interaction", "TriggerEnter" };
+        int currentMode = static_cast<int>(component.CompletionMode);
+        if (ImGui::Combo("Completion Mode", &currentMode, modeNames, IM_ARRAYSIZE(modeNames))) {
+            component.CompletionMode = static_cast<ObjectiveCompletionMode>(currentMode);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Starts Active", &component.StartsActive)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Repeatable", &component.Repeatable)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Completed", &component.Completed)) {
             dirtyState.MarkSceneDirty();
             changed = true;
         }

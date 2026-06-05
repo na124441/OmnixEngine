@@ -29,6 +29,7 @@ namespace eng::runtime {
         static bool DrawInput(InputComponent& component, EditorDirtyState& dirtyState);
         static bool DrawTrigger(TriggerComponent& component, EditorDirtyState& dirtyState);
         static bool DrawInteractable(InteractableComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawObjective(ObjectiveComponent& component, EditorDirtyState& dirtyState);
         static bool DrawDirectionalLight(DirectionalLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawPointLight(PointLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawAmbientLight(AmbientLightComponent& component, EditorDirtyState& dirtyState);

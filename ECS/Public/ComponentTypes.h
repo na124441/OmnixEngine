@@ -31,8 +31,11 @@ constexpr ComponentTypeID CHARACTER_CONTROLLER_COMPONENT = 21;
 constexpr ComponentTypeID INPUT_COMPONENT = 22;
 constexpr ComponentTypeID TRIGGER_COMPONENT = 23;
 constexpr ComponentTypeID INTERACTABLE_COMPONENT = 24;
+constexpr ComponentTypeID OBJECTIVE_COMPONENT = 25;
 constexpr ComponentTypeID DIRECTIONAL_LIGHT_COMPONENT = 26;
 constexpr ComponentTypeID POINT_LIGHT_COMPONENT = 27;
 constexpr ComponentTypeID AMBIENT_LIGHT_COMPONENT = 28;
 constexpr ComponentTypeID SPOT_LIGHT_COMPONENT = 29;
+constexpr ComponentTypeID PLAYER_STATE_COMPONENT = 30;
+constexpr ComponentTypeID PLAYER_TAG_COMPONENT = 31;
 

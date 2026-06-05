@@ -218,9 +218,22 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
         if (object->m_HasInteractable) {
             Value comp(kObjectType);
             comp.AddMember("type", "Interactable", allocator);
-            comp.AddMember("enabled", object->m_Interactable.enabled, allocator);
-            comp.AddMember("interactionName", Value(object->m_Interactable.interactionName.c_str(), allocator).Move(), allocator);
-            comp.AddMember("onTriggerEnterEvent", Value(object->m_Interactable.onTriggerEnterEvent.c_str(), allocator).Move(), allocator);
+            comp.AddMember("enabled", object->m_Interactable.Enabled, allocator);
+            comp.AddMember("promptText", Value(object->m_Interactable.PromptText.c_str(), allocator).Move(), allocator);
+            comp.AddMember("interactionRadius", object->m_Interactable.InteractionRadius, allocator);
+            comp.AddMember("interactionType", static_cast<int>(object->m_Interactable.Type), allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasObjective) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Objective", allocator);
+            comp.AddMember("objectiveID", Value(object->m_Objective.ObjectiveID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("title", Value(object->m_Objective.Title.c_str(), allocator).Move(), allocator);
+            comp.AddMember("description", Value(object->m_Objective.Description.c_str(), allocator).Move(), allocator);
+            comp.AddMember("completionMode", static_cast<int>(object->m_Objective.CompletionMode), allocator);
+            comp.AddMember("startsActive", object->m_Objective.StartsActive, allocator);
+            comp.AddMember("repeatable", object->m_Objective.Repeatable, allocator);
+            comp.AddMember("completed", object->m_Objective.Completed, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasDirectionalLight) {

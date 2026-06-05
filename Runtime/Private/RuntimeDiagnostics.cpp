@@ -23,7 +23,7 @@ namespace eng::runtime {
 
         if (g_Diagnostics.frameCount % 300 == 0) {
             double avg = g_Diagnostics.totalFrameTimeMs / static_cast<double>(g_Diagnostics.frameCount);
-            LOG_DEBUG("[Diagnostics] Frame Stats over last 300 frames - Avg: {:.2f} ms ({:.1f} FPS), Min: {:.2f} ms, Max: {:.2f} ms",
+            LOG_DEBUG("[Diagnostics] Frame Stats over last 300 frames - Avg: %.2f ms (%.1f FPS), Min: %.2f ms, Max: %.2f ms",
                       avg, 1000.0 / avg, g_Diagnostics.minFrameTimeMs, g_Diagnostics.maxFrameTimeMs);
             
             // Reset interval counters

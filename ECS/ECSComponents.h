@@ -419,12 +419,14 @@ struct TriggerComponent
     std::string eventName = "Trigger";
 };
 
-struct InteractableComponent
-{
-    bool enabled = true;
-    std::string interactionName = "Interactable";
-    std::string onTriggerEnterEvent = "Interactable.Enter";
-};
+#include "Runtime/Public/Gameplay/Components/InteractableComponent.h"
+using InteractableComponent = eng::runtime::InteractableComponent;
+using InteractionType = eng::runtime::InteractionType;
+
+#include "Runtime/Public/Gameplay/Components/ObjectiveComponent.h"
+using ObjectiveComponent = eng::runtime::ObjectiveComponent;
+using ObjectiveCompletionMode = eng::runtime::ObjectiveCompletionMode;
+
 
 struct DirectionalLightComponent
 {

@@ -1,5 +1,7 @@
 #include "Runtime/Public/EngineRuntime.h"
 #include "Runtime/Public/Editor/EditorLayer.h"
+#include "Runtime/Public/Gameplay/GameMode.h"
+#include "Runtime/Public/Gameplay/GameplayEventBus.h"
 #include "Runtime/Public/RuntimeContext.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/RuntimeState.h"
@@ -35,6 +37,7 @@
 #include "RenderingEngine/Runtime/Resources/AssetCache.h"
 #include "Serializer/ECS/SchemaRegistry.h"
 #include "Physics/Public/PhysicsWorld.h"
+#include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
 
 #include "Core/Logger.h"
 #include "Core/Timer.h"
@@ -194,6 +197,10 @@ namespace eng::runtime {
         TrackAllocation("Events", sizeof(Omnix::EventManager));
         RegisterSystemStartup("Events");
 
+        // Gameplay Event Bus Initialization
+        m_GameplayEventBus = std::make_unique<GameplayEventBus>(m_EventManager.get());
+        TrackAllocation("GameplayEvents", sizeof(GameplayEventBus));
+
         // 3. Spawning Input Thread
         m_InputThreadRunning.store(true, std::memory_order_relaxed);
         m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
@@ -283,6 +290,7 @@ namespace eng::runtime {
         m_Context.ecs = m_ECS.get();
         m_Context.input = m_Input.get();
         m_Context.events = m_EventManager.get();
+        m_Context.gameplayEventBus = m_GameplayEventBus.get();
         m_Context.timing = &m_Timing;
         m_Context.currentStage = &m_CurrentStage;
 
@@ -305,7 +313,7 @@ namespace eng::runtime {
         auto endTime = std::chrono::high_resolution_clock::now();
         m_StartupTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
         
-        LOG_INFO("[Runtime] EngineRuntime Initialized Successfully in {:.2f} ms", m_StartupTimeMs);
+        LOG_INFO("[Runtime] EngineRuntime Initialized Successfully in %.2f ms", m_StartupTimeMs);
         m_State.store(RuntimeState::Running, std::memory_order_relaxed);
         return true;
     }
@@ -371,7 +379,7 @@ namespace eng::runtime {
             {
                 OMNIX_PROFILE_SCOPE("Input");
                 if (m_Input) {
-                    // Poll or process input
+                    m_Input->Update();
                 }
             }
 
@@ -467,6 +475,29 @@ namespace eng::runtime {
                     }
                 }
             }
+            // Interaction Stage (Play Mode only)
+            {
+                bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
+                                      (m_Context.mode == RuntimeMode::Editor && m_Context.editorSimulationState == EditorSimulationState::Play);
+                if (shouldSimulate && m_ECS) {
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        if (auto interactionSys = world->GetSystem<InteractionSystem>()) {
+                            interactionSys->Update(static_cast<float>(dt), m_Context);
+                        }
+                    }
+                }
+            }
+
+            // Flush gameplay events
+            if (m_Context.gameplayEventBus) {
+                m_Context.gameplayEventBus->FlushEvents();
+            }
+
+            // GameMode Tick
+            if (m_Context.gameMode) {
+                m_Context.gameMode->Tick(static_cast<float>(dt));
+            }
 
             // Animation Stage
             m_CurrentStage = FrameStage::Animation;
@@ -529,7 +560,7 @@ namespace eng::runtime {
             // Print timing logs occasionally to see the breakdown
             static uint64_t s_LoggedFrames = 0;
             if (++s_LoggedFrames % 300 == 0) {
-                LOG_DEBUG("[Loop] Frame breakdown - Frame: {:.2f}ms, Update: {:.2f}ms, Render: {:.2f}ms",
+                LOG_DEBUG("[Loop] Frame breakdown - Frame: %.2fms, Update: %.2fms, Render: %.2fms",
                           m_Timing.frameTime * 1000.0, m_Timing.updateTime * 1000.0, m_Timing.renderTime * 1000.0);
 
                 if (m_ECS) {

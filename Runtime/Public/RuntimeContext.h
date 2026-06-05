@@ -23,11 +23,15 @@ namespace eng::runtime {
     class IScheduler;
     class IECSWorld;
     class AssetRegistry;
+    class GameMode;
+    class GameplayEventBus;
     enum class FrameStage : uint8_t;
     struct FrameTiming;
 }
 
 class InputManager;
+
+#include "Runtime/Public/Gameplay/Interaction/InteractionPromptData.h"
 
 namespace eng::runtime {
 
@@ -43,6 +47,9 @@ namespace eng::runtime {
         eng::runtime::IECSWorld* ecs = nullptr;
         InputManager* input = nullptr;
         Omnix::EventManager* events = nullptr;
+        GameMode* gameMode = nullptr;
+        GameplayEventBus* gameplayEventBus = nullptr;
+        InteractionPromptData interactionPrompt;
         std::function<std::unique_ptr<eng::runtime::IECSWorld>(std::unique_ptr<eng::runtime::IECSWorld>)> swapECS;
 
         const eng::runtime::FrameTiming* timing = nullptr;

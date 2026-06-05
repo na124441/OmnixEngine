@@ -23,6 +23,7 @@ void InputManager::Initialize() {
     devices.push_back(std::move(gamepad));
 
     std::cout << "[InputManager] Initialized with 3 devices" << std::endl;
+    LoadBindingsFromConfig("");
 }
 
 void InputManager::LoadBindingsFromConfig(const std::string& configPath) {
@@ -34,6 +35,7 @@ void InputManager::LoadBindingsFromConfig(const std::string& configPath) {
         InputBinding("MoveDown", DeviceType::Keyboard, InputEvent::Type::KeyDown, 83),
         InputBinding("Fire", DeviceType::Mouse, InputEvent::Type::MouseButtonDown, 0),
         InputBinding("Pause", DeviceType::Keyboard, InputEvent::Type::KeyDown, 27),
+        InputBinding("Interact", DeviceType::Keyboard, InputEvent::Type::KeyDown, 69), // E key
     };
     std::cout << "[InputManager] Loaded " << bindings.size() << " bindings" << std::endl;
 }
@@ -126,6 +128,11 @@ void InputManager::SubscribeToAction(const std::string& actionName, ActionCallba
 
 void InputManager::UnsubscribeFromAction(const std::string& actionName) {
     actionCallbacks.erase(actionName);
+}
+
+void InputManager::SetActionStateForTest(const std::string& actionName, bool pressed) {
+    actionState[actionName] = pressed;
+    actionStateHeld[actionName] = false;
 }
 
 void InputManager::PrintBindings() const {

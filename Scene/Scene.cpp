@@ -11,6 +11,7 @@
 #include "SceneObject.h"
 #include "IDPool.h"
 #include "../ECS/Coordinator.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
 
 #include <iostream>
 #include <algorithm>
@@ -543,6 +544,9 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
             if (signature.test(srcCoordinator.GetComponentType<InteractableComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<InteractableComponent>(oldECSEntity));
             }
+            if (signature.test(srcCoordinator.GetComponentType<ObjectiveComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<ObjectiveComponent>(oldECSEntity));
+            }
             if (signature.test(srcCoordinator.GetComponentType<DirectionalLightComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<DirectionalLightComponent>(oldECSEntity));
             }
@@ -554,6 +558,12 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
             }
             if (signature.test(srcCoordinator.GetComponentType<SpotLightComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<SpotLightComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<eng::runtime::PlayerStateComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<eng::runtime::PlayerStateComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<eng::runtime::PlayerTagComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<eng::runtime::PlayerTagComponent>(oldECSEntity));
             }
         }
     }

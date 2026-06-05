@@ -235,6 +235,9 @@ public:
     bool m_HasInteractable = false;
     InteractableComponent m_Interactable;
 
+    bool m_HasObjective = false;
+    ObjectiveComponent m_Objective;
+
     bool m_HasDirectionalLight = false;
     DirectionalLightComponent m_DirectionalLight;
 
@@ -282,6 +285,9 @@ public:
 
     void SetInteractable(const InteractableComponent& comp) { m_Interactable = comp; m_HasInteractable = true; }
     void ClearInteractable() { m_HasInteractable = false; }
+
+    void SetObjective(const ObjectiveComponent& comp) { m_Objective = comp; m_HasObjective = true; }
+    void ClearObjective() { m_HasObjective = false; }
 
     void SetDirectionalLight(const DirectionalLightComponent& comp) { m_DirectionalLight = comp; m_HasDirectionalLight = true; }
     void ClearDirectionalLight() { m_HasDirectionalLight = false; }

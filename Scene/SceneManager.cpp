@@ -78,6 +78,7 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<InputComponent>();
     m_Coordinator->RegisterComponent<TriggerComponent>();
     m_Coordinator->RegisterComponent<InteractableComponent>();
+    m_Coordinator->RegisterComponent<ObjectiveComponent>();
     m_Coordinator->RegisterComponent<DirectionalLightComponent>();
     m_Coordinator->RegisterComponent<PointLightComponent>();
     m_Coordinator->RegisterComponent<AmbientLightComponent>();
@@ -513,6 +514,11 @@ void SceneManager::SyncECSToScene() {
             } else {
                 foundObj->ClearInteractable();
             }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ObjectiveComponent>())) {
+                foundObj->SetObjective(coordinator.GetComponent<ObjectiveComponent>(entity));
+            } else {
+                foundObj->ClearObjective();
+            }
 
             // Sync DirectionalLightComponent
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
@@ -604,6 +610,9 @@ void SceneManager::SyncECSToScene() {
 
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InteractableComponent>())) {
                 newObj->SetInteractable(coordinator.GetComponent<InteractableComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ObjectiveComponent>())) {
+                newObj->SetObjective(coordinator.GetComponent<ObjectiveComponent>(entity));
             }
 
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {

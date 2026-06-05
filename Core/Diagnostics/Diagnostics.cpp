@@ -14,7 +14,7 @@ namespace eng::diagnostics {
     void ReportSubsystemHealth(const std::string& subsystem, const std::string& status) {
         std::lock_guard<std::recursive_mutex> lock(s_DiagnosticsMutex);
         s_SubsystemHealth[subsystem] = status;
-        LOG_INFO("[Diagnostics] Subsystem '{}' health update: {}", subsystem, status);
+        LOG_INFO("[Diagnostics] Subsystem '%s' health update: %s", subsystem.c_str(), status.c_str());
     }
 
     void PrintDiagnosticsReport() {
