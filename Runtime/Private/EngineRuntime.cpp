@@ -2,6 +2,8 @@
 #include "Runtime/Public/Editor/EditorLayer.h"
 #include "Runtime/Public/Gameplay/GameMode.h"
 #include "Runtime/Public/Gameplay/GameplayEventBus.h"
+#include "Runtime/Public/Audio/AudioSystem.h"
+#include "Runtime/Public/Gameplay/Save/GameplaySaveSystem.h"
 #include "Runtime/Public/RuntimeContext.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/RuntimeState.h"
@@ -201,6 +203,12 @@ namespace eng::runtime {
         m_GameplayEventBus = std::make_unique<GameplayEventBus>(m_EventManager.get());
         TrackAllocation("GameplayEvents", sizeof(GameplayEventBus));
 
+        m_AudioSystem = std::make_unique<AudioSystem>();
+        TrackAllocation("Audio", sizeof(AudioSystem));
+
+        m_GameplaySaveSystem = std::make_unique<GameplaySaveSystem>();
+        TrackAllocation("SaveSystem", sizeof(GameplaySaveSystem));
+
         // 3. Spawning Input Thread
         m_InputThreadRunning.store(true, std::memory_order_relaxed);
         m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
@@ -291,12 +299,23 @@ namespace eng::runtime {
         m_Context.input = m_Input.get();
         m_Context.events = m_EventManager.get();
         m_Context.gameplayEventBus = m_GameplayEventBus.get();
+        m_Context.audioSystem = m_AudioSystem.get();
+        m_Context.saveSystem = m_GameplaySaveSystem.get();
+        m_GameplaySaveSystem->Initialize(&m_Context);
         m_Context.timing = &m_Timing;
         m_Context.currentStage = &m_CurrentStage;
 
         m_Context.swapECS = [this](std::unique_ptr<eng::runtime::IECSWorld> newECS) {
             return this->SetECS(std::move(newECS));
         };
+
+        // Initialize AudioSystem
+        RegisterSystemStartup("Audio");
+        if (!m_AudioSystem->Initialize(&m_Context)) {
+            LOG_ERROR("[Runtime] AudioSystem initialization failed!");
+            Shutdown();
+            return false;
+        }
 
         // 10. Editor Layer Subsystem Initialization
         if (m_Context.mode == RuntimeMode::Editor) {
@@ -429,6 +448,9 @@ namespace eng::runtime {
                             }
                         }
                     }
+                }
+                if (m_AudioSystem) {
+                    m_AudioSystem->Update(static_cast<float>(dt));
                 }
             }
             auto updateEnd = Clock::now();
@@ -600,6 +622,20 @@ namespace eng::runtime {
             m_Editor->Shutdown();
             m_Editor.reset();
             TrackDeallocation("Editor", sizeof(EditorLayer));
+        }
+
+        // Audio Shutdown
+        if (m_AudioSystem) {
+            RegisterSystemShutdown("Audio");
+            m_AudioSystem->Shutdown();
+            m_AudioSystem.reset();
+            TrackDeallocation("Audio", sizeof(AudioSystem));
+        }
+
+        // Save System Shutdown
+        if (m_GameplaySaveSystem) {
+            m_GameplaySaveSystem.reset();
+            TrackDeallocation("SaveSystem", sizeof(GameplaySaveSystem));
         }
 
         // PhysicsWorld Shutdown

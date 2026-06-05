@@ -225,25 +225,13 @@ struct ColliderComponent {
  * @brief AudioSourceComponent - Audio playback
  */
 struct AudioSourceComponent {
-    uint32_t audioClipID;   // Audio asset ID
-    bool isPlaying;
-    bool loop;
-    float volume;
-    float pitch;
-    bool spatialize;        // 3D positional audio?
-    float minDistance;      // Minimum distance for attenuation
-    float maxDistance;      // Maximum distance
+    std::string ClipPath = "";
+    bool PlayOnStart = false;
+    bool Loop = false;
+    float Volume = 1.0f;
+    bool IsPlaying = false;
 
-    AudioSourceComponent()
-        : audioClipID(0)
-        , isPlaying(false)
-        , loop(false)
-        , volume(1.0f)
-        , pitch(1.0f)
-        , spatialize(true)
-        , minDistance(1.0f)
-        , maxDistance(500.0f)
-    {}
+    AudioSourceComponent() = default;
 };
 
 //============================================================================
@@ -426,6 +414,20 @@ using InteractionType = eng::runtime::InteractionType;
 #include "Runtime/Public/Gameplay/Components/ObjectiveComponent.h"
 using ObjectiveComponent = eng::runtime::ObjectiveComponent;
 using ObjectiveCompletionMode = eng::runtime::ObjectiveCompletionMode;
+
+#include "Runtime/Public/Gameplay/StateObjects/SimpleStateComponent.h"
+using SimpleStateComponent = eng::runtime::SimpleStateComponent;
+using SimpleObjectState = eng::runtime::SimpleObjectState;
+
+#include "Runtime/Public/Gameplay/StateObjects/ActivatableComponent.h"
+using ActivatableComponent = eng::runtime::ActivatableComponent;
+
+#include "Runtime/Public/Gameplay/StateObjects/DoorComponent.h"
+using DoorComponent = eng::runtime::DoorComponent;
+using DoorOpenMode = eng::runtime::DoorOpenMode;
+
+#include "Runtime/Public/Gameplay/Checkpoints/CheckpointComponent.h"
+using CheckpointComponent = eng::runtime::CheckpointComponent;
 
 
 struct DirectionalLightComponent

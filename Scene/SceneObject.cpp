@@ -100,6 +100,24 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
         coordinator.AddComponent(m_ECSEntity, m_Objective);
     }
 
+    // Add AudioSourceComponent if assigned
+    if (m_HasAudioSource) {
+        coordinator.AddComponent(m_ECSEntity, m_AudioSource);
+    }
+
+    if (m_HasSimpleState) {
+        coordinator.AddComponent(m_ECSEntity, m_SimpleState);
+    }
+    if (m_HasActivatable) {
+        coordinator.AddComponent(m_ECSEntity, m_Activatable);
+    }
+    if (m_HasDoor) {
+        coordinator.AddComponent(m_ECSEntity, m_Door);
+    }
+    if (m_HasCheckpoint) {
+        coordinator.AddComponent(m_ECSEntity, m_Checkpoint);
+    }
+
     // 16. Add DirectionalLightComponent if assigned
     if (m_HasDirectionalLight) {
         coordinator.AddComponent(m_ECSEntity, m_DirectionalLight);

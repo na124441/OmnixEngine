@@ -238,6 +238,21 @@ public:
     bool m_HasObjective = false;
     ObjectiveComponent m_Objective;
 
+    bool m_HasAudioSource = false;
+    AudioSourceComponent m_AudioSource;
+
+    bool m_HasSimpleState = false;
+    SimpleStateComponent m_SimpleState;
+
+    bool m_HasActivatable = false;
+    ActivatableComponent m_Activatable;
+
+    bool m_HasDoor = false;
+    DoorComponent m_Door;
+
+    bool m_HasCheckpoint = false;
+    CheckpointComponent m_Checkpoint;
+
     bool m_HasDirectionalLight = false;
     DirectionalLightComponent m_DirectionalLight;
 
@@ -288,6 +303,21 @@ public:
 
     void SetObjective(const ObjectiveComponent& comp) { m_Objective = comp; m_HasObjective = true; }
     void ClearObjective() { m_HasObjective = false; }
+
+    void SetAudioSource(const AudioSourceComponent& comp) { m_AudioSource = comp; m_HasAudioSource = true; }
+    void ClearAudioSource() { m_HasAudioSource = false; }
+
+    void SetSimpleState(const SimpleStateComponent& comp) { m_SimpleState = comp; m_HasSimpleState = true; }
+    void ClearSimpleState() { m_HasSimpleState = false; }
+
+    void SetActivatable(const ActivatableComponent& comp) { m_Activatable = comp; m_HasActivatable = true; }
+    void ClearActivatable() { m_HasActivatable = false; }
+
+    void SetDoor(const DoorComponent& comp) { m_Door = comp; m_HasDoor = true; }
+    void ClearDoor() { m_HasDoor = false; }
+
+    void SetCheckpoint(const CheckpointComponent& comp) { m_Checkpoint = comp; m_HasCheckpoint = true; }
+    void ClearCheckpoint() { m_HasCheckpoint = false; }
 
     void SetDirectionalLight(const DirectionalLightComponent& comp) { m_DirectionalLight = comp; m_HasDirectionalLight = true; }
     void ClearDirectionalLight() { m_HasDirectionalLight = false; }

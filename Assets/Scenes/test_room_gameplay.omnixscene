@@ -1,0 +1,143 @@
+{
+  "name": "test_room_gameplay",
+  "version": 1,
+  "objects": [
+    {
+      "name": "PlayerStartObj",
+      "transform": {
+        "position": { "x": 0.0, "y": 2.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "PlayerStart",
+          "active": true
+        }
+      ]
+    },
+    {
+      "name": "Terminal_A",
+      "transform": {
+        "position": { "x": 2.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "Interactable",
+          "enabled": true,
+          "promptText": "Use Terminal",
+          "interactionRadius": 2.0,
+          "interactionType": 0
+        },
+        {
+          "type": "Activatable",
+          "activationID": "TERMINAL_ACT",
+          "targetActivationID": "BUNKER_DOOR_A",
+          "requiresUnlocked": false,
+          "oneShot": true,
+          "hasActivated": false
+        },
+        {
+          "type": "AudioSource",
+          "clipPath": "Assets/Audio/terminal_click.wav",
+          "playOnStart": false,
+          "loop": false,
+          "volume": 0.8,
+          "isPlaying": false
+        }
+      ]
+    },
+    {
+      "name": "Door_A",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 5.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "SimpleState",
+          "initialState": 1,
+          "currentState": 1,
+          "resetOnPlay": true
+        },
+        {
+          "type": "Activatable",
+          "activationID": "BUNKER_DOOR_A",
+          "targetActivationID": "",
+          "requiresUnlocked": false,
+          "oneShot": true,
+          "hasActivated": false
+        },
+        {
+          "type": "Door",
+          "closedPosition": [0.0, 0.0, 5.0],
+          "openOffset": [0.0, 3.0, 0.0],
+          "openSpeed": 2.0,
+          "openMode": 1,
+          "isOpen": false
+        }
+      ]
+    },
+    {
+      "name": "Objective_A",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "Objective",
+          "objectiveID": "OBJ_OPEN_BUNKER_DOOR",
+          "title": "Open the Bunker Door",
+          "description": "Interact with the terminal to open the bunker door.",
+          "completionMode": 1,
+          "startsActive": true,
+          "repeatable": false,
+          "completed": false
+        },
+        {
+          "type": "Interactable",
+          "enabled": true,
+          "promptText": "Use Terminal",
+          "interactionRadius": 2.0,
+          "interactionType": 0
+        }
+      ]
+    },
+    {
+      "name": "Checkpoint_A",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 8.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "Checkpoint",
+          "checkpointID": "CP_AFTER_DOOR",
+          "checkpointName": "After Bunker Door",
+          "activateOnTriggerEnter": true,
+          "oneShot": true
+        },
+        {
+          "type": "Trigger",
+          "enabled": true,
+          "shapeType": "Box",
+          "boxSize": [2.0, 2.0, 2.0],
+          "sphereRadius": 1.0,
+          "capsuleRadius": 1.0,
+          "capsuleHeight": 1.0,
+          "offset": [0.0, 0.0, 0.0],
+          "eventName": "CheckpointTrigger",
+          "fireEnter": true,
+          "fireStay": false,
+          "fireExit": false
+        }
+      ]
+    }
+  ]
+}

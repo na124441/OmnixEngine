@@ -1,0 +1,70 @@
+{
+    "assets": [
+        {
+            "dependencies": [],
+            "handle": 4569387206834428307,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/brick_albedo.png",
+            "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 7444686803171224376,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/cube.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 15570065021787186981,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/brick.omnixmat",
+            "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 13368210448611474745,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/pyramid.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 8497705309788101149,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/wood.omnixmat",
+            "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 5605425720446498563,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/wood_albedo.png",
+            "type": "Texture"
+        }
+    ]
+}

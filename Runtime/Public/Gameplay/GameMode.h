@@ -10,6 +10,8 @@ namespace eng::runtime {
     class ObjectiveSystem;
     class CheckpointSystem;
     class GameplayHUD;
+    class ObjectActivationSystem;
+    struct GameplaySaveSnapshot;
 }
 using Entity = std::uint32_t;
 
@@ -33,11 +35,15 @@ namespace eng::runtime {
         virtual void PauseLevel();
         virtual void ResumeLevel();
 
+        virtual bool RestoreFromSnapshot(const GameplaySaveSnapshot& snapshot);
+
         GameSessionState GetState() const;
         const GameState& GetGameState() const { return m_GameState; }
         GameState& GetGameStateMutable() { return m_GameState; }
 
         ObjectiveSystem* GetObjectiveSystem() const { return m_ObjectiveSystem.get(); }
+        ObjectActivationSystem* GetObjectActivationSystem() const { return m_ObjectActivationSystem.get(); }
+        CheckpointSystem* GetCheckpointSystem() const { return m_CheckpointSystem.get(); }
         GameplayHUD* GetGameplayHUD() const { return m_GameplayHUD.get(); }
 
         Entity FindPlayerEntity() const;
@@ -50,6 +56,7 @@ namespace eng::runtime {
         std::unique_ptr<ObjectiveSystem> m_ObjectiveSystem;
         std::unique_ptr<CheckpointSystem> m_CheckpointSystem;
         std::unique_ptr<GameplayHUD> m_GameplayHUD;
+        std::unique_ptr<ObjectActivationSystem> m_ObjectActivationSystem;
     };
 
 } // namespace eng::runtime

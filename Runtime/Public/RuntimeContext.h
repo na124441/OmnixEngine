@@ -25,6 +25,8 @@ namespace eng::runtime {
     class AssetRegistry;
     class GameMode;
     class GameplayEventBus;
+    class AudioSystem;
+    class GameplaySaveSystem;
     enum class FrameStage : uint8_t;
     struct FrameTiming;
 }
@@ -49,6 +51,8 @@ namespace eng::runtime {
         Omnix::EventManager* events = nullptr;
         GameMode* gameMode = nullptr;
         GameplayEventBus* gameplayEventBus = nullptr;
+        AudioSystem* audioSystem = nullptr;
+        GameplaySaveSystem* saveSystem = nullptr;
         InteractionPromptData interactionPrompt;
         std::function<std::unique_ptr<eng::runtime::IECSWorld>(std::unique_ptr<eng::runtime::IECSWorld>)> swapECS;
 

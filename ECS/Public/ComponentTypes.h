@@ -38,4 +38,8 @@ constexpr ComponentTypeID AMBIENT_LIGHT_COMPONENT = 28;
 constexpr ComponentTypeID SPOT_LIGHT_COMPONENT = 29;
 constexpr ComponentTypeID PLAYER_STATE_COMPONENT = 30;
 constexpr ComponentTypeID PLAYER_TAG_COMPONENT = 31;
+constexpr ComponentTypeID SIMPLE_STATE_COMPONENT = 32;
+constexpr ComponentTypeID ACTIVATABLE_COMPONENT = 33;
+constexpr ComponentTypeID DOOR_COMPONENT = 34;
+constexpr ComponentTypeID CHECKPOINT_COMPONENT = 35;
 

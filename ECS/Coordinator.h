@@ -113,6 +113,11 @@ public:
         if constexpr (std::is_same_v<T, eng::runtime::PlayerStateComponent>) return PLAYER_STATE_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::PlayerTagComponent>) return PLAYER_TAG_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::ObjectiveComponent>) return OBJECTIVE_COMPONENT;
+        if constexpr (std::is_same_v<T, AudioSourceComponent>) return AUDIO_SOURCE_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::SimpleStateComponent>) return SIMPLE_STATE_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::ActivatableComponent>) return ACTIVATABLE_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::DoorComponent>) return DOOR_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::CheckpointComponent>) return CHECKPOINT_COMPONENT;
         
         // This should not happen if all components are registered and known to the serializer
         CORE_LOG_FATAL("ECS: Attempted to get type ID for unknown component type!");

@@ -79,6 +79,10 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<TriggerComponent>();
     m_Coordinator->RegisterComponent<InteractableComponent>();
     m_Coordinator->RegisterComponent<ObjectiveComponent>();
+    m_Coordinator->RegisterComponent<SimpleStateComponent>();
+    m_Coordinator->RegisterComponent<ActivatableComponent>();
+    m_Coordinator->RegisterComponent<DoorComponent>();
+    m_Coordinator->RegisterComponent<CheckpointComponent>();
     m_Coordinator->RegisterComponent<DirectionalLightComponent>();
     m_Coordinator->RegisterComponent<PointLightComponent>();
     m_Coordinator->RegisterComponent<AmbientLightComponent>();
@@ -519,6 +523,40 @@ void SceneManager::SyncECSToScene() {
             } else {
                 foundObj->ClearObjective();
             }
+            // Sync AudioSourceComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AudioSourceComponent>())) {
+                foundObj->SetAudioSource(coordinator.GetComponent<AudioSourceComponent>(entity));
+            } else {
+                foundObj->ClearAudioSource();
+            }
+
+            // Sync SimpleStateComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SimpleStateComponent>())) {
+                foundObj->SetSimpleState(coordinator.GetComponent<SimpleStateComponent>(entity));
+            } else {
+                foundObj->ClearSimpleState();
+            }
+
+            // Sync ActivatableComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ActivatableComponent>())) {
+                foundObj->SetActivatable(coordinator.GetComponent<ActivatableComponent>(entity));
+            } else {
+                foundObj->ClearActivatable();
+            }
+
+            // Sync DoorComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DoorComponent>())) {
+                foundObj->SetDoor(coordinator.GetComponent<DoorComponent>(entity));
+            } else {
+                foundObj->ClearDoor();
+            }
+
+            // Sync CheckpointComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CheckpointComponent>())) {
+                foundObj->SetCheckpoint(coordinator.GetComponent<CheckpointComponent>(entity));
+            } else {
+                foundObj->ClearCheckpoint();
+            }
 
             // Sync DirectionalLightComponent
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
@@ -613,6 +651,21 @@ void SceneManager::SyncECSToScene() {
             }
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ObjectiveComponent>())) {
                 newObj->SetObjective(coordinator.GetComponent<ObjectiveComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AudioSourceComponent>())) {
+                newObj->SetAudioSource(coordinator.GetComponent<AudioSourceComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SimpleStateComponent>())) {
+                newObj->SetSimpleState(coordinator.GetComponent<SimpleStateComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ActivatableComponent>())) {
+                newObj->SetActivatable(coordinator.GetComponent<ActivatableComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DoorComponent>())) {
+                newObj->SetDoor(coordinator.GetComponent<DoorComponent>(entity));
+            }
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CheckpointComponent>())) {
+                newObj->SetCheckpoint(coordinator.GetComponent<CheckpointComponent>(entity));
             }
 
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {

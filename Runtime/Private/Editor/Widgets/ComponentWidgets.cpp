@@ -2,6 +2,7 @@
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/OmnixMaterialFormat.h"
 #include "ThirdParty/imgui/imgui.h"
+#include "Runtime/Public/Audio/AudioSystem.h"
 #include "PhysicsValidation.h"
 #include <algorithm>
 #include <cstring>
@@ -653,7 +654,14 @@ namespace eng::runtime {
             changed = true;
         }
 
+        if (component.PromptText.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Prompt Text is empty!");
+        }
+
         if (ImGui::DragFloat("Interaction Radius", &component.InteractionRadius, 0.1f, 0.0f, 100.0f, "%.1f")) {
+            if (component.InteractionRadius < 0.1f) {
+                component.InteractionRadius = 0.1f;
+            }
             dirtyState.MarkSceneDirty();
             changed = true;
         }
@@ -678,6 +686,10 @@ namespace eng::runtime {
             component.ObjectiveID = idBuf;
             dirtyState.MarkSceneDirty();
             changed = true;
+        }
+
+        if (component.ObjectiveID.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Objective ID is empty!");
         }
 
         char titleBuf[128];
@@ -714,9 +726,61 @@ namespace eng::runtime {
             changed = true;
         }
 
-        if (ImGui::Checkbox("Completed", &component.Completed)) {
+        ImGui::BeginDisabled();
+        bool completed = component.Completed;
+        ImGui::Checkbox("Completed (Runtime)", &completed);
+        ImGui::EndDisabled();
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawAudioSource(AudioSourceComponent& component, EditorDirtyState& dirtyState, AudioSystem* audioSys) {
+        bool changed = false;
+
+        char clipPathBuf[256];
+        snprintf(clipPathBuf, sizeof(clipPathBuf), "%s", component.ClipPath.c_str());
+        if (ImGui::InputText("Clip Path", clipPathBuf, sizeof(clipPathBuf))) {
+            component.ClipPath = clipPathBuf;
             dirtyState.MarkSceneDirty();
             changed = true;
+        }
+
+        if (component.ClipPath.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Clip Path is empty!");
+        } else if (!std::filesystem::exists(component.ClipPath)) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Audio file does not exist!");
+        }
+
+        if (ImGui::Checkbox("Play On Start", &component.PlayOnStart)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Loop", &component.Loop)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::SliderFloat("Volume", &component.Volume, 0.0f, 1.0f, "%.2f")) {
+            if (component.Volume < 0.0f) component.Volume = 0.0f;
+            else if (component.Volume > 1.0f) component.Volume = 1.0f;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Is Playing", &component.IsPlaying)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (audioSys && !component.ClipPath.empty() && std::filesystem::exists(component.ClipPath)) {
+            if (ImGui::Button("Test Play Preview")) {
+                audioSys->PlayOneShot(component.ClipPath, component.Volume);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Stop All Preview")) {
+                audioSys->StopAllSounds();
+            }
         }
 
         return changed;
@@ -864,6 +928,150 @@ namespace eng::runtime {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawSimpleState(SimpleStateComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        static const char* stateNames[] = { "Inactive", "Active", "Completed", "Locked", "Unlocked" };
+        int currentInitial = static_cast<int>(component.InitialState);
+        if (ImGui::Combo("Initial State", &currentInitial, stateNames, IM_ARRAYSIZE(stateNames))) {
+            component.InitialState = static_cast<SimpleObjectState>(currentInitial);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        ImGui::BeginDisabled();
+        int currentCurrent = static_cast<int>(component.CurrentState);
+        ImGui::Combo("Current State (Runtime)", &currentCurrent, stateNames, IM_ARRAYSIZE(stateNames));
+        ImGui::EndDisabled();
+
+        if (ImGui::Checkbox("Reset On Play", &component.ResetOnPlay)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawActivatable(ActivatableComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        char actIdBuf[128];
+        snprintf(actIdBuf, sizeof(actIdBuf), "%s", component.ActivationID.c_str());
+        if (ImGui::InputText("Activation ID", actIdBuf, sizeof(actIdBuf))) {
+            component.ActivationID = actIdBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        char targetIdBuf[128];
+        snprintf(targetIdBuf, sizeof(targetIdBuf), "%s", component.TargetActivationID.c_str());
+        if (ImGui::InputText("Target Activation ID", targetIdBuf, sizeof(targetIdBuf))) {
+            component.TargetActivationID = targetIdBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("Requires Unlocked", &component.RequiresUnlocked)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("One Shot", &component.OneShot)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        ImGui::BeginDisabled();
+        bool hasActivated = component.HasActivated;
+        ImGui::Checkbox("Has Activated (Runtime)", &hasActivated);
+        ImGui::EndDisabled();
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawDoor(DoorComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        static const char* modeNames[] = { "Instant", "Smooth" };
+        int currentMode = static_cast<int>(component.OpenMode);
+        if (ImGui::Combo("Open Mode", &currentMode, modeNames, IM_ARRAYSIZE(modeNames))) {
+            component.OpenMode = static_cast<DoorOpenMode>(currentMode);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float closedPos[3] = { component.ClosedPosition.x, component.ClosedPosition.y, component.ClosedPosition.z };
+        if (ImGui::DragFloat3("Closed Position", closedPos, 0.05f)) {
+            component.ClosedPosition = Vector3(closedPos[0], closedPos[1], closedPos[2]);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float openOffset[3] = { component.OpenOffset.x, component.OpenOffset.y, component.OpenOffset.z };
+        if (ImGui::DragFloat3("Open Offset", openOffset, 0.05f)) {
+            component.OpenOffset = Vector3(openOffset[0], openOffset[1], openOffset[2]);
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::DragFloat("Open Speed", &component.OpenSpeed, 0.05f, 0.01f, 100.0f)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        ImGui::BeginDisabled();
+        bool isOpen = component.IsOpen;
+        ImGui::Checkbox("Is Open (Runtime)", &isOpen);
+        ImGui::EndDisabled();
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawCheckpoint(CheckpointComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        char cpIdBuf[128];
+        snprintf(cpIdBuf, sizeof(cpIdBuf), "%s", component.CheckpointID.c_str());
+        if (ImGui::InputText("Checkpoint ID", cpIdBuf, sizeof(cpIdBuf))) {
+            component.CheckpointID = cpIdBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (component.CheckpointID.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Checkpoint ID is empty!");
+        }
+
+        char cpNameBuf[128];
+        snprintf(cpNameBuf, sizeof(cpNameBuf), "%s", component.CheckpointName.c_str());
+        if (ImGui::InputText("Checkpoint Name", cpNameBuf, sizeof(cpNameBuf))) {
+            component.CheckpointName = cpNameBuf;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (component.CheckpointName.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Warning: Checkpoint Name is empty!");
+        }
+
+        if (ImGui::Checkbox("Activate On Trigger Enter", &component.ActivateOnTriggerEnter)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (ImGui::Checkbox("One Shot", &component.OneShot)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        bool hasActivated = component.HasActivated;
+        ImGui::BeginDisabled();
+        ImGui::Checkbox("Has Activated", &hasActivated);
+        ImGui::EndDisabled();
 
         return changed;
     }

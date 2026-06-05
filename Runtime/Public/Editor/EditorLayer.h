@@ -12,6 +12,7 @@
 #include <memory>
 #include <vector>
 #include <chrono>
+#include "Runtime/Public/Gameplay/Validation/GameplayValidator.h"
 
 #ifdef _WIN32
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -53,6 +54,9 @@ namespace eng::runtime {
         bool EnterPlayMode();
         bool ExitPlayMode();
 
+        void DrawGameplayValidatorWindow();
+        void DrawGameplayValidatorDiagnostics();
+
         RuntimeContext* m_Context = nullptr;
 
         EditorSimulationState m_SimulationState = EditorSimulationState::Edit;
@@ -89,6 +93,11 @@ namespace eng::runtime {
         VkRenderPass m_UIRenderPass = VK_NULL_HANDLE;
         std::vector<VkFramebuffer> m_UIFramebuffers;
         VkExtent2D m_CurrentExtent = {0, 0};
+
+        // Gameplay Validation
+        GameplayValidator m_GameplayValidator;
+        std::vector<ValidationResult> m_LastValidationResults;
+        bool m_ShowGameplayValidatorWindow = false;
     };
 
 } // namespace eng::runtime

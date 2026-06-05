@@ -10,40 +10,41 @@
 #include "Prefab.h"
 #include "Vector3.h"
 #include "Quaternion.h"
-
+ 
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <unordered_map>
 #include <stdexcept>
-
+#include <algorithm>
+ 
 // rapidjson includes
 #include "../ThirdParty/rapidjson-master/include/rapidjson/document.h"
 #include "../ThirdParty/rapidjson-master/include/rapidjson/error/en.h"
-
+ 
 using namespace rapidjson;
-
+ 
 //============================================================================
 // MAIN LOADING ALGORITHM
 //============================================================================
-
+ 
 Scene* SceneLoader::LoadFromFile(const std::string& filePath) {
     std::cout << "[SceneLoader] ==== LOADING SCENE (rapidjson) ====" << std::endl;
     std::cout << "[SceneLoader] File: " << filePath << std::endl;
-
+ 
     try {
         std::string fileContents = ReadFileToString(filePath);
         if (fileContents.empty()) {
             throw std::runtime_error("File is empty or could not be read");
         }
-
+ 
         Document root;
         root.Parse(fileContents.c_str());
         if (root.HasParseError()) {
             throw std::runtime_error(std::string("JSON parse error: ") + GetParseError_En(root.GetParseError()));
         }
         std::cout << "[SceneLoader] JSON parsed successfully" << std::endl;
-
+ 
         if (root.HasMember("version") && root["version"].IsInt()) {
             int version = root["version"].GetInt();
             if (version != 1) {
@@ -52,22 +53,22 @@ Scene* SceneLoader::LoadFromFile(const std::string& filePath) {
         } else {
             std::cerr << "[SceneLoader] WARNING: No scene version found in file." << std::endl;
         }
-
+ 
         std::string sceneName = root.HasMember("name") && root["name"].IsString() ? root["name"].GetString() : "UntitledScene";
-
+ 
         Scene* scene = new Scene(sceneName);
         scene->SetFilePath(filePath);
         std::cout << "[SceneLoader] Created scene: " << sceneName << std::endl;
-
+ 
         if (root.HasMember("metadata") && root["metadata"].IsObject()) {
             ApplySceneMetadata(scene, root["metadata"]);
         }
-
+ 
         std::vector<std::shared_ptr<SceneObject>> allObjects;
         if (root.HasMember("objects") && root["objects"].IsArray()) {
             const Value& objects = root["objects"];
             std::cout << "[SceneLoader] Loading " << objects.Size() << " objects..." << std::endl;
-
+ 
             for (const auto& objData : objects.GetArray()) {
                 std::shared_ptr<SceneObject> sceneObject = nullptr;
                 if (objData.HasMember("prefab") && objData["prefab"].IsString()) {
@@ -75,31 +76,31 @@ Scene* SceneLoader::LoadFromFile(const std::string& filePath) {
                 } else {
                     sceneObject = CreateObjectFromData(objData, scene);
                 }
-
+ 
                 if (sceneObject) {
                     scene->AddSceneObject(sceneObject);
                     allObjects.push_back(sceneObject);
                 }
             }
         }
-
+ 
         if (root.HasMember("hierarchy") && root["hierarchy"].IsArray()) {
             BuildHierarchy(allObjects, root["hierarchy"]);
         }
-
+ 
         std::cout << "[SceneLoader] ==== SCENE LOADED SUCCESSFULLY ====" << std::endl;
         return scene;
-
+ 
     } catch (const std::exception& e) {
         std::cerr << "[SceneLoader] ERROR: " << e.what() << std::endl;
         return nullptr;
     }
 }
-
+ 
 //============================================================================
 // PREFAB LOADING
 //============================================================================
-
+ 
 std::shared_ptr<SceneObject> SceneLoader::LoadPrefabInsideScene(const Value& fileData, Scene* scene) {
     try {
         std::string prefabPath = fileData["prefab"].GetString();
@@ -107,12 +108,12 @@ std::shared_ptr<SceneObject> SceneLoader::LoadPrefabInsideScene(const Value& fil
         if (!prefab) {
             throw std::runtime_error("Prefab not found: " + prefabPath);
         }
-
+ 
         std::shared_ptr<SceneObject> instance = prefab->Instantiate();
         if (!instance) {
             throw std::runtime_error("Prefab instantiation failed");
         }
-
+ 
         if (fileData.HasMember("transform") && fileData["transform"].IsObject()) {
             const Value& transform = fileData["transform"];
             if (transform.HasMember("position") && transform["position"].IsObject()) {
@@ -128,22 +129,22 @@ std::shared_ptr<SceneObject> SceneLoader::LoadPrefabInsideScene(const Value& fil
                 instance->transform.SetScale(::Vector3(scale["x"].GetFloat(), scale["y"].GetFloat(), scale["z"].GetFloat()));
             }
         }
-
+ 
         return instance;
     } catch (const std::exception& e) {
         std::cerr << "[SceneLoader] ERROR loading prefab: " << e.what() << std::endl;
         return nullptr;
     }
 }
-
+ 
 //============================================================================
 // OBJECT CREATION
 //============================================================================
-
+ 
 std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& objectData, Scene* scene) {
     std::string name = objectData.HasMember("name") && objectData["name"].IsString() ? objectData["name"].GetString() : "Unnamed";
     auto sceneObject = std::make_shared<SceneObject>(name);
-
+ 
     if (objectData.HasMember("transform") && objectData["transform"].IsObject()) {
         const Value& transform = objectData["transform"];
         if (transform.HasMember("position") && transform["position"].IsObject()) {
@@ -159,7 +160,7 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
             sceneObject->transform.SetScale(::Vector3(scale["x"].GetFloat(), scale["y"].GetFloat(), scale["z"].GetFloat()));
         }
     }
-
+ 
     if (objectData.HasMember("components") && objectData["components"].IsArray()) {
         for (const auto& comp : objectData["components"].GetArray()) {
             if (comp.HasMember("type") && comp["type"].IsString()) {
@@ -213,7 +214,7 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                         if (offsetObj.HasMember("y") && offsetObj["y"].IsNumber()) ccc.offset.y = offsetObj["y"].GetFloat();
                         if (offsetObj.HasMember("z") && offsetObj["z"].IsNumber()) ccc.offset.z = offsetObj["z"].GetFloat();
                     }
-                    if (comp.HasMember("isTrigger") && comp["isTrigger"].IsBool()) ccc.isTrigger = comp["isTrigger"].GetBool();
+                    if (comp.HasMember("isTrigger") && comp["isTrigger"].IsBool()) ccc.isTrigger = ccc.isTrigger = comp["isTrigger"].GetBool();
                     if (comp.HasMember("debugDraw") && comp["debugDraw"].IsBool()) ccc.debugDraw = comp["debugDraw"].GetBool();
                     sceneObject->SetCapsuleCollider(ccc);
                 } else if (compType == "PlayerStart") {
@@ -282,7 +283,7 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("fireEnter") && comp["fireEnter"].IsBool()) tc.fireEnter = comp["fireEnter"].GetBool();
                     if (comp.HasMember("fireStay") && comp["fireStay"].IsBool()) tc.fireStay = comp["fireStay"].GetBool();
                     if (comp.HasMember("fireExit") && comp["fireExit"].IsBool()) tc.fireExit = comp["fireExit"].GetBool();
-
+ 
                     // Validation clamping
                     if (!std::isfinite(tc.boxSize.x)) tc.boxSize.x = 1.0f;
                     if (!std::isfinite(tc.boxSize.y)) tc.boxSize.y = 1.0f;
@@ -293,26 +294,88 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (!std::isfinite(tc.offset.x)) tc.offset.x = 0.0f;
                     if (!std::isfinite(tc.offset.y)) tc.offset.y = 0.0f;
                     if (!std::isfinite(tc.offset.z)) tc.offset.z = 0.0f;
-
+ 
                     sceneObject->SetTrigger(tc);
                 } else if (compType == "Interactable") {
                     InteractableComponent ic;
                     if (comp.HasMember("enabled") && comp["enabled"].IsBool()) ic.Enabled = comp["enabled"].GetBool();
                     if (comp.HasMember("promptText") && comp["promptText"].IsString()) ic.PromptText = comp["promptText"].GetString();
                     else if (comp.HasMember("interactionName") && comp["interactionName"].IsString()) ic.PromptText = comp["interactionName"].GetString();
-                    if (comp.HasMember("interactionRadius") && comp["interactionRadius"].IsNumber()) ic.InteractionRadius = comp["interactionRadius"].GetFloat();
-                    if (comp.HasMember("interactionType") && comp["interactionType"].IsInt()) ic.Type = static_cast<InteractionType>(comp["interactionType"].GetInt());
+                    if (comp.HasMember("interactionRadius") && comp["interactionRadius"].IsNumber()) {
+                        ic.InteractionRadius = std::max(0.1f, comp["interactionRadius"].GetFloat());
+                    }
+                    if (comp.HasMember("interactionType") && comp["interactionType"].IsInt()) {
+                        ic.Type = static_cast<InteractionType>(std::clamp(comp["interactionType"].GetInt(), 0, 6));
+                    }
                     sceneObject->SetInteractable(ic);
+                } else if (compType == "AudioSource") {
+                    AudioSourceComponent asc;
+                    if (comp.HasMember("clipPath") && comp["clipPath"].IsString()) asc.ClipPath = comp["clipPath"].GetString();
+                    if (comp.HasMember("playOnStart") && comp["playOnStart"].IsBool()) asc.PlayOnStart = comp["playOnStart"].GetBool();
+                    if (comp.HasMember("loop") && comp["loop"].IsBool()) asc.Loop = comp["loop"].GetBool();
+                    if (comp.HasMember("volume") && comp["volume"].IsNumber()) {
+                        asc.Volume = std::clamp(comp["volume"].GetFloat(), 0.0f, 1.0f);
+                    }
+                    if (comp.HasMember("isPlaying") && comp["isPlaying"].IsBool()) asc.IsPlaying = comp["isPlaying"].GetBool();
+                    sceneObject->SetAudioSource(asc);
                 } else if (compType == "Objective") {
                     ObjectiveComponent oc;
                     if (comp.HasMember("objectiveID") && comp["objectiveID"].IsString()) oc.ObjectiveID = comp["objectiveID"].GetString();
                     if (comp.HasMember("title") && comp["title"].IsString()) oc.Title = comp["title"].GetString();
                     if (comp.HasMember("description") && comp["description"].IsString()) oc.Description = comp["description"].GetString();
-                    if (comp.HasMember("completionMode") && comp["completionMode"].IsInt()) oc.CompletionMode = static_cast<ObjectiveCompletionMode>(comp["completionMode"].GetInt());
+                    if (comp.HasMember("completionMode") && comp["completionMode"].IsInt()) {
+                        oc.CompletionMode = static_cast<ObjectiveCompletionMode>(std::clamp(comp["completionMode"].GetInt(), 0, 2));
+                    }
                     if (comp.HasMember("startsActive") && comp["startsActive"].IsBool()) oc.StartsActive = comp["startsActive"].GetBool();
                     if (comp.HasMember("repeatable") && comp["repeatable"].IsBool()) oc.Repeatable = comp["repeatable"].GetBool();
                     if (comp.HasMember("completed") && comp["completed"].IsBool()) oc.Completed = comp["completed"].GetBool();
                     sceneObject->SetObjective(oc);
+                } else if (compType == "SimpleState") {
+                    SimpleStateComponent ssc;
+                    if (comp.HasMember("initialState") && comp["initialState"].IsInt()) {
+                        ssc.InitialState = static_cast<SimpleObjectState>(std::clamp(comp["initialState"].GetInt(), 0, 4));
+                    }
+                    ssc.CurrentState = ssc.InitialState;
+                    if (comp.HasMember("currentState") && comp["currentState"].IsInt()) {
+                        ssc.CurrentState = static_cast<SimpleObjectState>(std::clamp(comp["currentState"].GetInt(), 0, 4));
+                    }
+                    if (comp.HasMember("resetOnPlay") && comp["resetOnPlay"].IsBool()) ssc.ResetOnPlay = comp["resetOnPlay"].GetBool();
+                    sceneObject->SetSimpleState(ssc);
+                } else if (compType == "Activatable") {
+                    ActivatableComponent ac;
+                    if (comp.HasMember("activationID") && comp["activationID"].IsString()) ac.ActivationID = comp["activationID"].GetString();
+                    if (comp.HasMember("targetActivationID") && comp["targetActivationID"].IsString()) ac.TargetActivationID = comp["targetActivationID"].GetString();
+                    if (comp.HasMember("requiresUnlocked") && comp["requiresUnlocked"].IsBool()) ac.RequiresUnlocked = comp["requiresUnlocked"].GetBool();
+                    if (comp.HasMember("oneShot") && comp["oneShot"].IsBool()) ac.OneShot = comp["oneShot"].GetBool();
+                    if (comp.HasMember("hasActivated") && comp["hasActivated"].IsBool()) ac.HasActivated = comp["hasActivated"].GetBool();
+                    sceneObject->SetActivatable(ac);
+                } else if (compType == "Door") {
+                    DoorComponent dc;
+                    if (comp.HasMember("closedPosition") && comp["closedPosition"].IsArray() && comp["closedPosition"].Size() == 3) {
+                        dc.ClosedPosition.x = comp["closedPosition"][0].GetFloat();
+                        dc.ClosedPosition.y = comp["closedPosition"][1].GetFloat();
+                        dc.ClosedPosition.z = comp["closedPosition"][2].GetFloat();
+                    }
+                    if (comp.HasMember("openOffset") && comp["openOffset"].IsArray() && comp["openOffset"].Size() == 3) {
+                        dc.OpenOffset.x = comp["openOffset"][0].GetFloat();
+                        dc.OpenOffset.y = comp["openOffset"][1].GetFloat();
+                        dc.OpenOffset.z = comp["openOffset"][2].GetFloat();
+                    }
+                    if (comp.HasMember("openSpeed") && comp["openSpeed"].IsNumber()) dc.OpenSpeed = comp["openSpeed"].GetFloat();
+                    if (comp.HasMember("openMode") && comp["openMode"].IsInt()) {
+                        dc.OpenMode = static_cast<DoorOpenMode>(std::clamp(comp["openMode"].GetInt(), 0, 1));
+                    }
+                    if (comp.HasMember("isOpen") && comp["isOpen"].IsBool()) dc.IsOpen = comp["isOpen"].GetBool();
+                    sceneObject->SetDoor(dc);
+                } else if (compType == "Checkpoint") {
+                    CheckpointComponent cc;
+                    if (comp.HasMember("checkpointID") && comp["checkpointID"].IsString()) cc.CheckpointID = comp["checkpointID"].GetString();
+                    if (comp.HasMember("checkpointName") && comp["checkpointName"].IsString()) cc.CheckpointName = comp["checkpointName"].GetString();
+                    if (comp.HasMember("activateOnTriggerEnter") && comp["activateOnTriggerEnter"].IsBool()) cc.ActivateOnTriggerEnter = comp["activateOnTriggerEnter"].GetBool();
+                    if (comp.HasMember("oneShot") && comp["oneShot"].IsBool()) cc.OneShot = comp["oneShot"].GetBool();
+                    // HasActivated always defaults to false on scene load
+                    cc.HasActivated = false;
+                    sceneObject->SetCheckpoint(cc);
                 } else if (compType == "DirectionalLight") {
                     DirectionalLightComponent dlc;
                     if (comp.HasMember("enabled") && comp["enabled"].IsBool()) dlc.enabled = comp["enabled"].GetBool();

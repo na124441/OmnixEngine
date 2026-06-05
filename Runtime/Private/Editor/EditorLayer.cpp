@@ -6,6 +6,10 @@
 #include "Runtime/Public/Gameplay/GameplayEvent.h"
 #include "Runtime/Public/Gameplay/GameplayEventBus.h"
 #include "Runtime/Public/Gameplay/Objectives/ObjectiveSystem.h"
+#include "Runtime/Public/Gameplay/StateObjects/ObjectActivationSystem.h"
+#include "Runtime/Public/Gameplay/CheckpointSystem.h"
+#include "Runtime/Public/Gameplay/Save/GameplaySaveSystem.h"
+#include "Runtime/Public/Audio/AudioSystem.h"
 #include "Runtime/Public/Editor/EditorLayout.h"
 #include "Runtime/Public/Editor/EditorEntityCommands.h"
 #include "Runtime/Public/Editor/PlatformFileDialog.h"
@@ -1004,6 +1008,11 @@ namespace eng::runtime {
                     m_ViewportPanel.SetShowDiagnostics(showDiag);
                 }
                 
+                bool showValidator = m_ShowGameplayValidatorWindow;
+                if (ImGui::MenuItem("Gameplay Validator", nullptr, &showValidator)) {
+                    m_ShowGameplayValidatorWindow = showValidator;
+                }
+                
                 auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
                 if (engineLoop && engineLoop->GetSceneRenderer()) {
                     auto* sceneRenderer = engineLoop->GetSceneRenderer();
@@ -1050,6 +1059,7 @@ namespace eng::runtime {
         m_HierarchyPanel.Render(m_Selection, m_DirtyState);
         m_InspectorPanel.Render(m_Selection, m_DirtyState);
         m_ConsolePanel.Render();
+        DrawGameplayValidatorWindow();
 
         // Retrieve offscreen viewport texture for current frame
         auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
@@ -1308,6 +1318,12 @@ namespace eng::runtime {
                 }
             }
             
+            // Gameplay Validation
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Gameplay Validation Diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
+                DrawGameplayValidatorDiagnostics();
+            }
+            
             // Physics diagnostics
             ImGui::Separator();
             if (ImGui::CollapsingHeader("PhysX Physics Diagnostics", ImGuiTreeNodeFlags_None)) {
@@ -1502,6 +1518,116 @@ namespace eng::runtime {
                     }
                 } else {
                     ImGui::Text("Not in Play Mode.");
+                }
+            }
+
+            // Audio Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Audio Diagnostics", ImGuiTreeNodeFlags_None)) {
+                auto* audioSys = m_Context ? m_Context->audioSystem : nullptr;
+                if (audioSys) {
+                    ImGui::Text("Backend: miniaudio");
+                    ImGui::Text("Initialized: %s", audioSys->IsInitialized() ? "true" : "false");
+                    ImGui::Text("Master Volume: %.2f", audioSys->GetMasterVolume());
+                    ImGui::Text("Loaded Clips: %zu", audioSys->GetLoadedClipsCount());
+                    ImGui::Text("Active Sounds: %zu", audioSys->GetActiveSoundsCount());
+                    ImGui::Text("Last Played: %s", audioSys->GetLastPlayedClip().c_str());
+                    ImGui::Text("Last Error: %s", audioSys->GetLastError().c_str());
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "AudioSystem not found in context.");
+                }
+            }
+
+            // State Objects Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("State Objects Diagnostics", ImGuiTreeNodeFlags_None)) {
+                if (m_GameMode && m_GameMode->GetObjectActivationSystem()) {
+                    auto* stateSys = m_GameMode->GetObjectActivationSystem();
+                    ImGui::Text("State Objects: %zu", stateSys->GetStateObjectsCount());
+                    ImGui::Text("Activatable Objects: %zu", stateSys->GetActivatableObjectsCount());
+                    ImGui::Text("Doors: %zu", stateSys->GetDoorsCount());
+                    ImGui::Text("Last Activation ID: %s", stateSys->GetLastActivationID().c_str());
+                    if (stateSys->GetLastActivationError() != "None") {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Last Error: %s", stateSys->GetLastActivationError().c_str());
+                    } else {
+                        ImGui::Text("Last Error: None");
+                    }
+                    ImGui::Separator();
+                    stateSys->DrawDiagnosticsGUI();
+                } else {
+                    ImGui::Text("Not in Play Mode or ObjectActivationSystem not active.");
+                }
+            }
+
+            // Checkpoints Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Checkpoints Diagnostics", ImGuiTreeNodeFlags_None)) {
+                if (m_GameMode && m_GameMode->GetCheckpointSystem()) {
+                    auto* cpSys = m_GameMode->GetCheckpointSystem();
+                    bool valid = cpSys->HasValidCheckpoint();
+                    const auto& snap = cpSys->GetCurrentSnapshot();
+                    
+                    ImGui::Text("Current Checkpoint: %s", m_GameMode->GetGameState().CurrentCheckpointID.c_str());
+                    ImGui::Text("Name: %s", valid ? snap.CheckpointName.c_str() : "None");
+                    ImGui::Text("Snapshot Valid: %s", valid ? "true" : "false");
+                    
+                    if (valid) {
+                        ImGui::Separator();
+                        ImGui::Text("Captured Snapshot State:");
+                        ImGui::Text("  Player Position: (%.2f, %.2f, %.2f)", 
+                            snap.PlayerTransform.position.x, 
+                            snap.PlayerTransform.position.y, 
+                            snap.PlayerTransform.position.z);
+                        ImGui::Text("  Active Objective: %s", snap.ActiveObjectiveID.c_str());
+                        ImGui::Text("  Completed Objectives: %zu", snap.CompletedObjectives.size());
+                        ImGui::Text("  Simple State Objects: %zu", snap.SimpleObjectStates.size());
+                        ImGui::Text("  Elapsed Time: %.2fs", snap.ElapsedGameplayTime);
+                    }
+                    ImGui::Separator();
+                    ImGui::Text("Last Event: %s", cpSys->GetLastCheckpointEvent().c_str());
+                } else {
+                    ImGui::Text("Not in Play Mode or CheckpointSystem not active.");
+                }
+            }
+
+            // Gameplay Save Diagnostics
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Gameplay Save Diagnostics", ImGuiTreeNodeFlags_None)) {
+                auto* saveSys = m_Context ? m_Context->saveSystem : nullptr;
+                if (saveSys) {
+                    ImGui::Text("GAMEPLAY SAVE");
+                    ImGui::Text("Last Save Path: %s", saveSys->GetLastSavePath().c_str());
+                    ImGui::Text("Last Save Valid: %s", saveSys->IsLastSaveValid() ? "true" : "false");
+                    ImGui::Text("Save Version: %u", saveSys->GetLastSaveVersion());
+                    ImGui::Text("Scene: %s", saveSys->GetLastSaveScene().c_str());
+                    ImGui::Text("Checksum: 0x%llX", saveSys->GetLastSaveChecksum());
+                    ImGui::Text("Payload Size: %llu bytes", saveSys->GetLastSavePayloadSize());
+                    
+                    if (saveSys->IsLastSaveValid()) {
+                        ImGui::Separator();
+                        ImGui::Text("Captured:");
+                        const auto& trans = saveSys->GetLastSavePlayerTransform();
+                        ImGui::Text("  Player Transform: (%.2f, %.2f, %.2f)", trans.position.x, trans.position.y, trans.position.z);
+                        ImGui::Text("  Player Health: %.1f", saveSys->GetLastSavePlayerHealth());
+                        ImGui::Text("  Player Alive: %s", saveSys->IsLastSavePlayerAlive() ? "true" : "false");
+                        ImGui::Text("  Active Objective: %s", saveSys->GetLastSaveActiveObjectiveID().c_str());
+                        ImGui::Text("  Completed Objectives: %zu", saveSys->GetLastSaveCompletedObjectivesCount());
+                        ImGui::Text("  Checkpoint: %s", saveSys->GetLastSaveCheckpointID().c_str());
+                        ImGui::Text("  Interactable States: %zu", saveSys->GetLastSaveInteractableStatesCount());
+                        ImGui::Text("  Simple Object States: %zu", saveSys->GetLastSaveSimpleObjectStatesCount());
+                    }
+                    
+                    ImGui::Separator();
+                    ImGui::Text("RESTORE");
+                    ImGui::Text("Last Restore Result: %s", saveSys->GetLastRestoreResult().c_str());
+                    ImGui::Text("Source Save: %s", saveSys->GetLastRestoreSourceSave().c_str());
+                    ImGui::Text("Scene Match: %s", saveSys->IsLastRestoreSceneMatch() ? "true" : "false");
+                    ImGui::Text("Checksum Valid: %s", saveSys->IsLastRestoreChecksumValid() ? "true" : "false");
+                    ImGui::Text("Objects Restored: %zu", saveSys->GetLastRestoreObjectsCount());
+                    ImGui::Text("Interactables Restored: %zu", saveSys->GetLastRestoreInteractablesCount());
+                    ImGui::Text("Warnings: %zu", saveSys->GetLastRestoreWarnings());
+                } else {
+                    ImGui::Text("SaveSystem not active.");
                 }
             }
 
@@ -1800,12 +1926,30 @@ namespace eng::runtime {
         // 1. Sync ECS changes to SceneObject tree
         sceneMgr->SyncECSToScene();
 
+        Scene* activeScene = sceneMgr->GetActiveScene();
+        if (!activeScene) {
+            sceneMgr->CreateNewScene("TempPlayScene");
+            activeScene = sceneMgr->GetActiveScene();
+        }
+
+        // --- Run Gameplay Validation ---
+        m_LastValidationResults = m_GameplayValidator.ValidateScene(*activeScene);
+        if (m_GameplayValidator.HasFatalErrors(m_LastValidationResults)) {
+            CORE_LOG_ERROR("[Editor] Blocked EnterPlayMode: Fatal validation errors found in active scene!");
+            for (const auto& res : m_LastValidationResults) {
+                if (res.Severity == ValidationSeverity::Fatal) {
+                    CORE_LOG_ERROR("  [FATAL] %s (Entity: %d, Component: %s)", 
+                        res.Message.c_str(), (int)res.RelatedEntity, res.ComponentName.c_str());
+                }
+            }
+            m_ShowGameplayValidatorWindow = true; // Auto-open validation window on fatal error
+            m_SimulationState = EditorSimulationState::Edit;
+            m_Context->editorSimulationState = EditorSimulationState::Edit;
+            return false;
+        }
+
         // 2. Save pre-play dirty state
         m_EditDirtyBeforePlay = m_DirtyState.IsSceneDirty();
-
-        if (!sceneMgr->GetActiveScene()) {
-            sceneMgr->CreateNewScene("TempPlayScene");
-        }
 
         // 3. Start play session timing and cycle count
         m_PlayStopCycleCount++;
@@ -1815,7 +1959,6 @@ namespace eng::runtime {
         m_Selection.Clear();
 
         // 5. Clone active scene and active ECS in-memory
-        Scene* activeScene = sceneMgr->GetActiveScene();
         m_EditSceneBackup = activeScene;
 
         auto simulationWorld = m_Context->ecs->Clone();
@@ -2086,6 +2229,136 @@ namespace eng::runtime {
         m_EditorCamera.LookAt(entityPos);
 
         CORE_LOG_INFO("[Editor] Successfully created Entity %u from mesh asset: %s", newEntity, entityName.c_str());
+    }
+
+    void EditorLayer::DrawGameplayValidatorWindow() {
+        if (!m_ShowGameplayValidatorWindow) return;
+
+        ImGui::Begin("Gameplay Validation Results", &m_ShowGameplayValidatorWindow);
+
+        if (m_LastValidationResults.empty()) {
+            ImGui::Text("No validation results cached. Click 'Validate Scene' in diagnostics or try entering Play Mode.");
+            ImGui::End();
+            return;
+        }
+
+        // Add a table
+        static ImGuiTableFlags flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersV | ImGuiTableFlags_ScrollY;
+        
+        if (ImGui::BeginTable("ValidationResultsTable", 4, flags, ImVec2(0.0f, 0.0f))) {
+            ImGui::TableSetupColumn("Severity", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+            ImGui::TableSetupColumn("Message", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Entity ID", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableHeadersRow();
+
+            int id = 0;
+            for (const auto& res : m_LastValidationResults) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+
+                ImVec4 color;
+                const char* severityStr = "";
+                switch (res.Severity) {
+                    case ValidationSeverity::Info:
+                        color = ImVec4(0.2f, 0.7f, 1.0f, 1.0f);
+                        severityStr = "Info";
+                        break;
+                    case ValidationSeverity::Warning:
+                        color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+                        severityStr = "Warning";
+                        break;
+                    case ValidationSeverity::Error:
+                        color = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+                        severityStr = "Error";
+                        break;
+                    case ValidationSeverity::Fatal:
+                        color = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+                        severityStr = "Fatal";
+                        break;
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                std::string label = severityStr;
+                std::string selectId = "##row_" + std::to_string(id++);
+                
+                bool isSelected = false;
+                if (ImGui::Selectable((label + selectId).c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (res.RelatedEntity != INVALID_ENTITY) {
+                        m_Selection.Select(res.RelatedEntity);
+                    }
+                }
+                ImGui::PopStyleColor();
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%s", res.ComponentName.c_str());
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextWrapped("%s", res.Message.c_str());
+
+                ImGui::TableSetColumnIndex(3);
+                if (res.RelatedEntity != INVALID_ENTITY) {
+                    ImGui::Text("%d", (int)res.RelatedEntity);
+                } else {
+                    ImGui::Text("N/A");
+                }
+            }
+            ImGui::EndTable();
+        }
+
+        ImGui::End();
+    }
+
+    void EditorLayer::DrawGameplayValidatorDiagnostics() {
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        if (!sceneMgr) return;
+        Scene* activeScene = sceneMgr->GetActiveScene();
+        if (!activeScene) {
+            ImGui::Text("No active scene to validate.");
+            return;
+        }
+
+        if (ImGui::Button("Validate Scene")) {
+            sceneMgr->SyncECSToScene();
+            m_LastValidationResults = m_GameplayValidator.ValidateScene(*activeScene);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Results")) {
+            m_LastValidationResults.clear();
+        }
+
+        size_t infoCount = 0;
+        size_t warnCount = 0;
+        size_t errCount = 0;
+        size_t fatalCount = 0;
+        for (const auto& res : m_LastValidationResults) {
+            switch (res.Severity) {
+                case ValidationSeverity::Info: infoCount++; break;
+                case ValidationSeverity::Warning: warnCount++; break;
+                case ValidationSeverity::Error: errCount++; break;
+                case ValidationSeverity::Fatal: fatalCount++; break;
+            }
+        }
+
+        ImGui::Text("Results Summary:");
+        ImGui::BulletText("Fatal Errors: %zu", fatalCount);
+        ImGui::BulletText("Errors: %zu", errCount);
+        ImGui::BulletText("Warnings: %zu", warnCount);
+        ImGui::BulletText("Info: %zu", infoCount);
+
+        if (fatalCount > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "FATAL: Play mode will be blocked!");
+        } else if (errCount > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Errors present. Check validation panel.");
+        } else if (warnCount > 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Warnings present.");
+        } else if (!m_LastValidationResults.empty()) {
+            ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Validation passed with no errors!");
+        }
+
+        if (ImGui::Button("Open Validation Window")) {
+            m_ShowGameplayValidatorWindow = true;
+        }
     }
 
 } // namespace eng::runtime

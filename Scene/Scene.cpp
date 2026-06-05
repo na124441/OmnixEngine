@@ -458,6 +458,9 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
         if (oldObj->m_HasInteractable) {
             clonedObj->SetInteractable(oldObj->m_Interactable);
         }
+        if (oldObj->m_HasAudioSource) {
+            clonedObj->SetAudioSource(oldObj->m_AudioSource);
+        }
         if (oldObj->m_HasDirectionalLight) {
             clonedObj->SetDirectionalLight(oldObj->m_DirectionalLight);
         }
@@ -546,6 +549,21 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
             }
             if (signature.test(srcCoordinator.GetComponentType<ObjectiveComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<ObjectiveComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<AudioSourceComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<AudioSourceComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<SimpleStateComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<SimpleStateComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<ActivatableComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<ActivatableComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<DoorComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<DoorComponent>(oldECSEntity));
+            }
+            if (signature.test(srcCoordinator.GetComponentType<CheckpointComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<CheckpointComponent>(oldECSEntity));
             }
             if (signature.test(srcCoordinator.GetComponentType<DirectionalLightComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<DirectionalLightComponent>(oldECSEntity));

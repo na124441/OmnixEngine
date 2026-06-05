@@ -30,10 +30,15 @@ namespace eng::runtime {
         static bool DrawTrigger(TriggerComponent& component, EditorDirtyState& dirtyState);
         static bool DrawInteractable(InteractableComponent& component, EditorDirtyState& dirtyState);
         static bool DrawObjective(ObjectiveComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawAudioSource(AudioSourceComponent& component, EditorDirtyState& dirtyState, class AudioSystem* audioSys = nullptr);
         static bool DrawDirectionalLight(DirectionalLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawPointLight(PointLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawAmbientLight(AmbientLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawSpotLight(SpotLightComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawSimpleState(SimpleStateComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawActivatable(ActivatableComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawDoor(DoorComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawCheckpoint(CheckpointComponent& component, EditorDirtyState& dirtyState);
     };
 
 } // namespace eng::runtime

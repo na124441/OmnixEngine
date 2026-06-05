@@ -91,6 +91,27 @@ namespace eng::runtime {
         OnLevelStart();
     }
 
+    void ObjectiveSystem::RestoreObjectiveState(const std::string& activeID, const std::vector<std::string>& completedIDs)
+    {
+        m_CompletedCount = 0;
+        for (auto& [id, obj] : m_Objectives)
+        {
+            if (std::find(completedIDs.begin(), completedIDs.end(), id) != completedIDs.end())
+            {
+                obj.State = ObjectiveState::Completed;
+                m_CompletedCount++;
+            }
+            else if (id == activeID)
+            {
+                obj.State = ObjectiveState::Active;
+            }
+            else
+            {
+                obj.State = ObjectiveState::Inactive;
+            }
+        }
+    }
+
     void ObjectiveSystem::Update(float dt)
     {
         // Static objectives do not require per-frame updates, but method is required by the plan interface
@@ -99,7 +120,17 @@ namespace eng::runtime {
     void ObjectiveSystem::StartObjective(const std::string& objectiveID)
     {
         auto it = m_Objectives.find(objectiveID);
-        if (it == m_Objectives.end()) return;
+        if (it == m_Objectives.end())
+        {
+            Objective newObj;
+            newObj.ID = objectiveID;
+            newObj.Title = objectiveID;
+            newObj.Description = "";
+            newObj.Repeatable = false;
+            newObj.State = ObjectiveState::Inactive;
+            m_Objectives[objectiveID] = newObj;
+            it = m_Objectives.find(objectiveID);
+        }
 
         bool shouldSimulate = (m_Context->mode == RuntimeMode::Game) ||
                               (m_Context->mode == RuntimeMode::Editor && m_Context->editorSimulationState == EditorSimulationState::Play);
@@ -137,8 +168,14 @@ namespace eng::runtime {
         auto it = m_Objectives.find(objectiveID);
         if (it == m_Objectives.end())
         {
-            LOG_WARN("[ObjectiveSystem] Cannot complete objective '%s': Objective does not exist!", objectiveID.c_str());
-            return;
+            Objective newObj;
+            newObj.ID = objectiveID;
+            newObj.Title = objectiveID;
+            newObj.Description = "";
+            newObj.Repeatable = false;
+            newObj.State = ObjectiveState::Active; // Needs to be active to complete
+            m_Objectives[objectiveID] = newObj;
+            it = m_Objectives.find(objectiveID);
         }
 
         Objective& objective = it->second;

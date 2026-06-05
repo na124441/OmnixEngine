@@ -25,6 +25,8 @@ namespace eng::runtime {
     class IScheduler;
     class IECSWorld;
     class EditorLayer;
+    class AudioSystem;
+    class GameplaySaveSystem;
 }
 
 class InputManager;
@@ -65,6 +67,8 @@ namespace eng::runtime {
         std::unique_ptr<InputManager> m_Input;
         std::unique_ptr<Omnix::EventManager> m_EventManager;
         std::unique_ptr<GameplayEventBus> m_GameplayEventBus;
+        std::unique_ptr<AudioSystem> m_AudioSystem;
+        std::unique_ptr<GameplaySaveSystem> m_GameplaySaveSystem;
         std::unique_ptr<ComponentSchemaRegistry> m_SchemaRegistry;
         std::unique_ptr<EditorLayer> m_Editor;
 

@@ -8,7 +8,7 @@
 constexpr std::size_t MAX_ENTITIES = 120000;
 
 // Maximum number of different components
-constexpr std::size_t MAX_COMPONENTS = 32;
+constexpr std::size_t MAX_COMPONENTS = 64;
 
 // Alias types for clarity
 using Entity = std::uint32_t;

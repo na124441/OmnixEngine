@@ -224,6 +224,16 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("interactionType", static_cast<int>(object->m_Interactable.Type), allocator);
             components.PushBack(comp, allocator);
         }
+        if (object->m_HasAudioSource) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "AudioSource", allocator);
+            comp.AddMember("clipPath", Value(object->m_AudioSource.ClipPath.c_str(), allocator).Move(), allocator);
+            comp.AddMember("playOnStart", object->m_AudioSource.PlayOnStart, allocator);
+            comp.AddMember("loop", object->m_AudioSource.Loop, allocator);
+            comp.AddMember("volume", object->m_AudioSource.Volume, allocator);
+            comp.AddMember("isPlaying", object->m_AudioSource.IsPlaying, allocator);
+            components.PushBack(comp, allocator);
+        }
         if (object->m_HasObjective) {
             Value comp(kObjectType);
             comp.AddMember("type", "Objective", allocator);
@@ -233,7 +243,55 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("completionMode", static_cast<int>(object->m_Objective.CompletionMode), allocator);
             comp.AddMember("startsActive", object->m_Objective.StartsActive, allocator);
             comp.AddMember("repeatable", object->m_Objective.Repeatable, allocator);
-            comp.AddMember("completed", object->m_Objective.Completed, allocator);
+            comp.AddMember("completed", false, allocator); // Reset on save/load
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasSimpleState) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "SimpleState", allocator);
+            comp.AddMember("initialState", static_cast<int>(object->m_SimpleState.InitialState), allocator);
+            comp.AddMember("currentState", static_cast<int>(object->m_SimpleState.InitialState), allocator); // Current starts at initial
+            comp.AddMember("resetOnPlay", object->m_SimpleState.ResetOnPlay, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasActivatable) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Activatable", allocator);
+            comp.AddMember("activationID", Value(object->m_Activatable.ActivationID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("targetActivationID", Value(object->m_Activatable.TargetActivationID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("requiresUnlocked", object->m_Activatable.RequiresUnlocked, allocator);
+            comp.AddMember("oneShot", object->m_Activatable.OneShot, allocator);
+            comp.AddMember("hasActivated", false, allocator); // Reset on save/load
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasDoor) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Door", allocator);
+            
+            Value closedPosVal(kArrayType);
+            closedPosVal.PushBack(object->m_Door.ClosedPosition.x, allocator);
+            closedPosVal.PushBack(object->m_Door.ClosedPosition.y, allocator);
+            closedPosVal.PushBack(object->m_Door.ClosedPosition.z, allocator);
+            comp.AddMember("closedPosition", closedPosVal, allocator);
+ 
+            Value openOffsetVal(kArrayType);
+            openOffsetVal.PushBack(object->m_Door.OpenOffset.x, allocator);
+            openOffsetVal.PushBack(object->m_Door.OpenOffset.y, allocator);
+            openOffsetVal.PushBack(object->m_Door.OpenOffset.z, allocator);
+            comp.AddMember("openOffset", openOffsetVal, allocator);
+ 
+            comp.AddMember("openSpeed", object->m_Door.OpenSpeed, allocator);
+            comp.AddMember("openMode", static_cast<int>(object->m_Door.OpenMode), allocator);
+            comp.AddMember("isOpen", false, allocator); // Reset on save/load
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasCheckpoint) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "Checkpoint", allocator);
+            comp.AddMember("checkpointID", Value(object->m_Checkpoint.CheckpointID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("checkpointName", Value(object->m_Checkpoint.CheckpointName.c_str(), allocator).Move(), allocator);
+            comp.AddMember("activateOnTriggerEnter", object->m_Checkpoint.ActivateOnTriggerEnter, allocator);
+            comp.AddMember("oneShot", object->m_Checkpoint.OneShot, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasDirectionalLight) {

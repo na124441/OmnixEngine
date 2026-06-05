@@ -209,12 +209,17 @@ endif()
 add_library(EngineRuntime
     Runtime/Private/EngineRuntime.cpp
     Runtime/Private/Gameplay/GameMode.cpp
+    Runtime/Private/Gameplay/Save/GameplaySaveSystem.cpp
     Runtime/Private/Gameplay/VerticalSliceGameMode.cpp
     Runtime/Private/Gameplay/GameplayEventBus.cpp
     Runtime/Private/Gameplay/Objectives/ObjectiveSystem.cpp
+    Runtime/Private/Gameplay/StateObjects/ObjectActivationSystem.cpp
     Runtime/Private/Gameplay/CheckpointSystem.cpp
     Runtime/Private/Gameplay/UI/GameplayHUD.cpp
     Runtime/Private/Gameplay/Systems/InteractionSystem.cpp
+    Runtime/Private/Gameplay/Validation/GameplayValidator.cpp
+    Runtime/Private/Audio/MiniaudioBackend.cpp
+    Runtime/Private/Audio/AudioSystem.cpp
     Runtime/Private/Editor/EditorLayer.cpp
     Runtime/Private/Editor/EditorTheme.cpp
     Runtime/Private/Editor/EditorLayout.cpp

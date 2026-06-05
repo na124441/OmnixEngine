@@ -533,6 +533,76 @@ namespace eng::runtime {
                 ImGui::Separator();
             }
 
+            // AudioSource Component
+            if (sig.test(coordinator.GetComponentType<AudioSourceComponent>())) {
+                if (ImGui::CollapsingHeader("AudioSource Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<AudioSourceComponent>(selectedEntity);
+                    ComponentWidgets::DrawAudioSource(comp, dirtyState, m_Context ? m_Context->audioSystem : nullptr);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove AudioSource Component")) {
+                        coordinator.RemoveComponent<AudioSourceComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // SimpleState Component
+            if (sig.test(coordinator.GetComponentType<SimpleStateComponent>())) {
+                if (ImGui::CollapsingHeader("SimpleState Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<SimpleStateComponent>(selectedEntity);
+                    ComponentWidgets::DrawSimpleState(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove SimpleState Component")) {
+                        coordinator.RemoveComponent<SimpleStateComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Activatable Component
+            if (sig.test(coordinator.GetComponentType<ActivatableComponent>())) {
+                if (ImGui::CollapsingHeader("Activatable Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<ActivatableComponent>(selectedEntity);
+                    ComponentWidgets::DrawActivatable(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Activatable Component")) {
+                        coordinator.RemoveComponent<ActivatableComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Door Component
+            if (sig.test(coordinator.GetComponentType<DoorComponent>())) {
+                if (ImGui::CollapsingHeader("Door Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<DoorComponent>(selectedEntity);
+                    ComponentWidgets::DrawDoor(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Door Component")) {
+                        coordinator.RemoveComponent<DoorComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // Checkpoint Component
+            if (sig.test(coordinator.GetComponentType<CheckpointComponent>())) {
+                if (ImGui::CollapsingHeader("Checkpoint Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<CheckpointComponent>(selectedEntity);
+                    ComponentWidgets::DrawCheckpoint(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Checkpoint Component")) {
+                        coordinator.RemoveComponent<CheckpointComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
             // Directional Light Component
             if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
                 if (ImGui::CollapsingHeader("Directional Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -728,12 +798,6 @@ namespace eng::runtime {
                         dirtyState.MarkSceneDirty();
                     }
                 }
-                if (!sig.test(coordinator.GetComponentType<InteractableComponent>())) {
-                    if (ImGui::MenuItem("Interactable Component")) {
-                        coordinator.AddComponent<InteractableComponent>(selectedEntity, InteractableComponent());
-                        dirtyState.MarkSceneDirty();
-                    }
-                }
                 if (!sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
                     if (ImGui::MenuItem("DirectionalLight Component")) {
                         coordinator.AddComponent<DirectionalLightComponent>(selectedEntity, DirectionalLightComponent());
@@ -758,11 +822,51 @@ namespace eng::runtime {
                         dirtyState.MarkSceneDirty();
                     }
                 }
-                if (!sig.test(coordinator.GetComponentType<ObjectiveComponent>())) {
-                    if (ImGui::MenuItem("Objective Component")) {
-                        coordinator.AddComponent<ObjectiveComponent>(selectedEntity, ObjectiveComponent());
-                        dirtyState.MarkSceneDirty();
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Gameplay Components")) {
+                    if (!sig.test(coordinator.GetComponentType<InteractableComponent>())) {
+                        if (ImGui::MenuItem("Interactable Component")) {
+                            coordinator.AddComponent<InteractableComponent>(selectedEntity, InteractableComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
                     }
+                    if (!sig.test(coordinator.GetComponentType<ObjectiveComponent>())) {
+                        if (ImGui::MenuItem("Objective Component")) {
+                            coordinator.AddComponent<ObjectiveComponent>(selectedEntity, ObjectiveComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    if (!sig.test(coordinator.GetComponentType<AudioSourceComponent>())) {
+                        if (ImGui::MenuItem("AudioSource Component")) {
+                            coordinator.AddComponent<AudioSourceComponent>(selectedEntity, AudioSourceComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    if (!sig.test(coordinator.GetComponentType<SimpleStateComponent>())) {
+                        if (ImGui::MenuItem("SimpleState Component")) {
+                            coordinator.AddComponent<SimpleStateComponent>(selectedEntity, SimpleStateComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    if (!sig.test(coordinator.GetComponentType<ActivatableComponent>())) {
+                        if (ImGui::MenuItem("Activatable Component")) {
+                            coordinator.AddComponent<ActivatableComponent>(selectedEntity, ActivatableComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    if (!sig.test(coordinator.GetComponentType<DoorComponent>())) {
+                        if (ImGui::MenuItem("Door Component")) {
+                            coordinator.AddComponent<DoorComponent>(selectedEntity, DoorComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    if (!sig.test(coordinator.GetComponentType<CheckpointComponent>())) {
+                        if (ImGui::MenuItem("Checkpoint Component")) {
+                            coordinator.AddComponent<CheckpointComponent>(selectedEntity, CheckpointComponent());
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                    ImGui::EndMenu();
                 }
                 ImGui::EndPopup();
             }

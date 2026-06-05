@@ -24,6 +24,7 @@ namespace eng::runtime {
 
         void StartObjective(const std::string& objectiveID);
         void CompleteObjective(const std::string& objectiveID);
+        void RestoreObjectiveState(const std::string& activeID, const std::vector<std::string>& completedIDs);
 
         // Accessors for diagnostics/tests
         const std::unordered_map<std::string, Objective>& GetObjectives() const { return m_Objectives; }

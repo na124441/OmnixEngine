@@ -1,6 +1,7 @@
 #include "Runtime/Public/Gameplay/GameMode.h"
 #include "Runtime/Public/RuntimeContext.h"
 #include "Runtime/Public/Gameplay/PlayerStateComponent.h"
+#include "Runtime/Public/Gameplay/Save/GameplaySaveSystem.h"
 #include "Core/Logging/Logger.h"
 #include "Scene/SceneManager.h"
 #include "Scene/Scene.h"
@@ -12,6 +13,7 @@
 #include "Runtime/Public/Gameplay/Objectives/ObjectiveSystem.h"
 #include "Runtime/Public/Gameplay/CheckpointSystem.h"
 #include "Runtime/Public/Gameplay/UI/GameplayHUD.h"
+#include "Runtime/Public/Gameplay/StateObjects/ObjectActivationSystem.h"
 
 namespace eng::runtime {
 
@@ -94,8 +96,13 @@ namespace eng::runtime {
         m_ObjectiveSystem->Initialize(m_Context);
         m_ObjectiveSystem->OnLevelStart();
 
+        m_ObjectActivationSystem = std::make_unique<ObjectActivationSystem>();
+        m_ObjectActivationSystem->Initialize(m_Context);
+        m_ObjectActivationSystem->OnPlayStart();
+
         m_CheckpointSystem = std::make_unique<CheckpointSystem>();
         m_CheckpointSystem->Initialize(m_Context);
+        m_CheckpointSystem->OnPlayStart();
 
         m_GameplayHUD = std::make_unique<GameplayHUD>();
         GameplayHUDContext hudContext;
@@ -124,7 +131,15 @@ namespace eng::runtime {
         m_GameplayHUD.reset();
 
         m_ObjectiveSystem.reset();
+        if (m_CheckpointSystem) {
+            m_CheckpointSystem->OnPlayStop();
+        }
         m_CheckpointSystem.reset();
+
+        if (m_ObjectActivationSystem) {
+            m_ObjectActivationSystem->OnPlayStop();
+        }
+        m_ObjectActivationSystem.reset();
 
         // Clear all persistent event handlers on play stop to prevent dangling pointer crashes
         if (m_Context && m_Context->gameplayEventBus) {
@@ -177,6 +192,12 @@ namespace eng::runtime {
             if (m_ObjectiveSystem) {
                 m_ObjectiveSystem->Update(dt);
             }
+            if (m_CheckpointSystem) {
+                m_CheckpointSystem->Update(dt);
+            }
+            if (m_ObjectActivationSystem) {
+                m_ObjectActivationSystem->Update(dt);
+            }
         }
     }
 
@@ -193,34 +214,52 @@ namespace eng::runtime {
     }
 
     void GameMode::RestartLevel() {
-        m_State = GameSessionState::Restarting;
-        m_GameState.Reset();
-        m_GameState.SessionState = GameSessionState::Restarting;
-
-        if (m_GameplayHUD) {
-            m_GameplayHUD->ClearNotifications();
-        }
-        
-        // Reset player state if player exists
-        Entity playerEnt = FindPlayerEntity();
-        if (playerEnt != INVALID_ENTITY && m_Context && m_Context->ecs) {
-            auto& coordinator = m_Context->ecs->getCoordinator();
-            auto pscType = coordinator.GetComponentType<PlayerStateComponent>();
-            if (coordinator.GetSignature(playerEnt).test(pscType)) {
-                coordinator.GetComponent<PlayerStateComponent>(playerEnt).Reset();
+        if (m_CheckpointSystem && m_CheckpointSystem->HasValidCheckpoint()) {
+            m_CheckpointSystem->RestoreLatestCheckpoint();
+            
+            // Clear event bus queue on checkpoint restart
+            if (m_Context && m_Context->gameplayEventBus) {
+                m_Context->gameplayEventBus->ClearQueue();
             }
-        }
 
-        // Clear event bus queue on restart
-        if (m_Context && m_Context->gameplayEventBus) {
-            m_Context->gameplayEventBus->ClearQueue();
-        }
+            if (m_GameplayHUD) {
+                m_GameplayHUD->ClearNotifications();
+                m_GameplayHUD->ShowNotification("Restored Checkpoint", 2.0f);
+            }
+            
+            m_State = GameSessionState::Playing;
+            m_GameState.SessionState = GameSessionState::Playing;
+            LOG_INFO("[GameMode] RestartLevel: Restored from checkpoint '%s'", m_GameState.CurrentCheckpointID.c_str());
+        } else {
+            m_State = GameSessionState::Restarting;
+            m_GameState.Reset();
+            m_GameState.SessionState = GameSessionState::Restarting;
 
-        if (m_ObjectiveSystem) {
-            m_ObjectiveSystem->OnLevelRestart();
-        }
+            if (m_GameplayHUD) {
+                m_GameplayHUD->ClearNotifications();
+            }
+            
+            // Reset player state if player exists
+            Entity playerEnt = FindPlayerEntity();
+            if (playerEnt != INVALID_ENTITY && m_Context && m_Context->ecs) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                auto pscType = coordinator.GetComponentType<PlayerStateComponent>();
+                if (coordinator.GetSignature(playerEnt).test(pscType)) {
+                    coordinator.GetComponent<PlayerStateComponent>(playerEnt).Reset();
+                }
+            }
 
-        LOG_INFO("[GameMode] RestartLevel: Level Restarting");
+            // Clear event bus queue on restart
+            if (m_Context && m_Context->gameplayEventBus) {
+                m_Context->gameplayEventBus->ClearQueue();
+            }
+
+            if (m_ObjectiveSystem) {
+                m_ObjectiveSystem->OnLevelRestart();
+            }
+
+            LOG_INFO("[GameMode] RestartLevel: Full Level Reset performed");
+        }
     }
 
     void GameMode::PauseLevel() {
@@ -233,6 +272,14 @@ namespace eng::runtime {
         m_State = GameSessionState::Playing;
         m_GameState.SessionState = GameSessionState::Playing;
         LOG_INFO("[GameMode] ResumeLevel: Level Resumed");
+    }
+
+    bool GameMode::RestoreFromSnapshot(const GameplaySaveSnapshot& snapshot) {
+        if (!m_Context || !m_Context->saveSystem) {
+            LOG_ERROR("[GameMode] Cannot restore from snapshot: saveSystem is null");
+            return false;
+        }
+        return m_Context->saveSystem->RestoreSnapshot(snapshot);
     }
 
     GameSessionState GameMode::GetState() const {

@@ -67,6 +67,10 @@ public:
         m_coordinator.RegisterComponent<PlayerStateComponent>();
         m_coordinator.RegisterComponent<PlayerTagComponent>();
         m_coordinator.RegisterComponent<ObjectiveComponent>();
+        m_coordinator.RegisterComponent<SimpleStateComponent>();
+        m_coordinator.RegisterComponent<ActivatableComponent>();
+        m_coordinator.RegisterComponent<DoorComponent>();
+        m_coordinator.RegisterComponent<CheckpointComponent>();
 
         // 2. Register Systems & Signatures
 
