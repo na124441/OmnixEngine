@@ -378,19 +378,6 @@ void Scene::RegisterObjectWithECS(std::shared_ptr<SceneObject> obj) {
 
     std::cout << "[Scene]   - Registering with ECS (EntityID: " << obj->GetID() << ")" << std::endl;
 
-    // TODO: Uncomment when ECS Coordinator is integrated
-
-    // auto& ecs = ECSCoordinator::Get();
-
-    // Register entity
-    // ecs.RegisterEntity(obj->GetID());
-
-    // Get all components from SceneObject and add to ECS
-    // auto components = obj->GetComponents();
-    // for (auto& component : components) {
-    //     ecs.AddComponent(obj->GetID(), component);
-    // }
-
     std::cout << "[Scene]   - ECS registration complete (placeholder)" << std::endl;
 }
 
