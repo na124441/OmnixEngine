@@ -171,6 +171,24 @@ struct Matrix4x4 {
     }
 
     /**
+     * @brief Transform a 3D point through this matrix (w=1)
+     *
+     * Multiplies [x, y, z, 1]^T by this column-major TRS matrix.
+     * Performs homogeneous divide for correctness with non-affine matrices.
+     *
+     * @param point  Local-space point
+     * @return World-space point
+     */
+    Vector3 TransformPoint(const Vector3& point) const {
+        float x = m[0]*point.x + m[4]*point.y + m[8] *point.z + m[12];
+        float y = m[1]*point.x + m[5]*point.y + m[9] *point.z + m[13];
+        float z = m[2]*point.x + m[6]*point.y + m[10]*point.z + m[14];
+        float w = m[3]*point.x + m[7]*point.y + m[11]*point.z + m[15];
+        if (w != 0.0f && w != 1.0f) { x /= w; y /= w; z /= w; }
+        return Vector3(x, y, z);
+    }
+
+    /**
      * @brief Extract scale from matrix (approximate)
      * @return Scale vector
      */

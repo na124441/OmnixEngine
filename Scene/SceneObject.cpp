@@ -38,6 +38,15 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
     if (m_HasRenderableMesh) {
         coordinator.AddComponent(m_ECSEntity, RenderableMeshComponent(m_MeshAssetHandle));
         coordinator.AddComponent(m_ECSEntity, MeshRendererComponent());
+
+        // Attach a BoundsComponent so this renderable participates in the
+        // bounds system. Local bounds default to a unit cube; the
+        // BoundsUpdateSystem will compute world-space bounds each frame.
+        BoundsComponent bc;
+        bc.localMin = { -0.5f, -0.5f, -0.5f };
+        bc.localMax = {  0.5f,  0.5f,  0.5f };
+        bc.dirty    = true;
+        coordinator.AddComponent(m_ECSEntity, bc);
     }
 
     // 5. Add MaterialComponent if assigned

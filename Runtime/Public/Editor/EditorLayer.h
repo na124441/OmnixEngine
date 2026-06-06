@@ -68,12 +68,17 @@ namespace eng::runtime {
         std::unique_ptr<eng::runtime::IECSWorld> m_EditWorldBackup = nullptr;
         std::unique_ptr<GameMode> m_GameMode;
         bool m_ShowColliders = true;
+        bool m_ShowBounds = false;
         bool m_ShowDiagnostics = false;
         bool m_ResetLayout = false;
         bool m_ShowInteractPrompt = false;
 
         float m_LastViewportWidth = 1280.0f;
         float m_LastViewportHeight = 720.0f;
+        bool m_ResizePending = false;
+        uint32_t m_TargetViewportWidth = 0;
+        uint32_t m_TargetViewportHeight = 0;
+        std::chrono::steady_clock::time_point m_LastResizeRequestTime;
         EditorCamera m_EditorCamera;
         bool m_CursorCaptured = false;
 

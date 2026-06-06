@@ -39,6 +39,14 @@ namespace eng::runtime {
         std::string ReadString();
         void ReadBytes(uint8_t* outData, size_t size);
 
+        // Standard helpers
+        uint32_t ReadUInt32();
+        uint64_t ReadUInt64();
+        float ReadFloat();
+        void ReadBytes(void* outData, size_t size);
+        std::string ReadFixedString(size_t maxBytes);
+        uint64_t Tell();
+
         size_t GetOffset() const { return m_Offset; }
         void Seek(size_t offset);
         size_t GetBufferSize() const { return m_Buffer.size(); }

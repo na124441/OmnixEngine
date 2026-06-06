@@ -6,6 +6,7 @@
 #include "Runtime/Public/Gameplay/Save/GameplaySaveSystem.h"
 #include "Runtime/Public/RuntimeContext.h"
 #include "Runtime/Public/AssetRegistry.h"
+#include "Runtime/Public/World/WorldManager.h"
 #include "Runtime/Public/RuntimeState.h"
 #include "Runtime/Public/AllocationDiagnostics.h"
 #include "Runtime/Public/OwnershipValidation.h"
@@ -40,6 +41,7 @@
 #include "Serializer/ECS/SchemaRegistry.h"
 #include "Physics/Public/PhysicsWorld.h"
 #include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
+#include "ECS/BoundsUpdateSystem.h"
 
 #include "Core/Logger.h"
 #include "Core/Timer.h"
@@ -282,6 +284,11 @@ namespace eng::runtime {
         TrackAllocation("Scene", sizeof(SceneManager));
         RegisterSystemStartup("Scene");
 
+        // WorldManager Subsystem Initialization
+        m_WorldManager = std::make_unique<Omnix::WorldManager>(m_Assets.get(), m_AssetRegistry.get(), m_Scenes.get());
+        TrackAllocation("WorldManager", sizeof(Omnix::WorldManager));
+        RegisterSystemStartup("WorldManager");
+
         // 9. Populate Context
         m_Context.renderer = m_Renderer.get();
         m_Context.physicsWorld = m_PhysicsWorld.get();
@@ -301,6 +308,7 @@ namespace eng::runtime {
         m_Context.gameplayEventBus = m_GameplayEventBus.get();
         m_Context.audioSystem = m_AudioSystem.get();
         m_Context.saveSystem = m_GameplaySaveSystem.get();
+        m_Context.worldManager = m_WorldManager.get();
         m_GameplaySaveSystem->Initialize(&m_Context);
         m_Context.timing = &m_Timing;
         m_Context.currentStage = &m_CurrentStage;
@@ -431,11 +439,16 @@ namespace eng::runtime {
                 if (m_Scenes) {
                     m_Scenes->Update(static_cast<float>(dt));
                 }
+                if (m_WorldManager) {
+                    m_WorldManager->Update(m_Context, static_cast<float>(dt));
+                }
                 if (m_ECS) {
                     m_ECS->Update(static_cast<float>(dt));
 
                     bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
-                                          (m_Context.mode == RuntimeMode::Editor && m_Context.editorSimulationState == EditorSimulationState::Play);
+                                          (m_Context.mode == RuntimeMode::Editor && 
+                                           (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                            m_Context.editorSimulationState == EditorSimulationState::Step));
                     if (shouldSimulate) {
                         auto& coordinator = m_ECS->getCoordinator();
                         auto* world = dynamic_cast<World*>(m_ECS.get());
@@ -469,7 +482,9 @@ namespace eng::runtime {
             {
                 OMNIX_PROFILE_SCOPE("Physics");
                 bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
-                                      (m_Context.mode == RuntimeMode::Editor && m_Context.editorSimulationState == EditorSimulationState::Play);
+                                      (m_Context.mode == RuntimeMode::Editor && 
+                                       (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                        m_Context.editorSimulationState == EditorSimulationState::Step));
                 if (shouldSimulate && m_PhysicsWorld) {
                     m_PhysicsWorld->FixedUpdate(static_cast<float>(dt));
                     auto& coordinator = m_ECS->getCoordinator();
@@ -500,7 +515,9 @@ namespace eng::runtime {
             // Interaction Stage (Play Mode only)
             {
                 bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
-                                      (m_Context.mode == RuntimeMode::Editor && m_Context.editorSimulationState == EditorSimulationState::Play);
+                                      (m_Context.mode == RuntimeMode::Editor && 
+                                       (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                        m_Context.editorSimulationState == EditorSimulationState::Step));
                 if (shouldSimulate && m_ECS) {
                     auto* world = dynamic_cast<World*>(m_ECS.get());
                     if (world) {
@@ -516,9 +533,24 @@ namespace eng::runtime {
                 m_Context.gameplayEventBus->FlushEvents();
             }
 
+            // Bounds Update Stage — runs every frame (editor + game)
+            // so world-space AABBs are always fresh for debug draw / culling.
+            if (m_ECS) {
+                auto* world = dynamic_cast<World*>(m_ECS.get());
+                if (world) {
+                    if (auto boundsSys = world->GetSystem<BoundsUpdateSystem>()) {
+                        boundsSys->Update(static_cast<float>(dt), m_ECS->getCoordinator());
+                    }
+                }
+            }
+
             // GameMode Tick
             if (m_Context.gameMode) {
                 m_Context.gameMode->Tick(static_cast<float>(dt));
+            }
+
+            if (m_Context.editorSimulationState == EditorSimulationState::Step) {
+                m_Context.editorSimulationState = EditorSimulationState::Pause;
             }
 
             // Animation Stage
@@ -644,6 +676,13 @@ namespace eng::runtime {
             m_PhysicsWorld->Shutdown();
             m_PhysicsWorld.reset();
             TrackDeallocation("PhysicsWorld", sizeof(eng::physics::PhysicsWorld));
+        }
+
+        // WorldManager Shutdown
+        if (m_WorldManager) {
+            RegisterSystemShutdown("WorldManager");
+            m_WorldManager.reset();
+            TrackDeallocation("WorldManager", sizeof(Omnix::WorldManager));
         }
 
         // 2. Scene Shutdown

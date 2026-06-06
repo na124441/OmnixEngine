@@ -5,6 +5,7 @@
 #include "Core/World.h"
 #include "ECS/ECSComponents.h"
 #include "Core/Logger.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneObject.h"
 #include "Scene/SceneSerializer.h"
@@ -140,7 +141,17 @@ namespace eng::runtime {
                     if (coordinator.IsEntityAlive(entity))
                     {
                         auto signature = coordinator.GetSignature(entity);
-                        if (signature.test(audioSourceType))
+                        bool isSimulating = true;
+                        if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>()))
+                        {
+                            const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entity);
+                            if (!zec.simulating)
+                            {
+                                isSimulating = false;
+                            }
+                        }
+
+                        if (isSimulating && signature.test(audioSourceType))
                         {
                             auto& comp = coordinator.GetComponent<AudioSourceComponent>(entity);
                             if (comp.PlayOnStart)
@@ -172,6 +183,16 @@ namespace eng::runtime {
                     if (coordinator.IsEntityAlive(entity))
                     {
                         auto signature = coordinator.GetSignature(entity);
+                        bool isSimulating = true;
+                        if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>()))
+                        {
+                            const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entity);
+                            if (!zec.simulating)
+                            {
+                                isSimulating = false;
+                            }
+                        }
+
                         if (signature.test(audioSourceType))
                         {
                             auto& comp = coordinator.GetComponent<AudioSourceComponent>(entity);
@@ -179,7 +200,7 @@ namespace eng::runtime {
                             auto it = std::find_if(m_ActiveSounds.begin(), m_ActiveSounds.end(),
                                 [entity](const std::unique_ptr<ActiveSound>& as) { return as->EntityID == entity; });
                             
-                            if (comp.IsPlaying)
+                            if (comp.IsPlaying && isSimulating)
                             {
                                 if (it == m_ActiveSounds.end())
                                 {

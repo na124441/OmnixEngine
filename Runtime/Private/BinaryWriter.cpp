@@ -8,6 +8,7 @@ namespace eng::runtime {
 
     void BinaryWriter::BeginFile(const char magic[8], uint32_t versionMajor, uint32_t versionMinor) {
         m_Buffer.clear();
+        m_Offset = 0;
         FileHeader header;
         std::memcpy(header.magic, magic, 8);
         header.versionMajor = versionMajor;
@@ -79,8 +80,43 @@ namespace eng::runtime {
 
     void BinaryWriter::WriteBytes(const uint8_t* data, size_t size) {
         if (size > 0 && data != nullptr) {
-            m_Buffer.insert(m_Buffer.end(), data, data + size);
+            if (m_Offset + size > m_Buffer.size()) {
+                m_Buffer.resize(m_Offset + size);
+            }
+            std::memcpy(m_Buffer.data() + m_Offset, data, size);
+            m_Offset += size;
         }
+    }
+
+    void BinaryWriter::WriteUInt32(uint32_t value) {
+        WriteU32(value);
+    }
+
+    void BinaryWriter::WriteUInt64(uint64_t value) {
+        WriteU64(value);
+    }
+
+    void BinaryWriter::WriteFloat(float value) {
+        WriteF32(value);
+    }
+
+    void BinaryWriter::WriteBytes(const void* data, size_t size) {
+        WriteBytes(static_cast<const uint8_t*>(data), size);
+    }
+
+    void BinaryWriter::WriteFixedString(const std::string& value, size_t maxBytes) {
+        std::vector<char> temp(maxBytes, '\0');
+        size_t copyLen = std::min(value.size(), maxBytes - 1);
+        std::memcpy(temp.data(), value.data(), copyLen);
+        WriteBytes(reinterpret_cast<const uint8_t*>(temp.data()), maxBytes);
+    }
+
+    uint64_t BinaryWriter::Tell() {
+        return static_cast<uint64_t>(m_Offset);
+    }
+
+    void BinaryWriter::Seek(uint64_t position) {
+        m_Offset = static_cast<size_t>(position);
     }
 
 } // namespace eng::runtime

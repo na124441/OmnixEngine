@@ -413,6 +413,79 @@ namespace eng::physics {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // RenderBounds — draws world-space AABBs (and optional bounding spheres)
+    // for every entity that has a BoundsComponent.
+    // -------------------------------------------------------------------------
+    void PhysicsDebugDraw::RenderBounds(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX, float viewportOffsetY) {
+        s_ViewportOffsetX = viewportOffsetX;
+        s_ViewportOffsetY = viewportOffsetY;
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
+        if (!drawList) return;
+
+        ImU32 aabbColor   = IM_COL32(0, 220, 255, 200); // Cyan — AABB
+        ImU32 sphereColor = IM_COL32(255, 200, 0, 160); // Amber — sphere
+
+        // World-space AABB corners are already in world space, so use identity transform.
+        glm::mat4 identity = glm::mat4(1.0f);
+
+        for (Entity entity : coordinator.GetActiveEntities()) {
+            if (entity == 0 || !coordinator.IsEntityAlive(entity)) continue;
+
+            auto signature = coordinator.GetSignature(entity);
+            if (!signature.test(coordinator.GetComponentType<BoundsComponent>())) continue;
+
+            const auto& bounds = coordinator.GetComponent<BoundsComponent>(entity);
+
+            // Skip degenerate (all-zero) world bounds
+            if (bounds.worldMin.x == bounds.worldMax.x &&
+                bounds.worldMin.y == bounds.worldMax.y &&
+                bounds.worldMin.z == bounds.worldMax.z) {
+                continue;
+            }
+
+            // Build 8 world-space corners of the AABB
+            glm::vec3 wMin(bounds.worldMin.x, bounds.worldMin.y, bounds.worldMin.z);
+            glm::vec3 wMax(bounds.worldMax.x, bounds.worldMax.y, bounds.worldMax.z);
+
+            glm::vec3 v[8] = {
+                { wMin.x, wMin.y, wMin.z },
+                { wMax.x, wMin.y, wMin.z },
+                { wMax.x, wMax.y, wMin.z },
+                { wMin.x, wMax.y, wMin.z },
+                { wMin.x, wMin.y, wMax.z },
+                { wMax.x, wMin.y, wMax.z },
+                { wMax.x, wMax.y, wMax.z },
+                { wMin.x, wMax.y, wMax.z }
+            };
+
+            // 12 edges of the AABB
+            int edges[12][2] = {
+                {0,1},{1,2},{2,3},{3,0},  // near face
+                {4,5},{5,6},{6,7},{7,4},  // far face
+                {0,4},{1,5},{2,6},{3,7}   // connecting edges
+            };
+
+            for (int i = 0; i < 12; ++i) {
+                bool behind1 = false, behind2 = false;
+                glm::vec2 p1 = ProjectPoint(v[edges[i][0]], identity, view, proj, screenWidth, screenHeight, behind1);
+                glm::vec2 p2 = ProjectPoint(v[edges[i][1]], identity, view, proj, screenWidth, screenHeight, behind2);
+                if (!behind1 && !behind2) {
+                    drawList->AddLine(ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), aabbColor, 1.5f);
+                }
+            }
+
+            // Optional bounding sphere (3 great circles)
+            if (bounds.hasSphere) {
+                glm::vec3 sc(bounds.worldSphereCenter.x, bounds.worldSphereCenter.y, bounds.worldSphereCenter.z);
+                float sr = bounds.worldSphereRadius;
+                DrawCircle(sc, glm::vec3(1,0,0), glm::vec3(0,1,0), sr, identity, view, proj, screenWidth, screenHeight, drawList, sphereColor);
+                DrawCircle(sc, glm::vec3(1,0,0), glm::vec3(0,0,1), sr, identity, view, proj, screenWidth, screenHeight, drawList, sphereColor);
+                DrawCircle(sc, glm::vec3(0,1,0), glm::vec3(0,0,1), sr, identity, view, proj, screenWidth, screenHeight, drawList, sphereColor);
+            }
+        }
+    }
+
     std::vector<DebugRaycastInfo> PhysicsDebugDraw::s_Raycasts;
 
     void PhysicsDebugDraw::AddDebugRaycast(const Vector3& origin, const Vector3& direction, float distance, bool hit, const Vector3& hitPoint, const Vector3& hitNormal) {

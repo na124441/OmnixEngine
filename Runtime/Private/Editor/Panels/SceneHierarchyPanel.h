@@ -4,6 +4,10 @@
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorDirtyState.h"
 
+#include <string>
+
+class SceneObject;
+
 namespace eng::runtime {
 
     class SceneHierarchyPanel {
@@ -12,7 +16,10 @@ namespace eng::runtime {
         void Render(EditorSelection& selection, EditorDirtyState& dirtyState);
 
     private:
+        void DrawNode(::SceneObject* obj, EditorSelection& selection, EditorDirtyState& dirtyState, const std::string& searchFilter);
+
         RuntimeContext* m_Context = nullptr;
+        char m_SearchBuffer[128] = "";
     };
 
 } // namespace eng::runtime

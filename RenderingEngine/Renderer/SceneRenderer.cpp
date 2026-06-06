@@ -18,6 +18,7 @@
 #include "ECS/LightCollectionSystem.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/OmnixMaterialFormat.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 
 namespace eng::renderer {
 
@@ -534,6 +535,15 @@ void SceneRenderer::buildRenderQueue()
             auto meshRendererType = coordinator.GetComponentType<MeshRendererComponent>();
             
             if (sig.test(transformType) && sig.test(meshRendererType)) {
+                // Check if ZoneEntityComponent is attached and simulating is false (hide renderables from inactive zones)
+                auto zoneEntityCompType = coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>();
+                if (sig.test(zoneEntityCompType)) {
+                    const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entity);
+                    if (!zec.simulating) {
+                        continue;
+                    }
+                }
+
                 auto& transform = coordinator.GetComponent<TransformComponent>(entity);
                 auto& meshRenderer = coordinator.GetComponent<MeshRendererComponent>(entity);
 

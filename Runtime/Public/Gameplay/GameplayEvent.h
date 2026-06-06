@@ -21,7 +21,9 @@ namespace eng::runtime {
         ObjectiveCompleted,
         CheckpointReached,
         LevelCompleted,
-        PlayerDied
+        PlayerDied,
+        ZoneEnter,
+        ZoneExit
     };
 
     struct GameplayEvent
@@ -33,6 +35,9 @@ namespace eng::runtime {
 
         std::string ObjectiveID;
         std::string CheckpointID;
+
+        uint64_t ZoneUUIDHigh = 0;
+        uint64_t ZoneUUIDLow = 0;
 
         float Timestamp = 0.0f;
         uint64_t SequenceID = 0;
@@ -51,6 +56,8 @@ namespace eng::runtime {
             case GameplayEventType::CheckpointReached: return "CheckpointReached";
             case GameplayEventType::LevelCompleted: return "LevelCompleted";
             case GameplayEventType::PlayerDied: return "PlayerDied";
+            case GameplayEventType::ZoneEnter: return "ZoneEnter";
+            case GameplayEventType::ZoneExit: return "ZoneExit";
             default: return "Unknown";
         }
     }

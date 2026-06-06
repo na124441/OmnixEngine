@@ -13,6 +13,7 @@
 #include "ECSConfig.h"
 #include "ECSComponents.h"
 #include "Coordinator.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include <iostream>
 
 /**
@@ -35,6 +36,15 @@ public:
                   << " entities..." << std::endl;
 
         for (Entity entity : m_Entities) {
+            // Check if ZoneEntityComponent is attached and simulating is false
+            auto signature = coordinator.GetSignature(entity);
+            if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>())) {
+                const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entity);
+                if (!zec.simulating) {
+                    continue;
+                }
+            }
+
             // Get components
             auto& transform = coordinator.GetComponent<TransformComponent>(entity);
             auto& rigidBody = coordinator.GetComponent<RigidBodyComponent>(entity);

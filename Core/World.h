@@ -11,6 +11,7 @@
 #include "../ECS/ECSComponents.h"
 #include "ECS/Public/IECSWorld.h"
 #include "Runtime/Public/Gameplay/PlayerStateComponent.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 
 // System Includes
 #include "../Components/Behavior/MovementCapability.h"
@@ -22,6 +23,7 @@
 #include "../ECS/TriggerSystem.h"
 #include "../ECS/LightCollectionSystem.h"
 #include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
+#include "../ECS/BoundsUpdateSystem.h"
 
 namespace eng::runtime {
 
@@ -71,6 +73,8 @@ public:
         m_coordinator.RegisterComponent<ActivatableComponent>();
         m_coordinator.RegisterComponent<DoorComponent>();
         m_coordinator.RegisterComponent<CheckpointComponent>();
+        m_coordinator.RegisterComponent<ZoneEntityComponent>();
+        m_coordinator.RegisterComponent<BoundsComponent>();
 
         // 2. Register Systems & Signatures
 
@@ -145,6 +149,15 @@ public:
             sig.set(m_coordinator.GetComponentType<TransformComponent>());
             sig.set(m_coordinator.GetComponentType<InteractableComponent>());
             m_coordinator.SetSystemSignature<InteractionSystem>(sig);
+        }
+
+        // --- BoundsUpdateSystem ---
+        {
+            auto boundsSys = m_coordinator.RegisterSystem<BoundsUpdateSystem>();
+            ::Signature sig;
+            sig.set(m_coordinator.GetComponentType<TransformComponent>());
+            sig.set(m_coordinator.GetComponentType<BoundsComponent>());
+            m_coordinator.SetSystemSignature<BoundsUpdateSystem>(sig);
         }
 
         CORE_LOG_INFO("World: Golden Scene ECS initialized");

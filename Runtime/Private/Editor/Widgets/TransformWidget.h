@@ -7,7 +7,7 @@ namespace eng::runtime {
 
     class TransformWidget {
     public:
-        static bool Draw(TransformComponent& transform, EditorDirtyState& dirtyState);
+        static bool Draw(TransformComponent& transform, EditorDirtyState& dirtyState, bool& outCommitted);
     };
 
 } // namespace eng::runtime

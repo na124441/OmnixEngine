@@ -75,7 +75,11 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<TransformComponent>())) {
                 if (ImGui::CollapsingHeader("Transform Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& transComp = coordinator.GetComponent<TransformComponent>(selectedEntity);
-                    if (TransformWidget::Draw(transComp, dirtyState)) {
+                    bool transformCommitted = false;
+                    if (TransformWidget::Draw(transComp, dirtyState, transformCommitted)) {
+                        // Changed
+                    }
+                    if (transformCommitted) {
                         if (sig.test(coordinator.GetComponentType<StaticBodyComponent>()) && m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
@@ -326,7 +330,11 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<BoxColliderComponent>())) {
                 if (ImGui::CollapsingHeader("Box Collider Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& comp = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
-                    if (ComponentWidgets::DrawBoxCollider(comp, dirtyState)) {
+                    bool colliderCommitted = false;
+                    if (ComponentWidgets::DrawBoxCollider(comp, dirtyState, colliderCommitted)) {
+                        // Changed
+                    }
+                    if (colliderCommitted) {
                         if (m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
@@ -397,7 +405,11 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<SphereColliderComponent>())) {
                 if (ImGui::CollapsingHeader("Sphere Collider Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& comp = coordinator.GetComponent<SphereColliderComponent>(selectedEntity);
-                    if (ComponentWidgets::DrawSphereCollider(comp, dirtyState)) {
+                    bool colliderCommitted = false;
+                    if (ComponentWidgets::DrawSphereCollider(comp, dirtyState, colliderCommitted)) {
+                        // Changed
+                    }
+                    if (colliderCommitted) {
                         if (m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
@@ -418,7 +430,11 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
                 if (ImGui::CollapsingHeader("Capsule Collider Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& comp = coordinator.GetComponent<CapsuleColliderComponent>(selectedEntity);
-                    if (ComponentWidgets::DrawCapsuleCollider(comp, dirtyState)) {
+                    bool colliderCommitted = false;
+                    if (ComponentWidgets::DrawCapsuleCollider(comp, dirtyState, colliderCommitted)) {
+                        // Changed
+                    }
+                    if (colliderCommitted) {
                         if (m_Context->physicsWorld) {
                             m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
                         }
@@ -659,6 +675,20 @@ namespace eng::runtime {
                 ImGui::Separator();
             }
 
+            // Bounds Component
+            if (sig.test(coordinator.GetComponentType<BoundsComponent>())) {
+                if (ImGui::CollapsingHeader("Bounds Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<BoundsComponent>(selectedEntity);
+                    ComponentWidgets::DrawBounds(comp, dirtyState);
+                    ImGui::Spacing();
+                    if (ImGui::Button("Remove Bounds Component")) {
+                        coordinator.RemoveComponent<BoundsComponent>(selectedEntity);
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                ImGui::Separator();
+            }
+
             // --- Add Component Selector ---
             ImGui::Spacing();
             if (ImGui::Button("Add Component...")) {
@@ -819,6 +849,12 @@ namespace eng::runtime {
                 if (!sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
                     if (ImGui::MenuItem("SpotLight Component")) {
                         coordinator.AddComponent<SpotLightComponent>(selectedEntity, SpotLightComponent());
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+                if (!sig.test(coordinator.GetComponentType<BoundsComponent>())) {
+                    if (ImGui::MenuItem("Bounds Component")) {
+                        coordinator.AddComponent<BoundsComponent>(selectedEntity, BoundsComponent());
                         dirtyState.MarkSceneDirty();
                     }
                 }

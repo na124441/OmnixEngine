@@ -466,4 +466,36 @@ struct SpotLightComponent
 };
 
 //============================================================================
+// BOUNDS COMPONENTS
+//============================================================================
+
+struct BoundsComponent {
+    Vector3 localMin;
+    Vector3 localMax;
+    Vector3 worldMin;
+    Vector3 worldMax;
+    bool dirty;
+
+    // Bounding Sphere
+    bool hasSphere;
+    Vector3 sphereCenter;
+    float sphereRadius;
+    Vector3 worldSphereCenter;
+    float worldSphereRadius;
+
+    BoundsComponent()
+        : localMin(0.0f, 0.0f, 0.0f)
+        , localMax(0.0f, 0.0f, 0.0f)
+        , worldMin(0.0f, 0.0f, 0.0f)
+        , worldMax(0.0f, 0.0f, 0.0f)
+        , dirty(true)
+        , hasSphere(false)
+        , sphereCenter(0.0f, 0.0f, 0.0f)
+        , sphereRadius(0.0f)
+        , worldSphereCenter(0.0f, 0.0f, 0.0f)
+        , worldSphereRadius(0.0f)
+    {}
+};
+
+//============================================================================
 // END OF FILE

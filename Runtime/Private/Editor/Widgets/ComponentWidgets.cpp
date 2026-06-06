@@ -220,15 +220,19 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawBoxCollider(BoxColliderComponent& component, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawBoxCollider(BoxColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted) {
         bool changed = false;
+        outCommitted = false;
         float size[3] = { component.size.x, component.size.y, component.size.z };
         if (ImGui::DragFloat3("Size", size, 0.1f)) {
-            component.size.x = size[0];
-            component.size.y = size[1];
-            component.size.z = size[2];
+            component.size.x = std::max(size[0], 0.01f);
+            component.size.y = std::max(size[1], 0.01f);
+            component.size.z = std::max(size[2], 0.01f);
             dirtyState.MarkSceneDirty();
             changed = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
         }
         float offset[3] = { component.offset.x, component.offset.y, component.offset.z };
         if (ImGui::DragFloat3("Offset", offset, 0.1f)) {
@@ -238,13 +242,18 @@ namespace eng::runtime {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
         if (ImGui::Checkbox("Is Trigger", &component.isTrigger)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (ImGui::Checkbox("Debug Draw", &component.debugDraw)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (changed) {
             eng::physics::ValidateBoxCollider(component);
@@ -252,11 +261,17 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawSphereCollider(SphereColliderComponent& component, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawSphereCollider(SphereColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted) {
         bool changed = false;
-        if (ImGui::DragFloat("Radius", &component.radius, 0.1f)) {
+        outCommitted = false;
+        float radius = component.radius;
+        if (ImGui::DragFloat("Radius", &radius, 0.1f)) {
+            component.radius = std::max(radius, 0.01f);
             dirtyState.MarkSceneDirty();
             changed = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
         }
         float offset[3] = { component.offset.x, component.offset.y, component.offset.z };
         if (ImGui::DragFloat3("Offset", offset, 0.1f)) {
@@ -266,13 +281,18 @@ namespace eng::runtime {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
         if (ImGui::Checkbox("Is Trigger", &component.isTrigger)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (ImGui::Checkbox("Debug Draw", &component.debugDraw)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (changed) {
             eng::physics::ValidateSphereCollider(component);
@@ -280,15 +300,26 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawCapsuleCollider(CapsuleColliderComponent& component, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawCapsuleCollider(CapsuleColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted) {
         bool changed = false;
-        if (ImGui::DragFloat("Radius", &component.radius, 0.1f)) {
+        outCommitted = false;
+        float radius = component.radius;
+        if (ImGui::DragFloat("Radius", &radius, 0.1f)) {
+            component.radius = std::max(radius, 0.01f);
             dirtyState.MarkSceneDirty();
             changed = true;
         }
-        if (ImGui::DragFloat("Height", &component.height, 0.1f)) {
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
+        float height = component.height;
+        if (ImGui::DragFloat("Height", &height, 0.1f)) {
+            component.height = std::max(height, 0.01f);
             dirtyState.MarkSceneDirty();
             changed = true;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
         }
         float offset[3] = { component.offset.x, component.offset.y, component.offset.z };
         if (ImGui::DragFloat3("Offset", offset, 0.1f)) {
@@ -298,13 +329,18 @@ namespace eng::runtime {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
         if (ImGui::Checkbox("Is Trigger", &component.isTrigger)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (ImGui::Checkbox("Debug Draw", &component.debugDraw)) {
             dirtyState.MarkSceneDirty();
             changed = true;
+            outCommitted = true;
         }
         if (changed) {
             eng::physics::ValidateCapsuleCollider(component);
@@ -1072,6 +1108,72 @@ namespace eng::runtime {
         ImGui::BeginDisabled();
         ImGui::Checkbox("Has Activated", &hasActivated);
         ImGui::EndDisabled();
+
+        return changed;
+    }
+
+    bool ComponentWidgets::DrawBounds(BoundsComponent& component, EditorDirtyState& dirtyState) {
+        bool changed = false;
+
+        // Dirty status badge
+        if (component.dirty) {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.1f, 1.0f), "[Dirty — pending update]");
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Up-to-date]");
+        }
+
+        ImGui::Spacing();
+        ImGui::Text("Local AABB:");
+        float lMin[3] = { component.localMin.x, component.localMin.y, component.localMin.z };
+        float lMax[3] = { component.localMax.x, component.localMax.y, component.localMax.z };
+        ImGui::BeginDisabled();
+        ImGui::DragFloat3("Local Min##Bounds", lMin, 0.01f);
+        ImGui::DragFloat3("Local Max##Bounds", lMax, 0.01f);
+        ImGui::EndDisabled();
+
+        ImGui::Spacing();
+        ImGui::Text("World AABB:");
+        float wMin[3] = { component.worldMin.x, component.worldMin.y, component.worldMin.z };
+        float wMax[3] = { component.worldMax.x, component.worldMax.y, component.worldMax.z };
+        ImGui::BeginDisabled();
+        ImGui::DragFloat3("World Min##Bounds", wMin, 0.01f);
+        ImGui::DragFloat3("World Max##Bounds", wMax, 0.01f);
+        ImGui::EndDisabled();
+
+        ImGui::Spacing();
+        if (ImGui::Checkbox("Has Bounding Sphere", &component.hasSphere)) {
+            component.dirty = true;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (component.hasSphere) {
+            float sc[3] = { component.sphereCenter.x, component.sphereCenter.y, component.sphereCenter.z };
+            if (ImGui::DragFloat3("Sphere Center (local)", sc, 0.01f)) {
+                component.sphereCenter = { sc[0], sc[1], sc[2] };
+                component.dirty = true;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+            if (ImGui::DragFloat("Sphere Radius (local)", &component.sphereRadius, 0.01f, 0.001f, 1000.0f)) {
+                component.dirty = true;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+            ImGui::Spacing();
+            ImGui::Text("World Sphere:");
+            float wsc[3] = { component.worldSphereCenter.x, component.worldSphereCenter.y, component.worldSphereCenter.z };
+            ImGui::BeginDisabled();
+            ImGui::DragFloat3("World Center##Sphere", wsc, 0.01f);
+            ImGui::DragFloat("World Radius##Sphere", &component.worldSphereRadius, 0.01f);
+            ImGui::EndDisabled();
+        }
+
+        ImGui::Spacing();
+        if (ImGui::Button("Force Refresh Bounds")) {
+            component.dirty = true;
+            changed = true;
+        }
 
         return changed;
     }

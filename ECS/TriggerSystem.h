@@ -9,6 +9,7 @@
 #include "ECSComponents.h"
 #include "Coordinator.h"
 #include "Runtime/Public/RuntimeContext.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "ECS/Public/IECSWorld.h"
 #include "EventManagement/PhysicsEventTypes.h"
 #include "EventManagement/EventManager.h"
@@ -107,6 +108,15 @@ public:
         // 3. Check overlaps for all active trigger volumes
         for (Entity trigEnt : m_Entities) {
             if (!coordinator.IsEntityAlive(trigEnt)) continue;
+
+            // Check if ZoneEntityComponent is attached and simulating is false
+            auto signature = coordinator.GetSignature(trigEnt);
+            if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>())) {
+                const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(trigEnt);
+                if (!zec.simulating) {
+                    continue;
+                }
+            }
 
             const auto& trigComp = coordinator.GetComponent<TriggerComponent>(trigEnt);
             if (!trigComp.enabled || !IsDimensionsValid(trigComp)) {

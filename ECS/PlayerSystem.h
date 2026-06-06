@@ -12,6 +12,7 @@
 #include "SystemManager.h"
 #include "ECSComponents.h"
 #include "Coordinator.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "../Input/InputManager.h"
 #include <iostream>
 
@@ -28,6 +29,15 @@ public:
      */
     void Update(float deltaTime, Coordinator& coordinator, InputManager* inputManager) {
         for (Entity entity : m_Entities) {
+            // Check if ZoneEntityComponent is attached and simulating is false
+            auto signature = coordinator.GetSignature(entity);
+            if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>())) {
+                const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entity);
+                if (!zec.simulating) {
+                    continue;
+                }
+            }
+
             auto& transform = coordinator.GetComponent<TransformComponent>(entity);
             auto& rigidBody = coordinator.GetComponent<RigidBodyComponent>(entity);
             auto& player = coordinator.GetComponent<PlayerControllerComponent>(entity);

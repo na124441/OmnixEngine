@@ -9,6 +9,7 @@
 #include "Coordinator.h"
 #include "Physics/Public/PhysicsWorld.h"
 #include "Physics/Public/PhysicsQueries.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "ThirdParty/imgui/imgui.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -44,6 +45,15 @@ namespace eng::runtime {
 
         void FixedUpdate(eng::physics::PhysicsWorld* physicsWorld, Coordinator& coordinator, float fixedDeltaTime) {
             if (m_PlayerEntity == 0 || !coordinator.IsEntityAlive(m_PlayerEntity)) return;
+
+            // Check if ZoneEntityComponent is attached and simulating is false
+            auto signature = coordinator.GetSignature(m_PlayerEntity);
+            if (signature.test(coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>())) {
+                const auto& zec = coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(m_PlayerEntity);
+                if (!zec.simulating) {
+                    return;
+                }
+            }
 
             auto& transform = coordinator.GetComponent<TransformComponent>(m_PlayerEntity);
             auto& ccc = coordinator.GetComponent<CharacterControllerComponent>(m_PlayerEntity);

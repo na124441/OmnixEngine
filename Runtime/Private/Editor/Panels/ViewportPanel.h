@@ -8,10 +8,13 @@ namespace eng::runtime {
     class ViewportPanel {
     public:
         void Initialize(RuntimeContext* context);
-        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState);
+        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState, EditorSimulationState simulationState, float cameraSpeed);
 
         bool ShowCollidersEnabled() const { return m_ShowColliders; }
         void SetShowColliders(bool show) { m_ShowColliders = show; }
+
+        bool ShowBoundsEnabled() const { return m_ShowBounds; }
+        void SetShowBounds(bool show) { m_ShowBounds = show; }
 
         bool ShowGridEnabled() const { return m_ShowGrid; }
         void SetShowGrid(bool show) { m_ShowGrid = show; }
@@ -33,6 +36,7 @@ namespace eng::runtime {
     private:
         RuntimeContext* m_Context = nullptr;
         bool m_ShowColliders = true;
+        bool m_ShowBounds = false;
         bool m_ShowGrid = true;
         bool m_ShowDiagnostics = false;
         float m_GridScale = 1.0f;

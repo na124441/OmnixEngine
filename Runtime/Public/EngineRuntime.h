@@ -10,6 +10,10 @@
 
 // Forward declarations
 class ComponentSchemaRegistry;
+namespace Omnix {
+    class EventManager;
+    class WorldManager;
+}
 
 namespace eng::renderer {
     class IRenderer;
@@ -69,6 +73,7 @@ namespace eng::runtime {
         std::unique_ptr<GameplayEventBus> m_GameplayEventBus;
         std::unique_ptr<AudioSystem> m_AudioSystem;
         std::unique_ptr<GameplaySaveSystem> m_GameplaySaveSystem;
+        std::unique_ptr<Omnix::WorldManager> m_WorldManager;
         std::unique_ptr<ComponentSchemaRegistry> m_SchemaRegistry;
         std::unique_ptr<EditorLayer> m_Editor;
 

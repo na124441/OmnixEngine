@@ -42,4 +42,7 @@ constexpr ComponentTypeID SIMPLE_STATE_COMPONENT = 32;
 constexpr ComponentTypeID ACTIVATABLE_COMPONENT = 33;
 constexpr ComponentTypeID DOOR_COMPONENT = 34;
 constexpr ComponentTypeID CHECKPOINT_COMPONENT = 35;
+constexpr ComponentTypeID ZONE_ENTITY_COMPONENT = 36;
+constexpr ComponentTypeID BOUNDS_COMPONENT = 37;
+
 

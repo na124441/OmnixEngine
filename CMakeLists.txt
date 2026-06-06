@@ -246,6 +246,12 @@ add_library(EngineRuntime
     Runtime/Private/AssetRegistryTests.cpp
     Runtime/Private/BinaryWriter.cpp
     Runtime/Private/BinaryReader.cpp
+    Runtime/Private/World/WorldFileReader.cpp
+    Runtime/Private/World/WorldFileWriter.cpp
+    Runtime/Private/World/WorldZone.cpp
+    Runtime/Private/World/WorldZoneReader.cpp
+    Runtime/Private/World/WorldZoneWriter.cpp
+    Runtime/Private/World/WorldManager.cpp
     Runtime/Private/FormatTests.cpp
     Runtime/Private/TextureImporter.cpp
     Runtime/Private/TextureImportTests.cpp

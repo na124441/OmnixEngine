@@ -5,6 +5,7 @@
 #include "SceneSerializer.h"
 #include "SceneValidator.h"
 #include "PrefabRegistry.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "../ECS/Coordinator.h"
 #include "../ECS/ECSComponents.h"
 #include <iostream>
@@ -87,6 +88,8 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<PointLightComponent>();
     m_Coordinator->RegisterComponent<AmbientLightComponent>();
     m_Coordinator->RegisterComponent<SpotLightComponent>();
+    m_Coordinator->RegisterComponent<eng::runtime::ZoneEntityComponent>();
+    m_Coordinator->RegisterComponent<BoundsComponent>();
 
     std::cout << "[SceneManager] ECS initialized successfully" << std::endl;
 }

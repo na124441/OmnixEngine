@@ -5,8 +5,9 @@
 
 namespace eng::runtime {
 
-    bool TransformWidget::Draw(TransformComponent& transform, EditorDirtyState& dirtyState) {
+    bool TransformWidget::Draw(TransformComponent& transform, EditorDirtyState& dirtyState, bool& outCommitted) {
         bool changed = false;
+        outCommitted = false;
 
         // Position
         float pos[3] = { transform.position.x, transform.position.y, transform.position.z };
@@ -18,6 +19,9 @@ namespace eng::runtime {
                 dirtyState.MarkSceneDirty();
                 changed = true;
             }
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
         }
 
         // Rotation (Euler degrees)
@@ -32,6 +36,9 @@ namespace eng::runtime {
                 changed = true;
             }
         }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
 
         // Scale (clamped to 0.001f)
         float scl[3] = { transform.scale.x, transform.scale.y, transform.scale.z };
@@ -43,6 +50,50 @@ namespace eng::runtime {
                 dirtyState.MarkSceneDirty();
                 changed = true;
             }
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            outCommitted = true;
+        }
+
+        // Reset and Copy/Paste Buttons
+        ImGui::Spacing();
+        if (ImGui::Button("Reset Transform")) {
+            transform.position = Vector3(0.0f, 0.0f, 0.0f);
+            transform.rotation = Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
+            transform.scale = Vector3(1.0f, 1.0f, 1.0f);
+            transform.dirty = true;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+            outCommitted = true;
+        }
+        ImGui::SameLine();
+        
+        static Vector3 clipboardPos(0.0f, 0.0f, 0.0f);
+        static Quaternion clipboardRot(0.0f, 0.0f, 0.0f, 1.0f);
+        static Vector3 clipboardScale(1.0f, 1.0f, 1.0f);
+        static bool hasClipboard = false;
+
+        if (ImGui::Button("Copy")) {
+            clipboardPos = transform.position;
+            clipboardRot = transform.rotation;
+            clipboardScale = transform.scale;
+            hasClipboard = true;
+        }
+        ImGui::SameLine();
+        if (!hasClipboard) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Paste")) {
+            transform.position = clipboardPos;
+            transform.rotation = clipboardRot;
+            transform.scale = clipboardScale;
+            transform.dirty = true;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+            outCommitted = true;
+        }
+        if (!hasClipboard) {
+            ImGui::EndDisabled();
         }
 
         return changed;

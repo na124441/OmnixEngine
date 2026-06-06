@@ -40,6 +40,8 @@ enum class EventType : uint16_t {
     SCENE_LOADED = 200,
     SCENE_UNLOADED = 201,
     SCENE_CHANGED = 202,
+    ZONE_ENTER = 210,
+    ZONE_EXIT = 211,
 
     // Physics Events (300-349)
     PHYSICS_COLLISION_ENTER = 300,

@@ -9,6 +9,7 @@
 #include "Public/ComponentTypes.h"
 #include "Logger.h"
 #include "Runtime/Public/Gameplay/PlayerStateComponent.h"
+#include "Runtime/Public/World/ZoneEntityComponent.h"
 
 class Coordinator {
 public:
@@ -118,6 +119,8 @@ public:
         if constexpr (std::is_same_v<T, eng::runtime::ActivatableComponent>) return ACTIVATABLE_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::DoorComponent>) return DOOR_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::CheckpointComponent>) return CHECKPOINT_COMPONENT;
+        if constexpr (std::is_same_v<T, eng::runtime::ZoneEntityComponent>) return ZONE_ENTITY_COMPONENT;
+        if constexpr (std::is_same_v<T, BoundsComponent>) return BOUNDS_COMPONENT;
         
         // This should not happen if all components are registered and known to the serializer
         CORE_LOG_FATAL("ECS: Attempted to get type ID for unknown component type!");

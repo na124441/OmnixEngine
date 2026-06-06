@@ -7,6 +7,7 @@
 // Forward declarations for subsystem interfaces
 namespace Omnix {
     class EventManager;
+    class WorldManager;
 }
 
 namespace eng::renderer {
@@ -53,6 +54,7 @@ namespace eng::runtime {
         GameplayEventBus* gameplayEventBus = nullptr;
         AudioSystem* audioSystem = nullptr;
         GameplaySaveSystem* saveSystem = nullptr;
+        Omnix::WorldManager* worldManager = nullptr;
         InteractionPromptData interactionPrompt;
         std::function<std::unique_ptr<eng::runtime::IECSWorld>(std::unique_ptr<eng::runtime::IECSWorld>)> swapECS;
 

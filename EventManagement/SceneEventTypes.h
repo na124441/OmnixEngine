@@ -60,4 +60,53 @@ namespace Omnix {
         uint32_t sceneID;
     };
 
+    // ============================================================================
+    // ZONE ENTER EVENT
+    // ============================================================================
+
+    class ZoneEnterEvent : public GameEvent {
+    public:
+        ZoneEnterEvent(uint64_t zoneUUIDHigh, uint64_t zoneUUIDLow, uint32_t playerEntityID, uint8_t priority = 100)
+            : GameEvent(priority)
+            , m_ZoneUUIDHigh(zoneUUIDHigh)
+            , m_ZoneUUIDLow(zoneUUIDLow)
+            , m_PlayerEntityID(playerEntityID) {}
+
+        DEFINE_EVENT_TYPE(ZoneEnterEvent, EventType::ZONE_ENTER, "ZoneEnter")
+
+        uint64_t getZoneUUIDHigh() const { return m_ZoneUUIDHigh; }
+        uint64_t getZoneUUIDLow() const { return m_ZoneUUIDLow; }
+        uint32_t getPlayerEntityID() const { return m_PlayerEntityID; }
+
+    private:
+        uint64_t m_ZoneUUIDHigh;
+        uint64_t m_ZoneUUIDLow;
+        uint32_t m_PlayerEntityID;
+    };
+
+    // ============================================================================
+    // ZONE EXIT EVENT
+    // ============================================================================
+
+    class ZoneExitEvent : public GameEvent {
+    public:
+        ZoneExitEvent(uint64_t zoneUUIDHigh, uint64_t zoneUUIDLow, uint32_t playerEntityID, uint8_t priority = 100)
+            : GameEvent(priority)
+            , m_ZoneUUIDHigh(zoneUUIDHigh)
+            , m_ZoneUUIDLow(zoneUUIDLow)
+            , m_PlayerEntityID(playerEntityID) {}
+
+        DEFINE_EVENT_TYPE(ZoneExitEvent, EventType::ZONE_EXIT, "ZoneExit")
+
+        uint64_t getZoneUUIDHigh() const { return m_ZoneUUIDHigh; }
+        uint64_t getZoneUUIDLow() const { return m_ZoneUUIDLow; }
+        uint32_t getPlayerEntityID() const { return m_PlayerEntityID; }
+
+    private:
+        uint64_t m_ZoneUUIDHigh;
+        uint64_t m_ZoneUUIDLow;
+        uint32_t m_PlayerEntityID;
+    };
+
 } // namespace Omnix
+

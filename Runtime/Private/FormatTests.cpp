@@ -8,6 +8,22 @@
 #include "Runtime/Public/OmnixSceneFormat.h"
 #include "Runtime/Public/OmnixAnimFormat.h"
 #include "Runtime/Public/OmnixPackageFormat.h"
+#include "Runtime/Public/World/WorldDescriptor.h"
+#include "Runtime/Public/World/WorldFileReader.h"
+#include "Runtime/Public/World/WorldFileWriter.h"
+#include "Runtime/Public/World/OmnixWorldHeader.h"
+#include "Runtime/Public/World/WorldFileError.h"
+#include "Runtime/Public/World/WorldZone.h"
+#include "Runtime/Public/World/WorldZoneReader.h"
+#include "Runtime/Public/World/WorldZoneWriter.h"
+#include "Runtime/Public/World/WorldManager.h"
+#include "Runtime/Public/AssetRegistry.h"
+#include "RenderingEngine/Public/IAssetManager.h"
+#include "Renderer/scene/Texture.h"
+#include "Renderer/scene/Mesh.h"
+#include "Renderer/scene/Material.h"
+#include "Runtime/Public/World/OmnixZoneHeader.h"
+#include "Serializer/Serialization/SerializationCommon.h"
 #include "Core/Logger.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneObject.h"
@@ -21,6 +37,10 @@
 #include "ECS/PlayerSystem.h"
 #include "Physics/Public/PhysicsValidation.h"
 #include "Physics/Public/PhysicsWorld.h"
+#include "Runtime/Public/Gameplay/GameplayEvent.h"
+#include "Runtime/Public/Gameplay/GameplayEventBus.h"
+#include "ECS/PlayerControllerSystem.h"
+#include "Core/World.h"
 #include <iostream>
 #include <vector>
 #include <filesystem>
@@ -1115,6 +1135,962 @@ namespace eng::runtime {
             LOG_INFO("[FormatTest] test_room.omnixscene validation passed correctly.");
 
             LOG_INFO("[FormatTest] Test 11 Passed: SceneValidator blocks invalid scenes and allows valid scenes to proceed.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 12 — OmnixWorld Format Tests
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 12: OmnixWorld Format Tests...");
+        {
+            using namespace Omnix;
+
+            WorldDescriptor orig;
+            orig.worldUUIDHigh = 0x1111222233334444ULL;
+            orig.worldUUIDLow = 0x5555666677778888ULL;
+            orig.worldName = "CampaignWorld";
+
+            orig.settings.gravityX = 0.0f;
+            orig.settings.gravityY = -9.81f;
+            orig.settings.gravityZ = 0.0f;
+            orig.settings.worldTimeScale = 1.0f;
+            orig.settings.enableStreaming = 1;
+            orig.settings.enablePhysics = 1;
+            orig.settings.enableNavigation = 0;
+            orig.settings.enableAudio = 1;
+
+            std::strncpy(orig.entryPoint.entryZonePath, "Assets/Zones/StartZone.omnixzone", sizeof(orig.entryPoint.entryZonePath) - 1);
+            orig.entryPoint.entryZonePath[sizeof(orig.entryPoint.entryZonePath) - 1] = '\0';
+            orig.entryPoint.spawnPositionX = 1.0f;
+            orig.entryPoint.spawnPositionY = 2.0f;
+            orig.entryPoint.spawnPositionZ = 3.0f;
+            orig.entryPoint.spawnRotationPitch = 0.0f;
+            orig.entryPoint.spawnRotationYaw = 90.0f;
+            orig.entryPoint.spawnRotationRoll = 0.0f;
+            std::strncpy(orig.entryPoint.spawnTag, "SpawnPoint_Main", sizeof(orig.entryPoint.spawnTag) - 1);
+            orig.entryPoint.spawnTag[sizeof(orig.entryPoint.spawnTag) - 1] = '\0';
+
+            WorldZoneEntry zone1;
+            zone1.zoneUUIDHigh = 100;
+            zone1.zoneUUIDLow = 200;
+            std::strncpy(zone1.zoneName, "Forest_01", sizeof(zone1.zoneName) - 1);
+            zone1.zoneName[sizeof(zone1.zoneName) - 1] = '\0';
+            std::strncpy(zone1.zonePath, "Assets/Zones/Forest_01.omnixzone", sizeof(zone1.zonePath) - 1);
+            zone1.zonePath[sizeof(zone1.zonePath) - 1] = '\0';
+            zone1.flags = 1;
+            orig.zones.push_back(zone1);
+
+            WorldZoneEntry zone2;
+            zone2.zoneUUIDHigh = 300;
+            zone2.zoneUUIDLow = 400;
+            std::strncpy(zone2.zoneName, "Village_01", sizeof(zone2.zoneName) - 1);
+            zone2.zoneName[sizeof(zone2.zoneName) - 1] = '\0';
+            std::strncpy(zone2.zonePath, "Assets/Zones/Village_01.omnixzone", sizeof(zone2.zonePath) - 1);
+            zone2.zonePath[sizeof(zone2.zonePath) - 1] = '\0';
+            zone2.flags = 2;
+            orig.zones.push_back(zone2);
+
+            WorldDependencyEntry dep1;
+            dep1.assetUUIDHigh = 999;
+            dep1.assetUUIDLow = 888;
+            std::strncpy(dep1.assetPath, "Assets/Models/Tree.obj", sizeof(dep1.assetPath) - 1);
+            dep1.assetPath[sizeof(dep1.assetPath) - 1] = '\0';
+            dep1.assetType = 4; // Mesh
+            orig.dependencies.push_back(dep1);
+
+            std::filesystem::path tempWorldPath = "test_world.omnixworld";
+            
+            // --- 1. Round trip test ---
+            WorldFileResult writeRes = WorldFileWriter::WriteToFile(tempWorldPath, orig);
+            if (!writeRes.Success()) {
+                LOG_ERROR("[FormatTest] Test 12 FAILED: WorldFileWriter returned error code %d", static_cast<int>(writeRes.error));
+                std::filesystem::remove(tempWorldPath);
+                return false;
+            }
+
+            WorldDescriptor loaded;
+            WorldFileResult readRes = WorldFileReader::ReadFromFile(tempWorldPath, loaded);
+            if (!readRes.Success()) {
+                LOG_ERROR("[FormatTest] Test 12 FAILED: WorldFileReader returned error code %d", static_cast<int>(readRes.error));
+                std::filesystem::remove(tempWorldPath);
+                return false;
+            }
+
+            if (loaded.worldUUIDHigh != orig.worldUUIDHigh ||
+                loaded.worldUUIDLow != orig.worldUUIDLow ||
+                loaded.worldName != orig.worldName ||
+                loaded.settings.gravityY != orig.settings.gravityY ||
+                loaded.settings.enableStreaming != orig.settings.enableStreaming ||
+                std::strcmp(loaded.entryPoint.entryZonePath, orig.entryPoint.entryZonePath) != 0 ||
+                loaded.entryPoint.spawnRotationYaw != orig.entryPoint.spawnRotationYaw ||
+                loaded.zones.size() != orig.zones.size() ||
+                loaded.dependencies.size() != orig.dependencies.size() ||
+                loaded.zones[0].zoneUUIDHigh != orig.zones[0].zoneUUIDHigh ||
+                std::strcmp(loaded.zones[1].zoneName, orig.zones[1].zoneName) != 0 ||
+                std::strcmp(loaded.dependencies[0].assetPath, orig.dependencies[0].assetPath) != 0) {
+                LOG_ERROR("[FormatTest] Test 12 FAILED: Parsed WorldDescriptor mismatched original!");
+                std::filesystem::remove(tempWorldPath);
+                return false;
+            }
+            LOG_INFO("[FormatTest]   -> Round trip OK.");
+
+            // --- 2. Unsupported future version test ---
+            {
+                std::ifstream inFile(tempWorldPath, std::ios::binary);
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                if (bytes.size() >= sizeof(OmnixWorldHeader)) {
+                    OmnixWorldHeader* rawHeader = reinterpret_cast<OmnixWorldHeader*>(bytes.data());
+                    rawHeader->version = OMNIX_WORLD_VERSION + 1;
+                    
+                    std::memset(bytes.data() + rawHeader->checksumOffset, 0, sizeof(uint32_t));
+                    uint32_t newCRC = SerializationCommon::CalculateCRC32(bytes.data(), bytes.size());
+                    std::memcpy(bytes.data() + rawHeader->checksumOffset, &newCRC, sizeof(uint32_t));
+
+                    std::ofstream outFile(tempWorldPath, std::ios::binary);
+                    outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                    outFile.close();
+                }
+
+                WorldDescriptor badVersionWorld;
+                WorldFileResult badVerRes = WorldFileReader::ReadFromFile(tempWorldPath, badVersionWorld);
+                if (badVerRes.Success() || badVerRes.error != WorldFileError::UnsupportedVersion) {
+                    LOG_ERROR("[FormatTest] Test 12 FAILED: Expected UnsupportedVersion error, got: %d", static_cast<int>(badVerRes.error));
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Unsupported version rejection OK.");
+            }
+
+            // Restore valid file
+            WorldFileWriter::WriteToFile(tempWorldPath, orig);
+
+            // --- 3. Checksum mismatch test ---
+            {
+                std::ifstream inFile(tempWorldPath, std::ios::binary);
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                if (bytes.size() > 100) {
+                    bytes[100] ^= 0x55;
+                }
+
+                std::ofstream outFile(tempWorldPath, std::ios::binary);
+                outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                outFile.close();
+
+                WorldDescriptor corruptedWorld;
+                WorldFileResult corruptRes = WorldFileReader::ReadFromFile(tempWorldPath, corruptedWorld);
+                if (corruptRes.Success() || corruptRes.error != WorldFileError::ChecksumMismatch) {
+                    LOG_ERROR("[FormatTest] Test 12 FAILED: Expected ChecksumMismatch error, got: %d", static_cast<int>(corruptRes.error));
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Checksum mismatch rejection OK.");
+            }
+
+            // --- 4. Empty and too small file checks ---
+            {
+                std::string emptyFile = "test_empty.omnixworld";
+                std::ofstream outFile(emptyFile, std::ios::binary);
+                outFile.close();
+
+                WorldDescriptor dummy;
+                WorldFileResult emptyRes = WorldFileReader::ReadFromFile(emptyFile, dummy);
+                std::filesystem::remove(emptyFile);
+                if (emptyRes.Success() || emptyRes.error != WorldFileError::FileTooSmall) {
+                    LOG_ERROR("[FormatTest] Test 12 FAILED: Expected FileTooSmall error for empty file, got: %d", static_cast<int>(emptyRes.error));
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Empty/too small file rejection OK.");
+            }
+
+            // --- 5. Determinism test ---
+            {
+                WorldFileWriter::WriteToFile(tempWorldPath, orig);
+
+                std::ifstream inFile(tempWorldPath, std::ios::binary);
+                std::vector<uint8_t> bytesA((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                WorldFileWriter::WriteToFile(tempWorldPath, orig);
+
+                std::ifstream inFile2(tempWorldPath, std::ios::binary);
+                std::vector<uint8_t> bytesB((std::istreambuf_iterator<char>(inFile2)), std::istreambuf_iterator<char>());
+                inFile2.close();
+
+                if (bytesA != bytesB) {
+                    LOG_ERROR("[FormatTest] Test 12 FAILED: Binary output is not deterministic!");
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                WorldDescriptor descA;
+                WorldDescriptor descB;
+                WorldFileReader::ReadFromFile(tempWorldPath, descA);
+                WorldFileReader::ReadFromFile(tempWorldPath, descB);
+
+                if (descA.worldName != descB.worldName ||
+                    descA.zones.size() != descB.zones.size() ||
+                    descA.dependencies.size() != descB.dependencies.size() ||
+                    std::strcmp(descA.entryPoint.spawnTag, descB.entryPoint.spawnTag) != 0) {
+                    LOG_ERROR("[FormatTest] Test 12 FAILED: Parsed descriptor is not deterministic!");
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Deterministic serialization & parsing OK.");
+            }
+
+            std::filesystem::remove(tempWorldPath);
+            LOG_INFO("[FormatTest] Test 12 Passed: OmnixWorld Format validation verified successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 13 — WorldZone Format Tests & Validation
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 13: WorldZone Format & Validation Tests...");
+        {
+            using namespace Omnix;
+
+            // --- 1. Bounds validation checks ---
+            WorldZone zoneBoundsTest;
+            zoneBoundsTest.bounds.min = {0.0f, 0.0f, 0.0f};
+            zoneBoundsTest.bounds.max = {10.0f, 10.0f, 10.0f};
+            if (!ValidateZoneBounds(zoneBoundsTest)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Valid bounds failed validation!");
+                return false;
+            }
+
+            // Min > Max
+            zoneBoundsTest.bounds.min = {15.0f, 0.0f, 0.0f};
+            zoneBoundsTest.bounds.max = {10.0f, 10.0f, 10.0f};
+            if (ValidateZoneBounds(zoneBoundsTest)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Invalid bounds (min.x > max.x) passed validation!");
+                return false;
+            }
+
+            // NaN
+            zoneBoundsTest.bounds.min = {0.0f, NAN, 0.0f};
+            zoneBoundsTest.bounds.max = {10.0f, 10.0f, 10.0f};
+            if (ValidateZoneBounds(zoneBoundsTest)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Invalid bounds (NaN) passed validation!");
+                return false;
+            }
+            LOG_INFO("[FormatTest]   -> Bounds validation OK.");
+
+            // --- 2. ID uniqueness checks ---
+            std::vector<WorldZone> zoneList;
+            WorldZone z1; z1.zoneUUIDHigh = 1; z1.zoneUUIDLow = 1;
+            WorldZone z2; z2.zoneUUIDHigh = 1; z2.zoneUUIDLow = 2;
+            WorldZone z3; z3.zoneUUIDHigh = 1; z3.zoneUUIDLow = 1; // Duplicate of z1
+            
+            zoneList.push_back(z1);
+            zoneList.push_back(z2);
+            if (!ValidateZoneIDsUnique(zoneList)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Unique IDs failed uniqueness check!");
+                return false;
+            }
+
+            zoneList.push_back(z3);
+            if (ValidateZoneIDsUnique(zoneList)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Duplicate IDs passed uniqueness check!");
+                return false;
+            }
+            LOG_INFO("[FormatTest]   -> ID uniqueness validation OK.");
+
+            // --- 3. Round trip serialization check ---
+            WorldZone origZone;
+            origZone.zoneUUIDHigh = 0xABCDEULL;
+            origZone.zoneUUIDLow = 0x12345ULL;
+            origZone.zoneName = "ForestSector";
+            origZone.sceneAssetPath = "Assets/Scenes/Forest.omnixscene";
+            origZone.bounds.min = {-100.0f, -50.0f, -100.0f};
+            origZone.bounds.max = {100.0f, 50.0f, 100.0f};
+            origZone.loadingPriority = 5;
+            origZone.activationRadius = 250.0f;
+            origZone.state = ZoneState::Active;
+
+            ZoneAssetDependency d1;
+            d1.assetUUIDHigh = 11;
+            d1.assetUUIDLow = 22;
+            d1.assetPath = "Assets/Textures/Bark.png";
+            d1.assetType = 2; // Texture
+            origZone.assetDependencies.push_back(d1);
+
+            ZoneNeighbor n1;
+            n1.zoneUUIDHigh = 0xFEEDBEEF;
+            n1.zoneUUIDLow = 0xDECAFBAD;
+            origZone.neighbors.push_back(n1);
+
+            origZone.gameplayTags.push_back("CombatZone");
+            origZone.gameplayTags.push_back("Outdoor");
+
+            // Validate the zone itself
+            if (!ValidateWorldZone(origZone)) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Valid WorldZone failed validation check!");
+                return false;
+            }
+
+            std::filesystem::path tempZonePath = "test_zone.omnixzone";
+            WorldFileResult writeRes = WorldZoneWriter::WriteToFile(tempZonePath, origZone);
+            if (!writeRes.Success()) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: WorldZoneWriter returned error code %d", static_cast<int>(writeRes.error));
+                std::filesystem::remove(tempZonePath);
+                return false;
+            }
+
+            WorldZone loadedZone;
+            WorldFileResult readRes = WorldZoneReader::ReadFromFile(tempZonePath, loadedZone);
+            if (!readRes.Success()) {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: WorldZoneReader returned error code %d", static_cast<int>(readRes.error));
+                std::filesystem::remove(tempZonePath);
+                return false;
+            }
+
+            if (loadedZone.zoneUUIDHigh != origZone.zoneUUIDHigh ||
+                loadedZone.zoneUUIDLow != origZone.zoneUUIDLow ||
+                loadedZone.zoneName != origZone.zoneName ||
+                loadedZone.sceneAssetPath != origZone.sceneAssetPath ||
+                loadedZone.bounds.min.x != origZone.bounds.min.x ||
+                loadedZone.bounds.max.z != origZone.bounds.max.z ||
+                loadedZone.loadingPriority != origZone.loadingPriority ||
+                loadedZone.activationRadius != origZone.activationRadius ||
+                loadedZone.assetDependencies.size() != origZone.assetDependencies.size() ||
+                loadedZone.neighbors.size() != origZone.neighbors.size() ||
+                loadedZone.gameplayTags.size() != origZone.gameplayTags.size() ||
+                loadedZone.assetDependencies[0].assetUUIDHigh != origZone.assetDependencies[0].assetUUIDHigh ||
+                loadedZone.assetDependencies[0].assetPath != origZone.assetDependencies[0].assetPath ||
+                loadedZone.neighbors[0].zoneUUIDHigh != origZone.neighbors[0].zoneUUIDHigh ||
+                loadedZone.gameplayTags[0] != origZone.gameplayTags[0] ||
+                loadedZone.state != ZoneState::Unloaded) // Loaded zones start as Unloaded
+            {
+                LOG_ERROR("[FormatTest] Test 13 FAILED: Deserialized WorldZone mismatched original!");
+                std::filesystem::remove(tempZonePath);
+                return false;
+            }
+            LOG_INFO("[FormatTest]   -> Round trip serialization OK.");
+
+            // --- 4. Unsupported future version test ---
+            {
+                std::ifstream inFile(tempZonePath, std::ios::binary);
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                if (bytes.size() >= sizeof(OmnixZoneHeader)) {
+                    OmnixZoneHeader* rawHeader = reinterpret_cast<OmnixZoneHeader*>(bytes.data());
+                    rawHeader->version = OMNIX_ZONE_VERSION + 1;
+                    
+                    std::memset(bytes.data() + rawHeader->checksumOffset, 0, sizeof(uint32_t));
+                    uint32_t newCRC = SerializationCommon::CalculateCRC32(bytes.data(), bytes.size());
+                    std::memcpy(bytes.data() + rawHeader->checksumOffset, &newCRC, sizeof(uint32_t));
+
+                    std::ofstream outFile(tempZonePath, std::ios::binary);
+                    outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                    outFile.close();
+                }
+
+                WorldZone badVerZone;
+                WorldFileResult badVerRes = WorldZoneReader::ReadFromFile(tempZonePath, badVerZone);
+                if (badVerRes.Success() || badVerRes.error != WorldFileError::UnsupportedVersion) {
+                    LOG_ERROR("[FormatTest] Test 13 FAILED: Expected UnsupportedVersion error, got: %d", static_cast<int>(badVerRes.error));
+                    std::filesystem::remove(tempZonePath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Unsupported version rejection OK.");
+            }
+
+            // Restore valid file
+            WorldZoneWriter::WriteToFile(tempZonePath, origZone);
+
+            // --- 5. Checksum mismatch test ---
+            {
+                std::ifstream inFile(tempZonePath, std::ios::binary);
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                if (bytes.size() > 100) {
+                    bytes[100] ^= 0xFF;
+                }
+
+                std::ofstream outFile(tempZonePath, std::ios::binary);
+                outFile.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                outFile.close();
+
+                WorldZone corruptedZone;
+                WorldFileResult corruptRes = WorldZoneReader::ReadFromFile(tempZonePath, corruptedZone);
+                if (corruptRes.Success() || corruptRes.error != WorldFileError::ChecksumMismatch) {
+                    LOG_ERROR("[FormatTest] Test 13 FAILED: Expected ChecksumMismatch error, got: %d", static_cast<int>(corruptRes.error));
+                    std::filesystem::remove(tempZonePath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Checksum mismatch rejection OK.");
+            }
+
+            // --- 6. Empty and too small file checks ---
+            {
+                std::string emptyFile = "test_empty.omnixzone";
+                std::ofstream outFile(emptyFile, std::ios::binary);
+                outFile.close();
+
+                WorldZone dummy;
+                WorldFileResult emptyRes = WorldZoneReader::ReadFromFile(emptyFile, dummy);
+                std::filesystem::remove(emptyFile);
+                if (emptyRes.Success() || emptyRes.error != WorldFileError::FileTooSmall) {
+                    LOG_ERROR("[FormatTest] Test 13 FAILED: Expected FileTooSmall error for empty file, got: %d", static_cast<int>(emptyRes.error));
+                    std::filesystem::remove(tempZonePath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Empty/too small file rejection OK.");
+            }
+
+            // --- 7. Determinism test ---
+            {
+                WorldZoneWriter::WriteToFile(tempZonePath, origZone);
+
+                std::ifstream inFile(tempZonePath, std::ios::binary);
+                std::vector<uint8_t> bytesA((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+                inFile.close();
+
+                WorldZoneWriter::WriteToFile(tempZonePath, origZone);
+
+                std::ifstream inFile2(tempZonePath, std::ios::binary);
+                std::vector<uint8_t> bytesB((std::istreambuf_iterator<char>(inFile2)), std::istreambuf_iterator<char>());
+                inFile2.close();
+
+                if (bytesA != bytesB) {
+                    LOG_ERROR("[FormatTest] Test 13 FAILED: Binary output is not deterministic!");
+                    std::filesystem::remove(tempZonePath);
+                    return false;
+                }
+
+                WorldZone zoneA;
+                WorldZone zoneB;
+                WorldZoneReader::ReadFromFile(tempZonePath, zoneA);
+                WorldZoneReader::ReadFromFile(tempZonePath, zoneB);
+
+                if (zoneA.zoneName != zoneB.zoneName ||
+                    zoneA.assetDependencies.size() != zoneB.assetDependencies.size() ||
+                    zoneA.neighbors.size() != zoneB.neighbors.size() ||
+                    zoneA.gameplayTags.size() != zoneB.gameplayTags.size()) {
+                    LOG_ERROR("[FormatTest] Test 13 FAILED: Parsed zone is not deterministic!");
+                    std::filesystem::remove(tempZonePath);
+                    return false;
+                }
+                LOG_INFO("[FormatTest]   -> Deterministic serialization & parsing OK.");
+            }
+
+            std::filesystem::remove(tempZonePath);
+            LOG_INFO("[FormatTest] Test 13 Passed: WorldZone Format and validation verified successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 14 — WorldManager Subsystem Validation Tests
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 14: WorldManager Subsystem Validation Tests...");
+        {
+            using namespace Omnix;
+
+            // Define MockAssetManager inside the test scope
+            class MockAssetManager : public eng::runtime::IAssetManager {
+            public:
+                struct LoadRecord {
+                    std::string path;
+                    const std::type_info* typeInfo;
+                };
+                std::vector<LoadRecord> loadedAssets;
+
+            protected:
+                void* LoadRaw(const std::string& path, const std::type_info& typeInfo) override {
+                    loadedAssets.push_back({path, &typeInfo});
+                    return nullptr; 
+                }
+            };
+
+            std::filesystem::path tempZonePath = "test_manager_zone.omnixzone";
+            std::filesystem::path tempWorldPath = "test_manager_world.omnixworld";
+
+            // 1. Write a mock zone file
+            WorldZone zone;
+            zone.zoneUUIDHigh = 0xAAULL;
+            zone.zoneUUIDLow = 0xBBULL;
+            zone.zoneName = "ManagerTestZone";
+            zone.sceneAssetPath = "Assets/Scenes/ManagerTest.omnixscene";
+            zone.bounds.min = {-10.0f, -10.0f, -10.0f};
+            zone.bounds.max = {10.0f, 10.0f, 10.0f};
+            zone.loadingPriority = 1;
+            zone.activationRadius = 100.0f;
+            zone.state = ZoneState::Unloaded;
+
+            ZoneAssetDependency d1;
+            d1.assetUUIDHigh = 101; d1.assetUUIDLow = 201;
+            d1.assetPath = "Assets/Textures/Bark.png";
+            d1.assetType = static_cast<uint32_t>(AssetType::Texture);
+            zone.assetDependencies.push_back(d1);
+
+            ZoneAssetDependency d2;
+            d2.assetUUIDHigh = 102; d2.assetUUIDLow = 202;
+            d2.assetPath = "Assets/Meshes/Tree.omnixmesh";
+            d2.assetType = static_cast<uint32_t>(AssetType::Mesh);
+            zone.assetDependencies.push_back(d2);
+
+            ZoneAssetDependency d3;
+            d3.assetUUIDHigh = 103; d3.assetUUIDLow = 203;
+            d3.assetPath = "Assets/Materials/Bark.omnixmaterial";
+            d3.assetType = static_cast<uint32_t>(AssetType::Material);
+            zone.assetDependencies.push_back(d3);
+
+            WorldFileResult zWrite = WorldZoneWriter::WriteToFile(tempZonePath, zone);
+            if (!zWrite.Success()) {
+                LOG_ERROR("[FormatTest] Test 14 FAILED: Failed to write mock zone file!");
+                return false;
+            }
+
+            // 2. Write a mock world file
+            WorldDescriptor world;
+            world.worldUUIDHigh = 0x11ULL;
+            world.worldUUIDLow = 0x22ULL;
+            world.worldName = "ManagerTestWorld";
+            world.settings.gravityY = -9.81f;
+            world.entryPoint.spawnPositionX = 0.0f;
+            world.entryPoint.spawnPositionY = 2.0f;
+            world.entryPoint.spawnPositionZ = 0.0f;
+
+            WorldZoneEntry entry;
+            entry.zoneUUIDHigh = zone.zoneUUIDHigh;
+            entry.zoneUUIDLow = zone.zoneUUIDLow;
+            std::strncpy(entry.zonePath, tempZonePath.string().c_str(), sizeof(entry.zonePath) - 1);
+            entry.zonePath[sizeof(entry.zonePath) - 1] = '\0';
+            std::strncpy(entry.zoneName, zone.zoneName.c_str(), sizeof(entry.zoneName) - 1);
+            entry.zoneName[sizeof(entry.zoneName) - 1] = '\0';
+            world.zones.push_back(entry);
+
+            WorldFileResult wWrite = WorldFileWriter::WriteToFile(tempWorldPath, world);
+            if (!wWrite.Success()) {
+                LOG_ERROR("[FormatTest] Test 14 FAILED: Failed to write mock world file!");
+                std::filesystem::remove(tempZonePath);
+                return false;
+            }
+
+            // 3. Test loading
+            {
+                eng::runtime::AssetRegistry registry;
+                MockAssetManager assetManager;
+                WorldManager manager(&assetManager, &registry);
+
+                WorldFileResult loadRes = manager.LoadWorld(tempWorldPath);
+                if (!loadRes.Success()) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: LoadWorld failed with error code %d", static_cast<int>(loadRes.error));
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                if (!manager.HasActiveWorld() || manager.GetActiveWorld() == nullptr) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Active world not set after LoadWorld!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                if (manager.GetActiveWorld()->worldName != "ManagerTestWorld") {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Loaded world name mismatch!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                if (manager.GetLoadedZones().size() != 1) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Loaded zone count mismatch!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                // Verify registered assets
+                auto checkRegistered = [&](const std::string& path, AssetType type) {
+                    AssetHandle h = eng::runtime::GenerateAssetUUID(path, type);
+                    if (!registry.Contains(h)) {
+                        LOG_ERROR("[FormatTest] Test 14 FAILED: Asset '%s' not registered in registry!", path.c_str());
+                        return false;
+                    }
+                    return true;
+                };
+
+                if (!checkRegistered(tempWorldPath.string(), AssetType::Unknown) ||
+                    !checkRegistered("Assets/Scenes/ManagerTest.omnixscene", AssetType::Scene) ||
+                    !checkRegistered("Assets/Textures/Bark.png", AssetType::Texture) ||
+                    !checkRegistered("Assets/Meshes/Tree.omnixmesh", AssetType::Mesh) ||
+                    !checkRegistered("Assets/Materials/Bark.omnixmaterial", AssetType::Material)) 
+                {
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                // Verify loaded assets in MockAssetManager
+                if (assetManager.loadedAssets.size() != 4) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Expected 4 loaded assets in manager, got %d!", static_cast<int>(assetManager.loadedAssets.size()));
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                auto findLoadRecord = [&](const std::string& path, const std::type_info& expectedType) {
+                    for (const auto& rec : assetManager.loadedAssets) {
+                        if (rec.path == path && *rec.typeInfo == expectedType) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                if (!findLoadRecord("Assets/Scenes/ManagerTest.omnixscene", typeid(Scene)) ||
+                    !findLoadRecord("Assets/Textures/Bark.png", typeid(eng::renderer::Texture)) ||
+                    !findLoadRecord("Assets/Meshes/Tree.omnixmesh", typeid(eng::renderer::Mesh)) ||
+                    !findLoadRecord("Assets/Materials/Bark.omnixmaterial", typeid(eng::renderer::Material)))
+                {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Assets not correctly loaded with correct types in IAssetManager!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                // Test UnloadWorld
+                manager.UnloadWorld();
+                if (manager.HasActiveWorld() || manager.GetActiveWorld() != nullptr) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: HasActiveWorld true after UnloadWorld!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+
+                if (!manager.GetLoadedZones().empty()) {
+                    LOG_ERROR("[FormatTest] Test 14 FAILED: Loaded zones not empty after UnloadWorld!");
+                    std::filesystem::remove(tempZonePath);
+                    std::filesystem::remove(tempWorldPath);
+                    return false;
+                }
+            }
+
+            // 4. Stress loading: run 50 load/unload cycles
+            {
+                eng::runtime::AssetRegistry registry;
+                MockAssetManager assetManager;
+                WorldManager manager(&assetManager, &registry);
+
+                LOG_INFO("[FormatTest]   -> Running 50 load/unload stress cycles...");
+                for (int i = 0; i < 50; ++i) {
+                    WorldFileResult res = manager.LoadWorld(tempWorldPath);
+                    if (!res.Success()) {
+                        LOG_ERROR("[FormatTest] Test 14 FAILED: Failed during stress cycle %d", i);
+                        std::filesystem::remove(tempZonePath);
+                        std::filesystem::remove(tempWorldPath);
+                        return false;
+                    }
+                    manager.UnloadWorld();
+                }
+                LOG_INFO("[FormatTest]   -> 50 cycles completed successfully without memory leaks or crashes.");
+            }
+
+            std::filesystem::remove(tempZonePath);
+            std::filesystem::remove(tempWorldPath);
+            LOG_INFO("[FormatTest] Test 14 Passed: WorldManager lifecycle verified successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 15 — Zone Activation and Transition Tests
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 15: Zone Activation and Transition Tests...");
+        {
+            using namespace Omnix;
+
+            // 1. Create two mock zone scene files
+            std::filesystem::path tempSceneAPath = "test_zone_a.omnixscene";
+            std::filesystem::path tempSceneBPath = "test_zone_b.omnixscene";
+
+            Scene* sceneA = new Scene("SceneA");
+            auto objA = std::make_shared<SceneObject>("ObjectInZoneA");
+            sceneA->AddSceneObject(objA);
+            if (!SceneSerializer::SaveScene(sceneA, tempSceneAPath.string())) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Failed to save scene A!");
+                delete sceneA;
+                return false;
+            }
+            delete sceneA;
+
+            Scene* sceneB = new Scene("SceneB");
+            auto objB = std::make_shared<SceneObject>("ObjectInZoneB");
+            sceneB->AddSceneObject(objB);
+            if (!SceneSerializer::SaveScene(sceneB, tempSceneBPath.string())) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Failed to save scene B!");
+                delete sceneB;
+                return false;
+            }
+            delete sceneB;
+
+            // 2. Create mock zone descriptors
+            std::filesystem::path tempZoneAPath = "test_zone_a.omnixzone";
+            std::filesystem::path tempZoneBPath = "test_zone_b.omnixzone";
+
+            WorldZone zoneA;
+            zoneA.zoneUUIDHigh = 0x1111ULL;
+            zoneA.zoneUUIDLow = 0x2222ULL;
+            zoneA.zoneName = "ZoneA";
+            zoneA.sceneAssetPath = tempSceneAPath.string();
+            zoneA.bounds.min = {-10.0f, -10.0f, -10.0f};
+            zoneA.bounds.max = {10.0f, 10.0f, 10.0f};
+            zoneA.state = ZoneState::Unloaded;
+
+            WorldZone zoneB;
+            zoneB.zoneUUIDHigh = 0x3333ULL;
+            zoneB.zoneUUIDLow = 0x4444ULL;
+            zoneB.zoneName = "ZoneB";
+            zoneB.sceneAssetPath = tempSceneBPath.string();
+            zoneB.bounds.min = {10.0f, -10.0f, -10.0f};
+            zoneB.bounds.max = {30.0f, 10.0f, 10.0f};
+            zoneB.state = ZoneState::Unloaded;
+
+            if (!WorldZoneWriter::WriteToFile(tempZoneAPath, zoneA).Success()) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Failed to write zone A!");
+                return false;
+            }
+            if (!WorldZoneWriter::WriteToFile(tempZoneBPath, zoneB).Success()) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Failed to write zone B!");
+                return false;
+            }
+
+            // 3. Create mock world descriptor
+            std::filesystem::path tempWorldPath = "test_world.omnixworld";
+            WorldDescriptor world;
+            world.worldUUIDHigh = 0x9999ULL;
+            world.worldUUIDLow = 0x8888ULL;
+            world.worldName = "ActivationTestWorld";
+            
+            WorldZoneEntry entryA;
+            entryA.zoneUUIDHigh = zoneA.zoneUUIDHigh;
+            entryA.zoneUUIDLow = zoneA.zoneUUIDLow;
+            std::strncpy(entryA.zoneName, zoneA.zoneName.c_str(), sizeof(entryA.zoneName) - 1);
+            entryA.zoneName[sizeof(entryA.zoneName) - 1] = '\0';
+            std::strncpy(entryA.zonePath, tempZoneAPath.string().c_str(), sizeof(entryA.zonePath) - 1);
+            entryA.zonePath[sizeof(entryA.zonePath) - 1] = '\0';
+            world.zones.push_back(entryA);
+
+            WorldZoneEntry entryB;
+            entryB.zoneUUIDHigh = zoneB.zoneUUIDHigh;
+            entryB.zoneUUIDLow = zoneB.zoneUUIDLow;
+            std::strncpy(entryB.zoneName, zoneB.zoneName.c_str(), sizeof(entryB.zoneName) - 1);
+            entryB.zoneName[sizeof(entryB.zoneName) - 1] = '\0';
+            std::strncpy(entryB.zonePath, tempZoneBPath.string().c_str(), sizeof(entryB.zonePath) - 1);
+            entryB.zonePath[sizeof(entryB.zonePath) - 1] = '\0';
+            world.zones.push_back(entryB);
+
+            if (!WorldFileWriter::WriteToFile(tempWorldPath, world).Success()) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Failed to write world file!");
+                return false;
+            }
+
+            // 4. Initialize local subsystems for testing
+            AssetRegistry registry;
+            class MockAssetManager : public eng::runtime::IAssetManager {
+            protected:
+                void* LoadRaw(const std::string& path, const std::type_info& typeInfo) override {
+                    return nullptr; 
+                }
+            };
+            MockAssetManager assetManager;
+
+            auto ecsWorld = std::make_unique<World>();
+            auto sceneManager = std::make_unique<SceneManager>(&ecsWorld->getCoordinator());
+            sceneManager->SetAssetRegistry(&registry);
+            sceneManager->CreateNewScene("TestActiveScene");
+
+            // Register player
+            auto& coordinator = ecsWorld->getCoordinator();
+            uint32_t player = coordinator.CreateEntity();
+            
+            TransformComponent transform;
+            transform.position = {0.0f, 0.0f, 0.0f};
+            coordinator.AddComponent<TransformComponent>(player, transform);
+            
+            CharacterControllerComponent ccc;
+            coordinator.AddComponent<CharacterControllerComponent>(player, ccc);
+
+            if (auto playerControllerSys = ecsWorld->GetSystem<PlayerControllerSystem>()) {
+                playerControllerSys->SetPlayerEntity(player);
+            }
+
+            // Set up a mock gameplay event bus
+            eng::runtime::GameplayEventBus eventBus;
+            std::vector<eng::runtime::GameplayEvent> receivedEvents;
+            eventBus.Subscribe(eng::runtime::GameplayEventType::ZoneEnter, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev);
+            });
+            eventBus.Subscribe(eng::runtime::GameplayEventType::ZoneExit, [&](const eng::runtime::GameplayEvent& ev) {
+                receivedEvents.push_back(ev);
+            });
+
+            // Set up RuntimeContext
+            eng::runtime::RuntimeContext context;
+            context.mode = RuntimeMode::Game;
+            context.editorSimulationState = EditorSimulationState::Play;
+            context.assets = &assetManager;
+            context.assetRegistry = &registry;
+            context.scenes = sceneManager.get();
+            context.ecs = ecsWorld.get();
+            context.gameplayEventBus = &eventBus;
+
+            // Instantiate WorldManager
+            WorldManager worldManager(&assetManager, &registry, sceneManager.get());
+
+            // 5. Load the world
+            WorldFileResult loadRes = worldManager.LoadWorld(tempWorldPath);
+            if (!loadRes.Success()) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: LoadWorld failed!");
+                return false;
+            }
+
+            // Verify both zones are loaded, but state is Inactive
+            const auto& zones = worldManager.GetLoadedZones();
+            if (zones.size() != 2) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Expected 2 zones, got %d!", static_cast<int>(zones.size()));
+                return false;
+            }
+            if (zones[0].state != ZoneState::Inactive || zones[1].state != ZoneState::Inactive) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zones should start as Inactive!");
+                return false;
+            }
+
+            // Find the zone objects and check their simulating flags in ECS
+            uint32_t entA = INVALID_ENTITY;
+            uint32_t entB = INVALID_ENTITY;
+            for (uint32_t ent : coordinator.GetActiveEntities()) {
+                if (coordinator.IsEntityAlive(ent)) {
+                    auto sig = coordinator.GetSignature(ent);
+                    if (sig.test(coordinator.GetComponentType<NameComponent>())) {
+                        const auto& nameComp = coordinator.GetComponent<NameComponent>(ent);
+                        if (nameComp.name == "ObjectInZoneA") {
+                            entA = ent;
+                        }
+                        if (nameComp.name == "ObjectInZoneB") {
+                            entB = ent;
+                        }
+                    }
+                }
+            }
+
+            if (entA == INVALID_ENTITY || entB == INVALID_ENTITY) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone objects not instantiated in active scene!");
+                return false;
+            }
+
+            auto zecType = coordinator.GetComponentType<eng::runtime::ZoneEntityComponent>();
+            if (!coordinator.GetSignature(entA).test(zecType) || !coordinator.GetSignature(entB).test(zecType)) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: ZoneEntityComponent not attached to zone objects!");
+                return false;
+            }
+
+            if (coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entA).simulating ||
+                coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entB).simulating) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone objects simulating state should initially be false!");
+                return false;
+            }
+
+            // 6. Run update - player is at [0, 0, 0] (inside Zone A)
+            worldManager.Update(context, 0.1f);
+            eventBus.FlushEvents();
+
+            // Zone A should now be active, Zone B inactive
+            if (worldManager.GetActiveZoneUUIDHigh() != zoneA.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone A should be active!");
+                return false;
+            }
+            if (coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entA).simulating == false) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone A objects should be simulating!");
+                return false;
+            }
+            if (coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entB).simulating == true) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone B objects should NOT be simulating!");
+                return false;
+            }
+
+            // Check event bus - should have received ZoneEnter ZoneA event
+            if (receivedEvents.size() != 1 || receivedEvents[0].Type != eng::runtime::GameplayEventType::ZoneEnter ||
+                receivedEvents[0].ZoneUUIDHigh != zoneA.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Expected ZoneEnter event for Zone A!");
+                return false;
+            }
+            receivedEvents.clear();
+
+            // 7. Move player to [20, 0, 0] (inside Zone B)
+            coordinator.GetComponent<TransformComponent>(player).position = {20.0f, 0.0f, 0.0f};
+            worldManager.Update(context, 0.1f);
+            eventBus.FlushEvents();
+
+            // Zone B should now be active, Zone A inactive
+            if (worldManager.GetActiveZoneUUIDHigh() != zoneB.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone B should be active!");
+                return false;
+            }
+            if (coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entA).simulating == true) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone A objects should NOT be simulating!");
+                return false;
+            }
+            if (coordinator.GetComponent<eng::runtime::ZoneEntityComponent>(entB).simulating == false) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone B objects should be simulating!");
+                return false;
+            }
+
+            // Check event bus - should have received ZoneExit ZoneA and ZoneEnter ZoneB events
+            if (receivedEvents.size() != 2 ||
+                receivedEvents[0].Type != eng::runtime::GameplayEventType::ZoneExit || receivedEvents[0].ZoneUUIDHigh != zoneA.zoneUUIDHigh ||
+                receivedEvents[1].Type != eng::runtime::GameplayEventType::ZoneEnter || receivedEvents[1].ZoneUUIDHigh != zoneB.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Expected ZoneExit for A and ZoneEnter for B!");
+                return false;
+            }
+            receivedEvents.clear();
+
+            // 8. Repeated zone transitions - move player back to Zone A
+            coordinator.GetComponent<TransformComponent>(player).position = {0.0f, 0.0f, 0.0f};
+            worldManager.Update(context, 0.1f);
+            eventBus.FlushEvents();
+
+            if (worldManager.GetActiveZoneUUIDHigh() != zoneA.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone A should be active again!");
+                return false;
+            }
+
+            // Verify player state is preserved
+            const TransformComponent& playerTrans = coordinator.GetComponent<TransformComponent>(player);
+            if (playerTrans.position.x != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Player position corrupted during transition!");
+                return false;
+            }
+
+            // 9. Unload the world - verify zone objects are destroyed and active scene is cleaned up
+            worldManager.UnloadWorld();
+
+            bool entAFound = false;
+            bool entBFound = false;
+            for (uint32_t ent : coordinator.GetActiveEntities()) {
+                if (coordinator.IsEntityAlive(ent)) {
+                    if (ent == entA) entAFound = true;
+                    if (ent == entB) entBFound = true;
+                }
+            }
+            if (entAFound || entBFound) {
+                LOG_ERROR("[FormatTest] Test 15 FAILED: Zone entities not destroyed after UnloadWorld!");
+                return false;
+            }
+
+            // Clean up files
+            std::filesystem::remove(tempSceneAPath);
+            std::filesystem::remove(tempSceneBPath);
+            std::filesystem::remove(tempZoneAPath);
+            std::filesystem::remove(tempZoneBPath);
+            std::filesystem::remove(tempWorldPath);
+
+            LOG_INFO("[FormatTest] Test 15 Passed: Zone Activation and Transition verified successfully.");
         }
 
         LOG_INFO("================================================================================");

@@ -139,4 +139,34 @@ namespace eng::runtime {
         m_Offset = offset;
     }
 
+    uint32_t BinaryReader::ReadUInt32() {
+        return ReadU32();
+    }
+
+    uint64_t BinaryReader::ReadUInt64() {
+        return ReadU64();
+    }
+
+    float BinaryReader::ReadFloat() {
+        return ReadF32();
+    }
+
+    void BinaryReader::ReadBytes(void* outData, size_t size) {
+        ReadBytes(static_cast<uint8_t*>(outData), size);
+    }
+
+    std::string BinaryReader::ReadFixedString(size_t maxBytes) {
+        std::vector<char> temp(maxBytes);
+        ReadBytes(reinterpret_cast<uint8_t*>(temp.data()), maxBytes);
+        size_t len = 0;
+        while (len < maxBytes && temp[len] != '\0') {
+            len++;
+        }
+        return std::string(temp.data(), len);
+    }
+
+    uint64_t BinaryReader::Tell() {
+        return static_cast<uint64_t>(m_Offset);
+    }
+
 } // namespace eng::runtime

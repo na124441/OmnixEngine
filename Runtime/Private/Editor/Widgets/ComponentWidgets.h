@@ -20,9 +20,9 @@ namespace eng::runtime {
         static bool DrawRenderableMesh(RenderableMeshComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState);
         static bool DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState);
         static bool DrawStaticBody(StaticBodyComponent& component, EditorDirtyState& dirtyState);
-        static bool DrawBoxCollider(BoxColliderComponent& component, EditorDirtyState& dirtyState);
-        static bool DrawSphereCollider(SphereColliderComponent& component, EditorDirtyState& dirtyState);
-        static bool DrawCapsuleCollider(CapsuleColliderComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawBoxCollider(BoxColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted);
+        static bool DrawSphereCollider(SphereColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted);
+        static bool DrawCapsuleCollider(CapsuleColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted);
         static bool DrawPlayerStart(PlayerStartComponent& component, EditorDirtyState& dirtyState);
         static bool DrawCharacterController(CharacterControllerComponent& component, EditorDirtyState& dirtyState);
         static bool DrawCamera(CameraComponent& component, EditorDirtyState& dirtyState);
@@ -39,6 +39,7 @@ namespace eng::runtime {
         static bool DrawActivatable(ActivatableComponent& component, EditorDirtyState& dirtyState);
         static bool DrawDoor(DoorComponent& component, EditorDirtyState& dirtyState);
         static bool DrawCheckpoint(CheckpointComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawBounds(BoundsComponent& component, EditorDirtyState& dirtyState);
     };
 
 } // namespace eng::runtime

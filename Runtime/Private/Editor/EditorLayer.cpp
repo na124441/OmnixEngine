@@ -25,6 +25,7 @@
 #include "ECS/Public/IECSWorld.h"
 #include "RenderingEngine/Vulkan/VulkanSwapChain.h"
 #include "Runtime/Public/AssetRegistry.h"
+#include "Runtime/Public/World/WorldManager.h"
 #include "Physics/Public/PhysicsDebugDraw.h"
 #include "Physics/Public/PhysicsWorld.h"
 #include "RenderingEngine/Renderer/SceneRenderer.h"
@@ -45,6 +46,8 @@
 #include <cstring>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include "Runtime/Public/OmnixMaterialFormat.h"
 
 #include "Scene/SceneManager.h"
@@ -234,6 +237,34 @@ namespace eng::runtime {
             this->RenderUI(cmd, imageIndex);
         };
 
+        // 6. Load last opened scene or default/untitled scene
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        if (sceneMgr) {
+            std::string sceneToLoad = "";
+            try {
+                if (std::filesystem::exists("Config/Editor/editor_settings.json")) {
+                    std::ifstream file("Config/Editor/editor_settings.json");
+                    if (file.is_open()) {
+                        nlohmann::json settings;
+                        file >> settings;
+                        if (settings.contains("last_opened_scene")) {
+                            sceneToLoad = settings["last_opened_scene"].get<std::string>();
+                        }
+                    }
+                }
+            } catch (...) {
+                // Ignore parsing errors
+            }
+
+            if (!sceneToLoad.empty() && std::filesystem::exists(sceneToLoad)) {
+                sceneMgr->LoadScene(sceneToLoad);
+            } else if (std::filesystem::exists("Assets/Scenes/test_room.json")) {
+                sceneMgr->LoadScene("Assets/Scenes/test_room.json");
+            } else {
+                sceneMgr->CreateNewScene("UntitledScene");
+            }
+        }
+
         CORE_LOG_INFO("[EditorLayer] Initialized successfully");
         return true;
     }
@@ -251,7 +282,27 @@ namespace eng::runtime {
     void EditorLayer::Render() {
         m_ShowInteractPrompt = false;
 
-        // 1. Check if viewport panel size has changed, and trigger recreation if so
+        m_SimulationState = m_Context->editorSimulationState;
+
+        // Hotkeys for simulation controls
+        bool isSimulating = (m_SimulationState == EditorSimulationState::Play || m_SimulationState == EditorSimulationState::Pause);
+        if (isSimulating) {
+            if (ImGui::IsKeyDown(ImGuiKey_LeftShift) && ImGui::IsKeyPressed(ImGuiKey_F5)) {
+                ExitPlayMode();
+            } else if (ImGui::IsKeyPressed(ImGuiKey_F10)) {
+                if (m_SimulationState == EditorSimulationState::Play) {
+                    m_SimulationState = EditorSimulationState::Pause;
+                    m_Context->editorSimulationState = EditorSimulationState::Pause;
+                    CORE_LOG_INFO("[Editor] Simulation PAUSED");
+                } else {
+                    m_SimulationState = EditorSimulationState::Play;
+                    m_Context->editorSimulationState = EditorSimulationState::Play;
+                    CORE_LOG_INFO("[Editor] Simulation RESUMED");
+                }
+            }
+        }
+
+        // 1. Check if viewport panel size has changed, and trigger recreation if so (throttled)
         auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
         if (engineLoop && engineLoop->GetSceneRenderer()) {
             auto* sceneRenderer = engineLoop->GetSceneRenderer();
@@ -262,18 +313,31 @@ namespace eng::runtime {
             uint32_t targetHeight = static_cast<uint32_t>(m_LastViewportHeight);
 
             if (targetWidth > 0 && targetHeight > 0 && (targetWidth != currentWidth || targetHeight != currentHeight)) {
-                VkDevice device = engineLoop->GetSharedResources().device;
-                vkDeviceWaitIdle(device);
+                if (!m_ResizePending || m_TargetViewportWidth != targetWidth || m_TargetViewportHeight != targetHeight) {
+                    m_ResizePending = true;
+                    m_TargetViewportWidth = targetWidth;
+                    m_TargetViewportHeight = targetHeight;
+                    m_LastResizeRequestTime = std::chrono::steady_clock::now();
+                } else {
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_LastResizeRequestTime).count();
+                    if (elapsed >= 100) {
+                        VkDevice device = engineLoop->GetSharedResources().device;
+                        vkDeviceWaitIdle(device);
 
-                // Reset all command pools to release command buffer references to old descriptor sets before destroying them
-                for (uint32_t i = 0; i < engineLoop->GetSharedResources().MAX_FRAMES_IN_FLIGHT; ++i) {
-                    vkResetCommandPool(device,
-                                       engineLoop->GetSharedResources().commandPools.at(i),
-                                       VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+                        // Reset all command pools to release command buffer references to old descriptor sets before destroying them
+                        for (uint32_t i = 0; i < engineLoop->GetSharedResources().MAX_FRAMES_IN_FLIGHT; ++i) {
+                            vkResetCommandPool(device,
+                                               engineLoop->GetSharedResources().commandPools.at(i),
+                                               VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+                        }
+
+                        sceneRenderer->CreateOffscreenResources(m_TargetViewportWidth, m_TargetViewportHeight);
+                        CORE_LOG_INFO("[EditorLayer] Recreated viewport offscreen targets: %ux%u (throttled)", m_TargetViewportWidth, m_TargetViewportHeight);
+                        m_ResizePending = false;
+                    }
                 }
-
-                sceneRenderer->CreateOffscreenResources(targetWidth, targetHeight);
-                CORE_LOG_INFO("[EditorLayer] Recreated viewport offscreen targets: %ux%u", targetWidth, targetHeight);
+            } else {
+                m_ResizePending = false;
             }
         }
 
@@ -304,8 +368,41 @@ namespace eng::runtime {
                     const auto& transform = coordinator.GetComponent<TransformComponent>(selectedEntity);
                     glm::vec3 entityPos(transform.position.x, transform.position.y, transform.position.z);
                     
-                    // Focus framing: move camera to look at the entity using FrameEntity
                     float boundsRadius = 1.0f;
+                    auto* loop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+                    if (loop && loop->GetSceneRenderer()) {
+                        auto* renderer = loop->GetSceneRenderer();
+                        bool hasBounds = false;
+                        glm::vec3 localMin(-0.5f);
+                        glm::vec3 localMax(0.5f);
+
+                        if (coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<RenderableMeshComponent>())) {
+                            const auto& rm = coordinator.GetComponent<RenderableMeshComponent>(selectedEntity);
+                            if (rm.meshAssetHandle.IsValid() && renderer->m_EcsMeshCache.find(rm.meshAssetHandle.value) != renderer->m_EcsMeshCache.end()) {
+                                auto* m = renderer->m_EcsMeshCache[rm.meshAssetHandle.value];
+                                if (m) {
+                                    localMin = m->minBounds;
+                                    localMax = m->maxBounds;
+                                    hasBounds = true;
+                                }
+                            }
+                        }
+
+                        if (!hasBounds && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<BoxColliderComponent>())) {
+                            const auto& bc = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
+                            glm::vec3 offset(bc.offset.x, bc.offset.y, bc.offset.z);
+                            glm::vec3 bsize(bc.size.x, bc.size.y, bc.size.z);
+                            localMin = offset - bsize * 0.5f;
+                            localMax = offset + bsize * 0.5f;
+                            hasBounds = true;
+                        }
+
+                        if (hasBounds) {
+                            glm::vec3 extent = (localMax - localMin) * glm::vec3(transform.scale.x, transform.scale.y, transform.scale.z);
+                            boundsRadius = glm::length(extent) * 0.5f;
+                        }
+                    }
+
                     m_EditorCamera.FrameEntity(entityPos, boundsRadius);
                 }
             }
@@ -448,6 +545,35 @@ namespace eng::runtime {
             }
         }
 
+        // Sync bounds toggle state from the ViewportPanel toolbar checkbox
+        m_ShowBounds = m_ViewportPanel.ShowBoundsEnabled();
+
+        if (m_ShowBounds && m_Context && m_Context->ecs) {
+            auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+            if (engineLoop) {
+                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                if (sceneRenderer) {
+                    auto& camera = sceneRenderer->getCamera();
+                    glm::mat4 view = camera.getViewMatrix();
+                    float vpWidth = m_ViewportPanel.GetViewportWidth();
+                    float vpHeight = m_ViewportPanel.GetViewportHeight();
+                    if (vpWidth > 0 && vpHeight > 0) {
+                        float aspectRatio = vpWidth / vpHeight;
+                        glm::mat4 proj = camera.getProjMatrix(aspectRatio);
+                        eng::physics::PhysicsDebugDraw::RenderBounds(
+                            m_Context->ecs->getCoordinator(),
+                            view,
+                            proj,
+                            vpWidth,
+                            vpHeight,
+                            m_ViewportPanel.GetViewportScreenX(),
+                            m_ViewportPanel.GetViewportScreenY()
+                        );
+                    }
+                }
+            }
+        }
+
         // Draw gameplay HUD in Play Mode
         if (m_SimulationState == EditorSimulationState::Play && m_GameMode) {
             auto* gameplayHUD = m_GameMode->GetGameplayHUD();
@@ -469,6 +595,24 @@ namespace eng::runtime {
 
     void EditorLayer::Shutdown() {
         if (!m_Context) return;
+
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        if (sceneMgr && sceneMgr->GetActiveScene()) {
+            std::string lastOpenedScene = sceneMgr->GetActiveScene()->GetFilePath();
+            if (!lastOpenedScene.empty()) {
+                try {
+                    std::filesystem::create_directories("Config/Editor");
+                    nlohmann::json settings;
+                    settings["last_opened_scene"] = lastOpenedScene;
+                    std::ofstream file("Config/Editor/editor_settings.json");
+                    if (file.is_open()) {
+                        file << settings.dump(4);
+                    }
+                } catch (...) {
+                    // Ignore
+                }
+            }
+        }
 
         auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
         if (engineLoop) {
@@ -767,27 +911,50 @@ namespace eng::runtime {
                 ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
                 ImGui::SameLine();
                 
-                // Play / Stop
-                bool isPlayMode = (m_SimulationState == EditorSimulationState::Play);
-                if (isPlayMode) {
+                // Play / Stop / Pause / Step
+                bool isSimulating = (m_SimulationState == EditorSimulationState::Play || m_SimulationState == EditorSimulationState::Pause);
+                if (isSimulating) {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.20f, 0.20f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.30f, 0.30f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.90f, 0.40f, 0.40f, 1.00f));
+                    if (ImGui::Button("Stop")) {
+                        ExitPlayMode();
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::SameLine();
+                    
+                    bool isPaused = (m_SimulationState == EditorSimulationState::Pause);
+                    if (isPaused) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.20f, 1.00f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.25f, 1.00f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.75f, 0.30f, 1.00f));
+                        if (ImGui::Button("Resume")) {
+                            m_SimulationState = EditorSimulationState::Play;
+                            m_Context->editorSimulationState = EditorSimulationState::Play;
+                        }
+                        ImGui::PopStyleColor(3);
+
+                        ImGui::SameLine();
+                        if (ImGui::Button("Step Frame")) {
+                            m_SimulationState = EditorSimulationState::Step;
+                            m_Context->editorSimulationState = EditorSimulationState::Step;
+                        }
+                    } else {
+                        if (ImGui::Button("Pause")) {
+                            m_SimulationState = EditorSimulationState::Pause;
+                            m_Context->editorSimulationState = EditorSimulationState::Pause;
+                        }
+                    }
                 } else {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.20f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.65f, 0.25f, 1.00f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.75f, 0.30f, 1.00f));
-                }
-                if (ImGui::Button(isPlayMode ? "Stop" : "Play")) {
-                    if (isPlayMode) {
-                        m_SimulationState = EditorSimulationState::Edit;
-                        ExitPlayMode();
-                    } else {
-                        m_SimulationState = EditorSimulationState::Play;
+                    if (ImGui::Button("Play")) {
                         EnterPlayMode();
                     }
+                    ImGui::PopStyleColor(3);
                 }
-                ImGui::PopStyleColor(3);
                 
                 ImGui::SameLine();
                 ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -1002,6 +1169,12 @@ namespace eng::runtime {
                     m_ViewportPanel.SetShowColliders(show);
                 }
 
+                bool showBounds = m_ShowBounds;
+                if (ImGui::MenuItem("Show Bounds", nullptr, &showBounds)) {
+                    m_ShowBounds = showBounds;
+                    m_ViewportPanel.SetShowBounds(showBounds);
+                }
+
                 bool showDiag = m_ShowDiagnostics;
                 if (ImGui::MenuItem("Show Diagnostics", nullptr, &showDiag)) {
                     m_ShowDiagnostics = showDiag;
@@ -1072,7 +1245,7 @@ namespace eng::runtime {
 
         float panelWidth = 0.0f;
         float panelHeight = 0.0f;
-        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState);
+        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera.movementSpeed);
 
         // Save the viewport size for recreation check at the start of the next frame
         m_LastViewportWidth = panelWidth;
@@ -1091,7 +1264,7 @@ namespace eng::runtime {
             
             int activeSceneEntityCount = 0;
             if (sceneMgr && sceneMgr->GetActiveScene()) {
-                activeSceneEntityCount = sceneMgr->GetActiveScene()->GetAllSceneObjects().size();
+                activeSceneEntityCount = static_cast<int>(sceneMgr->GetActiveScene()->GetAllSceneObjects().size());
             }
             ImGui::Text("Active Scene Entity Count: %d", activeSceneEntityCount);
             
@@ -1110,7 +1283,52 @@ namespace eng::runtime {
             }
             
             ImGui::Text("Play/Stop Cycle Count: %d", m_PlayStopCycleCount);
-                     // GameMode / Gameplay Diagnostics
+            
+            ImGui::Separator();
+            ImGui::TextDisabled("WORLD DIAGNOSTICS");
+            if (m_Context && m_Context->worldManager && m_Context->worldManager->HasActiveWorld()) {
+                ImGui::Text("Active World: %s", m_Context->worldManager->GetActiveWorld()->worldName.c_str());
+                ImGui::Text("Active Zone Count: %d", static_cast<int>(m_Context->worldManager->GetLoadedZones().size()));
+
+                uint64_t activeHigh = m_Context->worldManager->GetActiveZoneUUIDHigh();
+                uint64_t activeLow = m_Context->worldManager->GetActiveZoneUUIDLow();
+                uint64_t prevHigh = m_Context->worldManager->GetPreviousZoneUUIDHigh();
+                uint64_t prevLow = m_Context->worldManager->GetPreviousZoneUUIDLow();
+
+                std::string activeName = "None";
+                std::string prevName = "None";
+                for (const auto& zone : m_Context->worldManager->GetLoadedZones()) {
+                    if (zone.zoneUUIDHigh == activeHigh && zone.zoneUUIDLow == activeLow) {
+                        activeName = zone.zoneName;
+                    }
+                    if (zone.zoneUUIDHigh == prevHigh && zone.zoneUUIDLow == prevLow) {
+                        prevName = zone.zoneName;
+                    }
+                }
+
+                ImGui::Text("Active Zone: %s [%llu, %llu]", activeName.c_str(), activeHigh, activeLow);
+                ImGui::Text("Previous Zone: %s [%llu, %llu]", prevName.c_str(), prevHigh, prevLow);
+
+                ImGui::Text("Zone Streaming Status:");
+                for (const auto& zone : m_Context->worldManager->GetLoadedZones()) {
+                    const char* stateStr = "Unknown";
+                    switch (zone.state) {
+                        case Omnix::ZoneState::Unloaded: stateStr = "Unloaded"; break;
+                        case Omnix::ZoneState::Loading: stateStr = "Loading"; break;
+                        case Omnix::ZoneState::Loaded: stateStr = "Loaded"; break;
+                        case Omnix::ZoneState::Active: stateStr = "Active"; break;
+                        case Omnix::ZoneState::Inactive: stateStr = "Inactive"; break;
+                        case Omnix::ZoneState::Unloading: stateStr = "Unloading"; break;
+                        case Omnix::ZoneState::Failed: stateStr = "Failed"; break;
+                    }
+                    ImGui::BulletText("%s: %s", zone.zoneName.c_str(), stateStr);
+                }
+            } else {
+                ImGui::Text("Active World: None");
+                ImGui::Text("Active Zone Count: 0");
+            }
+
+            // GameMode / Gameplay Diagnostics
             ImGui::Separator();
             ImGui::TextDisabled("GAME STATE");
             if (m_GameMode) {
@@ -2121,7 +2339,7 @@ namespace eng::runtime {
     }
 
     bool EditorLayer::ExitPlayMode() {
-        if (m_SimulationState != EditorSimulationState::Play) return false;
+        if (m_SimulationState != EditorSimulationState::Play && m_SimulationState != EditorSimulationState::Pause) return false;
 
         // Destroy GameMode when Stop pressed
         if (m_GameMode) {
