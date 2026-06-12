@@ -87,6 +87,7 @@ add_library(EngineCore
     Core/Logging/Logger.cpp
     Core/Diagnostics/Diagnostics.cpp
     Core/Timer.cpp
+    Core/Tests/TimerTests.cpp
     Components/Behavior/MovementCapability.cpp
     Core/Memory/AllocationTracker.cpp
     Core/Memory/LinearAllocator.cpp
