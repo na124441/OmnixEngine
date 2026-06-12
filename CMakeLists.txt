@@ -295,6 +295,10 @@ add_executable(sampler ECS/sampler.cpp)
 target_link_libraries(sampler PRIVATE EngineCore ECS)
 target_include_directories(sampler PRIVATE ${ENGINE_INCLUDE_DIRS})
 
+add_executable(transform_tests Scene/tests/TransformTests.cpp)
+target_link_libraries(transform_tests PRIVATE Scene EngineCore)
+target_include_directories(transform_tests PRIVATE ${ENGINE_INCLUDE_DIRS})
+
 # Phase 2: RenderQueue Unit Test
 # add_executable(engine_tests RenderingEngine/Renderer/tests/RenderQueue_test.cpp)
 # target_include_directories(engine_tests PRIVATE ${ENGINE_INCLUDE_DIRS})
