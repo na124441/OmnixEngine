@@ -242,6 +242,7 @@ add_library(EngineRuntime
     Runtime/Private/AllocationDiagnostics.cpp
     Runtime/Private/OwnershipValidation.cpp
     Core/Diagnostics/StressTest.cpp
+    Core/Logging/LoggerTests.cpp
     Runtime/Private/AssetRegistry.cpp
     Runtime/Private/AssetRegistryTests.cpp
     Runtime/Private/BinaryWriter.cpp
