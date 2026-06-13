@@ -64,8 +64,12 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     mat4 lightSpaceMatrix;
     float shadowBias;
     float shadowNormalBias;
+    float shadowSlopeBias;
     float shadowStrength;
     uint shadowLightCast;
+    int pcfKernelSize;
+    uint shadowResolution;
+    uint paddingVal2;
 } light;
 
 // Set 1: Material textures
@@ -230,7 +234,8 @@ void main()
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);
 
-        float attenuation = clamp(1.0 - (distance / radius), 0.0, 1.0);
+        float x = distance / radius;
+        float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
         attenuation = attenuation * attenuation;
 
         vec3 radiance = lightColor * intensity * attenuation;
@@ -265,18 +270,21 @@ void main()
         if (distance > range) continue;
 
         vec3 L = normalize(diff);
-        float theta = dot(-L, lightDir);
-        float epsilon = cosInner - cosOuter;
-        float spotAttenuation = clamp((theta - cosOuter) / max(epsilon, 0.0001), 0.0, 1.0);
-        if (spotAttenuation <= 0.0) continue;
+        
+        // Spot cone attenuation
+        float theta = dot(normalize(-diff), lightDir);
+        float cone = clamp((theta - cosOuter) / max(cosInner - cosOuter, 0.0001), 0.0, 1.0);
+        cone = cone * cone;
+        if (cone <= 0.0) continue;
 
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);
 
-        float attenuation = clamp(1.0 - (distance / range), 0.0, 1.0);
-        attenuation = attenuation * attenuation;
+        float x = distance / range;
+        float distAttenuation = clamp(1.0 - x * x, 0.0, 1.0);
+        distAttenuation = distAttenuation * distAttenuation;
 
-        vec3 radiance = lightColor * intensity * attenuation * spotAttenuation;
+        vec3 radiance = lightColor * intensity * distAttenuation * cone;
 
         vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
         float NDF = distributionGGX(N, H, roughness);
@@ -296,8 +304,8 @@ void main()
     // Ambient lighting
     vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo.rgb * AO;
 
-    // Final color with exposure
-    vec3 color = (ambient + Lo + emissive) * exposure;
+    // Final color with exposure (emissive added after exposure)
+    vec3 color = (ambient + Lo) * exposure + emissive;
 
     outColor = vec4(color, albedo.a);
 }

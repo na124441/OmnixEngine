@@ -8,6 +8,16 @@
 
 namespace eng::renderer {
 
+enum class TextureUsage {
+    Albedo,
+    Normal,
+    MetallicRoughness,
+    AO,
+    Emissive,
+    UI,
+    Data
+};
+
 class Texture
 {
 public:
@@ -25,7 +35,8 @@ public:
                       VkDevice device,
                       VmaAllocator allocator,
                       VkCommandPool transferPool,
-                      VkQueue graphicsQueue);
+                      VkQueue graphicsQueue,
+                      TextureUsage usage = TextureUsage::Albedo);
 
     VkImageView view()   const { return imageView; }
     VkSampler   sampler() const { return samplerHandle; }

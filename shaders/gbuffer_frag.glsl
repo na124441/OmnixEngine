@@ -61,24 +61,26 @@ layout(location = 3) in vec3 vCameraPos;
 layout(location = 4) flat in uint vMaterialIndex;
 layout(location = 5) flat in uint vEntityID;
 
-// Cotangent frame formulation for normal perturbation
+// TBN frame formulation for normal perturbation
 vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
 {
-    vec3 mapNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
-    mapNormal.xy *= normalScale; // Scale normal perturbation
+    vec3 tangentNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    tangentNormal.xy *= normalScale; // Scale normal perturbation
 
     vec3 dp1 = dFdx(vWorldPos);
     vec3 dp2 = dFdy(vWorldPos);
     vec2 duv1 = dFdx(uv);
     vec2 duv2 = dFdy(uv);
 
-    vec3 dp2perp = cross(dp2, N);
-    vec3 dp1perp = cross(N, dp1);
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
+    vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+    vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
 
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-    return normalize(T * (mapNormal.x * invmax) + B * (mapNormal.y * invmax) + N * mapNormal.z);
+    T = normalize(T - dot(T, N) * N);
+    B = cross(N, T);
+
+    mat3 TBN = mat3(T, B, N);
+    return normalize(TBN * tangentNormal);
 }
 
 void main()

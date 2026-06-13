@@ -1005,6 +1005,13 @@ namespace eng::runtime {
                 changed = true;
             }
 
+            float slopeBias = component.shadowSlopeBias;
+            if (ImGui::DragFloat("Shadow Slope Bias##DirectionalLight", &slopeBias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
+                component.shadowSlopeBias = slopeBias;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
             float normalBias = component.shadowNormalBias;
             if (ImGui::DragFloat("Normal Bias##DirectionalLight", &normalBias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
                 component.shadowNormalBias = normalBias;
@@ -1015,6 +1022,16 @@ namespace eng::runtime {
             float strength = component.shadowStrength;
             if (ImGui::DragFloat("Shadow Strength##DirectionalLight", &strength, 0.01f, 0.0f, 1.0f)) {
                 component.shadowStrength = strength;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
+            int kernelSize = component.pcfKernelSize;
+            if (ImGui::SliderInt("PCF Kernel Size##DirectionalLight", &kernelSize, 1, 9)) {
+                if (kernelSize > 1 && kernelSize % 2 == 0) {
+                    kernelSize += 1;
+                }
+                component.pcfKernelSize = kernelSize;
                 dirtyState.MarkSceneDirty();
                 changed = true;
             }

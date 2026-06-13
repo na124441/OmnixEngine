@@ -389,9 +389,11 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) dlc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
                     if (comp.HasMember("castShadows") && comp["castShadows"].IsBool()) dlc.castShadows = comp["castShadows"].GetBool();
                     if (comp.HasMember("shadowBias") && comp["shadowBias"].IsNumber()) dlc.shadowBias = comp["shadowBias"].GetFloat();
+                    if (comp.HasMember("shadowSlopeBias") && comp["shadowSlopeBias"].IsNumber()) dlc.shadowSlopeBias = comp["shadowSlopeBias"].GetFloat();
                     if (comp.HasMember("shadowNormalBias") && comp["shadowNormalBias"].IsNumber()) dlc.shadowNormalBias = comp["shadowNormalBias"].GetFloat();
                     if (comp.HasMember("shadowStrength") && comp["shadowStrength"].IsNumber()) dlc.shadowStrength = comp["shadowStrength"].GetFloat();
                     if (comp.HasMember("shadowResolution") && comp["shadowResolution"].IsInt()) dlc.shadowResolution = comp["shadowResolution"].GetInt();
+                    if (comp.HasMember("pcfKernelSize") && comp["pcfKernelSize"].IsInt()) dlc.pcfKernelSize = comp["pcfKernelSize"].GetInt();
                     sceneObject->SetDirectionalLight(dlc);
                 } else if (compType == "PointLight") {
                     PointLightComponent plc;

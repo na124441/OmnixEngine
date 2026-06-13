@@ -4,6 +4,7 @@
 #include "Core/Engine/Log.h"
 #include <algorithm>
 #include <cstring>
+#include <unordered_set>
 
 namespace eng::renderer {
 
@@ -12,7 +13,14 @@ void RenderGraph::RegisterPass(
     const std::vector<std::string>& inputs,
     const std::vector<std::string>& outputs,
     PassID physicalSlot,
-    std::function<void(VkCommandBuffer)> execute
+    std::function<void(VkCommandBuffer)> execute,
+    bool requiresFramebuffer,
+    VkFramebuffer framebuffer,
+    bool requiresPipeline,
+    VkPipeline pipeline,
+    const std::vector<RenderTargetHandle>& inputHandles,
+    const std::vector<RenderTargetHandle>& outputHandles,
+    std::function<PassResult(VkCommandBuffer)> executeWithResult
 )
 {
     RenderPass pass{};
@@ -21,6 +29,13 @@ void RenderGraph::RegisterPass(
     pass.outputs = outputs;
     pass.physicalSlot = physicalSlot;
     pass.execute = execute;
+    pass.requiresFramebuffer = requiresFramebuffer;
+    pass.framebuffer = framebuffer;
+    pass.requiresPipeline = requiresPipeline;
+    pass.pipeline = pipeline;
+    pass.inputHandles = inputHandles;
+    pass.outputHandles = outputHandles;
+    pass.executeWithResult = executeWithResult;
 
     m_RegisteredPasses.push_back(pass);
 }
@@ -385,6 +400,151 @@ void RenderGraph::CalculateResourceLifetimes()
             updateRes(out);
         }
     }
+}
+
+bool RenderGraph::ValidatePass(const RenderPass& pass, const RenderTargetManager& targetManager) {
+    for (auto input : pass.inputHandles) {
+        if (!targetManager.IsValid(input)) {
+            LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" validation failed: Missing input target handle.");
+            return false;
+        }
+    }
+    for (auto output : pass.outputHandles) {
+        if (!targetManager.IsValid(output)) {
+            LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" validation failed: Missing output target handle.");
+            return false;
+        }
+    }
+    if (pass.requiresFramebuffer && pass.framebuffer == VK_NULL_HANDLE) {
+        LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" validation failed: Missing framebuffer.");
+        return false;
+    }
+    if (pass.requiresPipeline && pass.pipeline == VK_NULL_HANDLE) {
+        LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" validation failed: Missing pipeline.");
+        return false;
+    }
+    return true;
+}
+
+bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t frameIndex, RenderTargetManager& targetManager, bool& outGraphExecutionFailed) {
+    EnsureTimestampQueries(resources);
+    m_LastTimingNames.clear();
+    outGraphExecutionFailed = false;
+
+    PFN_vkCmdBeginDebugUtilsLabelEXT pfnBeginDebugLabel = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT pfnEndDebugLabel = nullptr;
+
+    if (resources.device != VK_NULL_HANDLE) {
+        pfnBeginDebugLabel = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(resources.device, "vkCmdBeginDebugUtilsLabelEXT");
+        pfnEndDebugLabel = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(resources.device, "vkCmdEndDebugUtilsLabelEXT");
+    }
+
+    std::vector<bool> cmdBufferBegun(PASS_COUNT, false);
+    bool timestampQueriesReset = false;
+    uint32_t queryIndex = 0;
+
+    std::unordered_set<uint32_t> invalidTargets; // Tracks invalid resource handles
+
+    for (const auto& pass : m_CompiledPasses) {
+        uint32_t slotIdx = static_cast<uint32_t>(pass.physicalSlot);
+        if (slotIdx >= PASS_COUNT) {
+            LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" has invalid physical slot: " + std::to_string(slotIdx));
+            continue;
+        }
+
+        VkCommandBuffer cmd = resources.commandBuffers[frameIndex][slotIdx];
+
+        // 1. Skip check: check if any of the input handles are marked as invalid
+        bool skipPass = false;
+        for (auto input : pass.inputHandles) {
+            if (invalidTargets.find(input.index) != invalidTargets.end()) {
+                skipPass = true;
+                break;
+            }
+        }
+
+        // 2. Validate pass resources (Vulkan handles, framebuffers, etc.)
+        if (!skipPass) {
+            if (!ValidatePass(pass, targetManager)) {
+                LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" failed validation. Marking outputs as invalid.");
+                skipPass = true;
+                outGraphExecutionFailed = true;
+            }
+        }
+
+        if (skipPass) {
+            // Propagate invalid outputs
+            LOG_WARN("RenderGraph: Skipping pass \"" + pass.name + "\" due to invalid inputs or validation failure.");
+            for (auto output : pass.outputHandles) {
+                invalidTargets.insert(output.index);
+            }
+            continue;
+        }
+
+        // Begin command buffer if not already done
+        if (!cmdBufferBegun[slotIdx]) {
+            VkCommandBufferBeginInfo begin{};
+            begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
+            cmdBufferBegun[slotIdx] = true;
+        }
+
+        bool useTimestamp = m_TimestampQueryPool != VK_NULL_HANDLE && queryIndex + 1 < m_TimestampQueryCapacity;
+        if (useTimestamp && !timestampQueriesReset) {
+            vkCmdResetQueryPool(cmd, m_TimestampQueryPool, 0, m_TimestampQueryCapacity);
+            timestampQueriesReset = true;
+        }
+
+        if (useTimestamp) {
+            vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_TimestampQueryPool, queryIndex);
+            m_LastTimingNames.push_back(pass.name);
+        }
+
+        if (pfnBeginDebugLabel != nullptr) {
+            VkDebugUtilsLabelEXT label{};
+            label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+            label.pLabelName = pass.name.c_str();
+            float color[4] = { 0.18f, 0.54f, 0.34f, 1.0f };
+            std::memcpy(label.color, color, sizeof(color));
+            pfnBeginDebugLabel(cmd, &label);
+        }
+
+        // 3. Execute pass
+        PassResult result = PassResult::Success;
+        if (pass.executeWithResult) {
+            result = pass.executeWithResult(cmd);
+        } else if (pass.execute) {
+            pass.execute(cmd);
+        }
+
+        if (result == PassResult::Failed) {
+            LOG_ERROR("RenderGraph: Pass \"" + pass.name + "\" returned execution failure. Marking outputs as invalid.");
+            for (auto output : pass.outputHandles) {
+                invalidTargets.insert(output.index);
+            }
+            outGraphExecutionFailed = true;
+        }
+
+        if (useTimestamp) {
+            vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampQueryPool, queryIndex + 1);
+            queryIndex += 2;
+        }
+
+        if (pfnEndDebugLabel != nullptr) {
+            pfnEndDebugLabel(cmd);
+        }
+    }
+
+    // End begun command buffers
+    for (uint32_t i = 0; i < PASS_COUNT; ++i) {
+        if (cmdBufferBegun[i]) {
+            VkCommandBuffer cmd = resources.commandBuffers[frameIndex][i];
+            VK_CHECK(vkEndCommandBuffer(cmd));
+        }
+    }
+
+    return !outGraphExecutionFailed;
 }
 
 } // namespace eng::renderer

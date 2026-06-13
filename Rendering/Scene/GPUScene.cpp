@@ -77,16 +77,22 @@ void GPUScene::UpdateFrame(
         lightUboData.lightSpaceMatrix = dirLight.lightSpaceMatrix;
         lightUboData.shadowBias = dirLight.shadowBias;
         lightUboData.shadowNormalBias = dirLight.shadowNormalBias;
+        lightUboData.shadowSlopeBias = dirLight.shadowSlopeBias;
         lightUboData.shadowStrength = dirLight.shadowStrength;
         lightUboData.shadowLightCast = dirLight.castShadows > 0.0f ? 1 : 0;
+        lightUboData.pcfKernelSize = dirLight.pcfKernelSize;
+        lightUboData.shadowResolution = dirLight.shadowResolution;
     } else {
         lightUboData.directionalDirectionIntensity = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
         lightUboData.directionalColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
         lightUboData.lightSpaceMatrix = glm::mat4(1.0f);
-        lightUboData.shadowBias = 0.005f;
-        lightUboData.shadowNormalBias = 0.015f;
+        lightUboData.shadowBias = 0.003f;
+        lightUboData.shadowNormalBias = 0.0f;
+        lightUboData.shadowSlopeBias = 0.01f;
         lightUboData.shadowStrength = 1.0f;
         lightUboData.shadowLightCast = 0;
+        lightUboData.pcfKernelSize = 3;
+        lightUboData.shadowResolution = 2048;
     }
     // ambient
     lightUboData.ambientColorIntensity = glm::vec4(renderScene.skyLight.color, renderScene.skyLight.intensity);

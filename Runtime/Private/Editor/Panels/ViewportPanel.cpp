@@ -704,7 +704,8 @@ namespace eng::runtime {
             "AO",
             "Shadow Map",
             "Object ID",
-            "Light Complexity"
+            "Light Complexity",
+            "Tangent"
         };
         auto applyRenderMode = [&](int mode) {
             m_RenderMode = mode;
@@ -726,6 +727,7 @@ namespace eng::runtime {
                 case 10: renderer->m_ShadingMode = 9; break; // Shadow Map
                 case 11: renderer->m_ShadingMode = 7; break; // Object ID
                 case 12: renderer->m_ShadingMode = 12; break; // Light Complexity
+                case 13: renderer->m_ShadingMode = 13; break; // Tangent
                 default: renderer->m_ShadingMode = 0; break;
             }
         };

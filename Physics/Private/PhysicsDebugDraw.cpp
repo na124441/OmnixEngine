@@ -99,7 +99,8 @@ namespace eng::physics {
         Entity selectedEntity,
         bool showColliders,
         bool showLights,
-        bool showBounds
+        bool showBounds,
+        const glm::mat4& shadowMatrix
     ) {
         s_ViewportOffsetX = viewportOffsetX;
         s_ViewportOffsetY = viewportOffsetY;
@@ -329,6 +330,54 @@ namespace eng::physics {
                         if (!behindStart && !behindEnd) {
                             drawList->AddLine(ImVec2(pStart.x, pStart.y), ImVec2(pEnd.x, pEnd.y), color, 2.0f);
                         }
+                        // Draw arrowhead lines
+                        glm::vec3 arrowHead[4] = {
+                            end + glm::vec3(0.2f, 0.0f, 0.4f),
+                            end + glm::vec3(-0.2f, 0.0f, 0.4f),
+                            end + glm::vec3(0.0f, 0.2f, 0.4f),
+                            end + glm::vec3(0.0f, -0.2f, 0.4f)
+                        };
+                        for (int i = 0; i < 4; ++i) {
+                            bool behindHead = false;
+                            glm::vec2 pHead = ProjectPoint(arrowHead[i], entityTransform, view, proj, screenWidth, screenHeight, behindHead);
+                            if (!behindEnd && !behindHead) {
+                                drawList->AddLine(ImVec2(pEnd.x, pEnd.y), ImVec2(pHead.x, pHead.y), color, 2.0f);
+                            }
+                        }
+                        
+                        // Draw shadow frustum wireframe
+                        if (dirLight.castShadows && std::abs(glm::determinant(shadowMatrix)) > 0.0001f) {
+                            glm::mat4 invShadow = glm::inverse(shadowMatrix);
+                            glm::vec3 ndcCorners[8] = {
+                                {-1.0f, -1.0f, 0.0f},
+                                { 1.0f, -1.0f, 0.0f},
+                                {-1.0f,  1.0f, 0.0f},
+                                { 1.0f,  1.0f, 0.0f},
+                                {-1.0f, -1.0f, 1.0f},
+                                { 1.0f, -1.0f, 1.0f},
+                                {-1.0f,  1.0f, 1.0f},
+                                { 1.0f,  1.0f, 1.0f}
+                            };
+                            glm::vec3 worldCorners[8];
+                            for (int i = 0; i < 8; ++i) {
+                                glm::vec4 pt = invShadow * glm::vec4(ndcCorners[i], 1.0f);
+                                worldCorners[i] = glm::vec3(pt) / pt.w;
+                            }
+                            int edges[12][2] = {
+                                {0, 1}, {1, 3}, {3, 2}, {2, 0}, // Near
+                                {4, 5}, {5, 7}, {7, 6}, {6, 4}, // Far
+                                {0, 4}, {1, 5}, {2, 6}, {3, 7}  // Connections
+                            };
+                            ImU32 shadowFrustumColor = IM_COL32(255, 128, 0, 255); // Orange
+                            for (int i = 0; i < 12; ++i) {
+                                bool behind1 = false, behind2 = false;
+                                glm::vec2 p1 = ProjectPoint(worldCorners[edges[i][0]], glm::mat4(1.0f), view, proj, screenWidth, screenHeight, behind1);
+                                glm::vec2 p2 = ProjectPoint(worldCorners[edges[i][1]], glm::mat4(1.0f), view, proj, screenWidth, screenHeight, behind2);
+                                if (!behind1 && !behind2) {
+                                    drawList->AddLine(ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), shadowFrustumColor, 1.5f);
+                                }
+                            }
+                        }
                     }
                     bool behindStart = false;
                     glm::vec2 pStart = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behindStart);
@@ -400,6 +449,28 @@ namespace eng::physics {
                             glm::vec2 pBase = ProjectPoint(directions[i], entityTransform, view, proj, screenWidth, screenHeight, behindBase);
                             if (!behindTip && !behindBase) {
                                 drawList->AddLine(ImVec2(pTip.x, pTip.y), ImVec2(pBase.x, pBase.y), color, 2.0f);
+                            }
+                        }
+
+                        // Draw inner cone
+                        float innerAngleRad = glm::radians(spotLight.innerConeAngle);
+                        float innerBaseRadius = r * tanf(innerAngleRad);
+                        glm::vec3 innerBaseCenter = glm::vec3(0.0f, 0.0f, -r);
+                        ImU32 innerColor = IM_COL32(200, 200, 255, 180); // Softer white-blue for inner cone
+                        DrawCircle(innerBaseCenter, glm::vec3(1,0,0), glm::vec3(0,1,0), innerBaseRadius, entityTransform, view, proj, screenWidth, screenHeight, drawList, innerColor);
+                        
+                        glm::vec3 innerDirections[4] = {
+                            glm::vec3(innerBaseRadius, 0.0f, -r),
+                            glm::vec3(-innerBaseRadius, 0.0f, -r),
+                            glm::vec3(0.0f, innerBaseRadius, -r),
+                            glm::vec3(0.0f, -innerBaseRadius, -r)
+                        };
+                        for (int i = 0; i < 4; ++i) {
+                            bool behindTip = false, behindBase = false;
+                            glm::vec2 pTip = ProjectPoint(tip, entityTransform, view, proj, screenWidth, screenHeight, behindTip);
+                            glm::vec2 pBase = ProjectPoint(innerDirections[i], entityTransform, view, proj, screenWidth, screenHeight, behindBase);
+                            if (!behindTip && !behindBase) {
+                                drawList->AddLine(ImVec2(pTip.x, pTip.y), ImVec2(pBase.x, pBase.y), innerColor, 1.0f);
                             }
                         }
                     }

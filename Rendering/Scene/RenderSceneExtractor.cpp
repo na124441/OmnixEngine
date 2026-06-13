@@ -195,9 +195,11 @@ void RenderSceneExtractor::ExtractScene(
                     }
                     dirLight.castShadows = dirComp.castShadows ? 1.0f : 0.0f;
                     dirLight.shadowBias = dirComp.shadowBias;
+                    dirLight.shadowSlopeBias = dirComp.shadowSlopeBias;
                     dirLight.shadowNormalBias = dirComp.shadowNormalBias;
                     dirLight.shadowStrength = dirComp.shadowStrength;
                     dirLight.shadowResolution = dirComp.shadowResolution;
+                    dirLight.pcfKernelSize = dirComp.pcfKernelSize;
                     outRenderScene.directionalLights.push_back(dirLight);
                 }
             }

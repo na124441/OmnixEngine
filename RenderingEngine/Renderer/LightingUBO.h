@@ -22,6 +22,10 @@ struct LightData
     alignas(16) glm::mat4 lightSpaceMatrix;
     alignas(16) float shadowBias;
     float shadowNormalBias;
+    float shadowSlopeBias;
     float shadowStrength;
     uint32_t shadowLightCast;
+    int32_t pcfKernelSize;
+    uint32_t shadowResolution;
+    uint32_t paddingVal2;
 };

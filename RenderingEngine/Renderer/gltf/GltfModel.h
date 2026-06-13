@@ -43,7 +43,8 @@ private:
     // Load a single GLTF image (by its index) into a Texture.
     std::shared_ptr<Texture> loadTexture(int imageIndex,
                                           const tinygltf::Model& model,
-                                          EngineResources& resources);
+                                          EngineResources& resources,
+                                          TextureUsage usage = TextureUsage::Albedo);
 
     // Build a PBR Material from a GLTF material description.
     std::unique_ptr<Material> createMaterial(const tinygltf::Material& gltfMat,

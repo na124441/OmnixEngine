@@ -26,7 +26,14 @@ namespace eng::renderer {
             const std::vector<std::string>& inputs,
             const std::vector<std::string>& outputs,
             PassID physicalSlot,
-            std::function<void(VkCommandBuffer)> execute
+            std::function<void(VkCommandBuffer)> execute,
+            bool requiresFramebuffer = false,
+            VkFramebuffer framebuffer = VK_NULL_HANDLE,
+            bool requiresPipeline = false,
+            VkPipeline pipeline = VK_NULL_HANDLE,
+            const std::vector<RenderTargetHandle>& inputHandles = {},
+            const std::vector<RenderTargetHandle>& outputHandles = {},
+            std::function<PassResult(VkCommandBuffer)> executeWithResult = nullptr
         );
 
         void DeclareTexture(const std::string& name, const TextureResourceDesc& desc, bool transient = true);
@@ -34,6 +41,8 @@ namespace eng::renderer {
 
         void Compile(EngineResources& resources);
         void Execute(EngineResources& resources, uint32_t frameIndex);
+        bool ExecuteWithValidation(EngineResources& resources, uint32_t frameIndex, RenderTargetManager& targetManager, bool& outGraphExecutionFailed);
+        bool ValidatePass(const RenderPass& pass, const RenderTargetManager& targetManager);
         void CollectGpuTimings(EngineResources& resources, uint32_t frameIndex);
         const std::vector<RenderPassTiming>& GetLastPassTimings() const { return m_LastPassTimings; }
         float GetLastGpuFrameTimeMs() const { return m_LastGpuFrameTimeMs; }

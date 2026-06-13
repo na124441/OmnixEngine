@@ -174,6 +174,8 @@ add_library(RenderingEngine
     RenderingEngine/runtime/render_scene/SceneBuilder.cpp
     RenderingEngine/Renderer/PyramidRenderer.cpp
     Rendering/Core/Renderer.cpp
+    Rendering/Core/RenderTargetManager.cpp
+    Rendering/Core/FramebufferManager.cpp
     Rendering/Graph/RenderGraph.cpp
     Rendering/Scene/RenderSceneExtractor.cpp
     Rendering/Scene/GPUScene.cpp

@@ -91,7 +91,7 @@ bool Material::createPBR(const std::string& vertPath,
     // 3️⃣ Load textures
     if (!albedoPath.empty()) {
         albedoTexture = std::make_shared<Texture>();
-        if (albedoTexture->loadFromFile(albedoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+        if (albedoTexture->loadFromFile(albedoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Albedo)) {
             uboData.hasAlbedoMap = 1.0f;
         } else {
             LOG_WARN("Failed to load albedo texture: " + albedoPath + " - using fallback white.");
@@ -99,12 +99,12 @@ bool Material::createPBR(const std::string& vertPath,
             uboData.hasAlbedoMap = 0.0f;
         }
     } else {
-        uboData.hasAlbedoMap = 0.0f;
+        uboData.hasAlbedoMap = albedoTexture ? 1.0f : 0.0f;
     }
 
     if (!normalPath.empty()) {
         normalTexture = std::make_shared<Texture>();
-        if (normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+        if (normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Normal)) {
             uboData.hasNormalMap = 1.0f;
         } else {
             LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback flat normal.");
@@ -112,12 +112,12 @@ bool Material::createPBR(const std::string& vertPath,
             uboData.hasNormalMap = 0.0f;
         }
     } else {
-        uboData.hasNormalMap = 0.0f;
+        uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
     }
 
     if (!metallicRoughnessPath.empty()) {
         metallicRoughnessTexture = std::make_shared<Texture>();
-        if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+        if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::MetallicRoughness)) {
             uboData.hasMetallicRoughnessMap = 1.0f;
         } else {
             LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback white.");
@@ -125,12 +125,12 @@ bool Material::createPBR(const std::string& vertPath,
             uboData.hasMetallicRoughnessMap = 0.0f;
         }
     } else {
-        uboData.hasMetallicRoughnessMap = 0.0f;
+        uboData.hasMetallicRoughnessMap = metallicRoughnessTexture ? 1.0f : 0.0f;
     }
 
     if (!aoPath.empty()) {
         aoTexture = std::make_shared<Texture>();
-        if (aoTexture->loadFromFile(aoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+        if (aoTexture->loadFromFile(aoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::AO)) {
             uboData.hasAOMap = 1.0f;
         } else {
             LOG_WARN("Failed to load AO texture: " + aoPath + " - using fallback white.");
@@ -138,12 +138,12 @@ bool Material::createPBR(const std::string& vertPath,
             uboData.hasAOMap = 0.0f;
         }
     } else {
-        uboData.hasAOMap = 0.0f;
+        uboData.hasAOMap = aoTexture ? 1.0f : 0.0f;
     }
 
     if (!emissivePath.empty()) {
         emissiveTexture = std::make_shared<Texture>();
-        if (emissiveTexture->loadFromFile(emissivePath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+        if (emissiveTexture->loadFromFile(emissivePath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Emissive)) {
             uboData.hasEmissiveMap = 1.0f;
         } else {
             LOG_WARN("Failed to load emissive texture: " + emissivePath + " - using fallback black.");
@@ -151,7 +151,7 @@ bool Material::createPBR(const std::string& vertPath,
             uboData.hasEmissiveMap = 0.0f;
         }
     } else {
-        uboData.hasEmissiveMap = 0.0f;
+        uboData.hasEmissiveMap = emissiveTexture ? 1.0f : 0.0f;
     }
 
     updateUniform(res);

@@ -17,6 +17,8 @@
 
 #include "Rendering/Core/RenderScene.h"
 #include "Rendering/Scene/GPUScene.h"
+#include "Rendering/Core/RenderTargetManager.h"
+#include "Rendering/Core/FramebufferManager.h"
 #include "Rendering/Core/FrameContext.h"
 #include "Rendering/Core/RenderTypes.h"
 #include "Rendering/Core/RenderStats.h"
@@ -36,6 +38,12 @@ namespace eng::runtime {
 }
 
 namespace eng::renderer {
+    struct CascadedShadowData {
+        glm::mat4 lightViewProj[4];
+        float cascadeSplits[4];
+        uint32_t cascadeCount;
+    };
+
     using ECSWorld = eng::runtime::IECSWorld;
 
     enum class ExposureMode : uint32_t {
@@ -52,6 +60,13 @@ namespace eng::renderer {
         bool enableTonemapping = true;
         bool enableGammaCorrection = true;
         bool debugBeforePostProcess = false;
+    };
+
+    struct SSAOSettings {
+        bool enabled = true;
+        float radius = 0.5f;
+        float bias = 0.025f;
+        float intensity = 1.5f;
     };
 
     class Renderer {
@@ -97,6 +112,8 @@ namespace eng::renderer {
         void CreateOffscreenResources(uint32_t width, uint32_t height) { m_ViewportRenderer.createOffscreenResources(width, height); }
         void DestroyOffscreenResources() { m_ViewportRenderer.destroyOffscreenResources(); }
         VkDescriptorSet GetOffscreenTexture(uint32_t frameIdx) const { return m_ViewportRenderer.getOffscreenTexture(frameIdx); }
+        VkDescriptorSet GetShadowTexture(uint32_t frameIdx) const;
+        glm::mat4 getLastLightSpaceMatrix() const { return m_LastLightSpaceMatrix; }
 
         uint32_t GetOffscreenWidth() const { return m_ViewportRenderer.getOffscreenWidth(); }
         uint32_t GetOffscreenHeight() const { return m_ViewportRenderer.getOffscreenHeight(); }
@@ -110,6 +127,9 @@ namespace eng::renderer {
         bool isFallbackLightingActive() const { return m_LastFallbackActive; }
         PostProcessSettings& GetPostProcessSettings() { return m_PostProcessSettings; }
         const PostProcessSettings& GetPostProcessSettings() const { return m_PostProcessSettings; }
+        SSAOSettings& GetSSAOSettings() { return m_SSAOSettings; }
+        const SSAOSettings& GetSSAOSettings() const { return m_SSAOSettings; }
+        VkDescriptorSet GetSSAOBlurredTexture(uint32_t frameIdx) const;
         const RenderStats& GetRenderStats() const { return m_RenderStats; }
         void RequestRenderDocCapture() { m_RenderDocCaptureRequested = true; }
 
@@ -165,6 +185,7 @@ namespace eng::renderer {
         LightData m_LastLightData = {};
         bool m_LastFallbackActive = true;
         PostProcessSettings m_PostProcessSettings;
+        SSAOSettings m_SSAOSettings;
         float m_AutoExposure = 1.0f;
         RenderStats m_RenderStats;
         bool m_RenderDocCaptureRequested = false;
@@ -256,6 +277,7 @@ namespace eng::renderer {
         VkSampler                   m_ShadowSampler = VK_NULL_HANDLE;
         uint32_t                    m_CurrentShadowResolution = 2048;
         glm::mat4                   m_LastLightSpaceMatrix{1.0f};
+        mutable std::vector<VkDescriptorSet> m_ShadowImGuiTextures;
 
         VkPipeline                  m_GridPipeline = VK_NULL_HANDLE;
         VkPipelineLayout            m_GridPipelineLayout = VK_NULL_HANDLE;
@@ -264,6 +286,71 @@ namespace eng::renderer {
 
         void createShadowResources();
         void destroyShadowResources();
+
+        RenderTargetManager m_RenderTargetManager;
+        FramebufferManager m_FramebufferManager;
+        std::vector<RenderTargetHandle> m_DepthHandles;
+        std::vector<RenderTargetHandle> m_GBufferAHandles;
+        std::vector<RenderTargetHandle> m_GBufferBHandles;
+        std::vector<RenderTargetHandle> m_GBufferCHandles;
+        std::vector<RenderTargetHandle> m_GBufferDHandles;
+        std::vector<RenderTargetHandle> m_HDRColorHandles;
+        std::vector<RenderTargetHandle> m_ShadowHandles;
+        std::vector<RenderTargetHandle> m_LDRColorHandles;
+        std::vector<RenderTargetHandle> m_ViewportColorHandles;
+        std::vector<RenderTargetHandle> m_SSAOHandles;
+        std::vector<RenderTargetHandle> m_SSAOBlurredHandles;
+        std::vector<VkImage>        m_SSAOBlurredImages;
+        std::vector<VmaAllocation>  m_SSAOBlurredAllocations;
+        std::vector<VkImageView>    m_SSAOBlurredImageViews;
+        std::vector<FramebufferHandle> m_SSAOFbHandles;
+        std::vector<VkFramebuffer>  m_SSAOFramebuffers;
+        std::vector<FramebufferHandle> m_SSAOBlurredFbHandles;
+        std::vector<VkFramebuffer>  m_SSAOBlurredFramebuffers;
+
+        VkPipeline                  m_SSAOPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_SSAOPipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout       m_SSAODescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_SSAODescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_SSAODescriptorSets;
+
+        VkPipeline                  m_SSAOBlurPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_SSAOBlurPipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout       m_SSAOBlurDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_SSAOBlurDescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_SSAOBlurDescriptorSets;
+
+        VkImage                     m_SSAONoiseImage = VK_NULL_HANDLE;
+        VmaAllocation               m_SSAONoiseAllocation = VK_NULL_HANDLE;
+        VkImageView                 m_SSAONoiseImageView = VK_NULL_HANDLE;
+        VkSampler                   m_SSAONoiseSampler = VK_NULL_HANDLE;
+
+        std::vector<VkBuffer>       m_SSAOConstantBuffers;
+        std::vector<VmaAllocation>  m_SSAOConstantAllocations;
+        VkRenderPass                m_SSAORenderPass = VK_NULL_HANDLE;
+        std::vector<glm::vec4>      m_SSAOKernel;
+        mutable std::vector<VkDescriptorSet> m_SSAOBlurredImGuiTextures;
+
+        void createSSAOResources();
+        void destroySSAOResources();
+
+        std::vector<FramebufferHandle> m_DepthFbHandles;
+        std::vector<FramebufferHandle> m_OffscreenDepthFbHandles;
+        std::vector<FramebufferHandle> m_GeometryFbHandles;
+        std::vector<FramebufferHandle> m_GBufferFbHandles;
+        std::vector<FramebufferHandle> m_OffscreenGBufferFbHandles;
+        std::vector<FramebufferHandle> m_HDRColorFbHandles;
+        std::vector<FramebufferHandle> m_TransparentFbHandles;
+        std::vector<FramebufferHandle> m_OffscreenTransparentFbHandles;
+        std::vector<FramebufferHandle> m_ShadowFbHandles;
+
+        void ValidateStartupState();
+        void ValidateSwapchain();
+        void ValidateRenderTargets();
+        void ValidateFramebuffers();
+        void ValidatePipelines();
+        void ValidateDescriptorLayouts();
+        void ValidateRenderGraph();
 
         std::chrono::steady_clock::time_point m_CpuFrameStart{};
     };

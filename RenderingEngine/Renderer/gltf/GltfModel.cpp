@@ -15,7 +15,8 @@ namespace eng::renderer {
 // Load a GLTF image → temporary PNG → our Texture class.
 std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
                                                 const tinygltf::Model& model,
-                                                EngineResources& resources)
+                                                EngineResources& resources,
+                                                TextureUsage usage)
 {
     // Validate image index
     if (imageIndex < 0 || imageIndex >= static_cast<int>(model.images.size())) {
@@ -46,7 +47,8 @@ std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
                            resources.device,
                            resources.allocator,
                            resources.commandPools[0],
-                           resources.graphicsQueue)) {
+                           resources.graphicsQueue,
+                           usage)) {
         LOG_ERROR("Failed to load texture from temporary PNG: " + tmpPath);
         std::remove(tmpPath.c_str());
         return std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
@@ -54,7 +56,7 @@ std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
 
     // Cleanup temp file
     std::remove(tmpPath.c_str());
-return tex;
+    return tex;
 }
 
 // ---------------------------------------------------------------------
@@ -163,21 +165,59 @@ std::unique_ptr<Material> GltfModel::createMaterial(const tinygltf::Material& gl
     // Albedo
     if (gltfMat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
         int imgIdx = model.textures[gltfMat.pbrMetallicRoughness.baseColorTexture.index].source;
-        mat->albedoTexture = loadTexture(imgIdx, model, resources);
+        mat->albedoTexture = loadTexture(imgIdx, model, resources, TextureUsage::Albedo);
+        mat->uboData.hasAlbedoMap = 1.0f;
     } else {
         mat->albedoTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
+        mat->uboData.hasAlbedoMap = 0.0f;
     }
 
     // Normal
     if (gltfMat.normalTexture.index >= 0) {
         int imgIdx = model.textures[gltfMat.normalTexture.index].source;
-        mat->normalTexture = loadTexture(imgIdx, model, resources);
+        mat->normalTexture = loadTexture(imgIdx, model, resources, TextureUsage::Normal);
+        mat->uboData.hasNormalMap = 1.0f;
     } else {
         mat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
+        mat->uboData.hasNormalMap = 0.0f;
+    }
+
+    // MetallicRoughness
+    if (gltfMat.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+        int imgIdx = model.textures[gltfMat.pbrMetallicRoughness.metallicRoughnessTexture.index].source;
+        mat->metallicRoughnessTexture = loadTexture(imgIdx, model, resources, TextureUsage::MetallicRoughness);
+        mat->uboData.hasMetallicRoughnessMap = 1.0f;
+    } else {
+        mat->metallicRoughnessTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
+        mat->uboData.hasMetallicRoughnessMap = 0.0f;
+    }
+
+    // Occlusion / AO
+    if (gltfMat.occlusionTexture.index >= 0) {
+        int imgIdx = model.textures[gltfMat.occlusionTexture.index].source;
+        mat->aoTexture = loadTexture(imgIdx, model, resources, TextureUsage::AO);
+        mat->uboData.hasAOMap = 1.0f;
+    } else {
+        mat->aoTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
+        mat->uboData.hasAOMap = 0.0f;
+    }
+
+    // Emissive
+    if (gltfMat.emissiveTexture.index >= 0) {
+        int imgIdx = model.textures[gltfMat.emissiveTexture.index].source;
+        mat->emissiveTexture = loadTexture(imgIdx, model, resources, TextureUsage::Emissive);
+        mat->uboData.hasEmissiveMap = 1.0f;
+    } else {
+        mat->emissiveTexture = std::shared_ptr<Texture>(Texture::getBlackTexture(resources), [](Texture*){});
+        mat->uboData.hasEmissiveMap = 0.0f;
     }
 
     mat->setMetallic(static_cast<float>(gltfMat.pbrMetallicRoughness.metallicFactor));
     mat->setRoughness(static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor));
+    if (!gltfMat.emissiveFactor.empty()) {
+        float strength = 1.0f; // tinygltf or gltf might define strength or factor. We'll map first component or average.
+        mat->setEmissiveStrength(strength);
+    }
     mat->dirty = true;
 
     // Create the graphics pipeline

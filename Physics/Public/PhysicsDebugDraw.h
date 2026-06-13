@@ -28,7 +28,8 @@ namespace eng::physics {
             Entity selectedEntity = 0,
             bool showColliders = true,
             bool showLights = true,
-            bool showBounds = false
+            bool showBounds = false,
+            const glm::mat4& shadowMatrix = glm::mat4(0.0f)
         );
         static void RenderBounds(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX = 0.0f, float viewportOffsetY = 0.0f);
         static void AddDebugRaycast(const Vector3& origin, const Vector3& direction, float distance, bool hit, const Vector3& hitPoint, const Vector3& hitNormal);

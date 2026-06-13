@@ -438,10 +438,12 @@ struct DirectionalLightComponent
     Vector3 color = {1.0f, 0.96f, 0.88f};
     float intensity = 3.0f;
     bool castShadows = false;
-    float shadowBias = 0.005f;
-    float shadowNormalBias = 0.015f;
+    float shadowBias = 0.003f;
+    float shadowSlopeBias = 0.01f;
+    float shadowNormalBias = 0.0f;
     float shadowStrength = 1.0f;
     int shadowResolution = 2048;
+    int pcfKernelSize = 3;
 };
 
 struct PointLightComponent

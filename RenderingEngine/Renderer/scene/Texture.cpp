@@ -10,7 +10,8 @@ bool Texture::loadFromFile(const std::string& filename,
                            VkDevice dev,
                            VmaAllocator alloc,
                            VkCommandPool transferPool,
-                           VkQueue graphicsQueue)
+                           VkQueue graphicsQueue,
+                           TextureUsage usage)
 {
     device    = dev;
     allocator = alloc;
@@ -54,11 +55,17 @@ bool Texture::loadFromFile(const std::string& filename,
     stbi_image_free(pixels);
 
     // ---------------------------------------------------------------
+    // Determine format based on usage
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    if (usage == TextureUsage::Albedo || usage == TextureUsage::Emissive || usage == TextureUsage::UI) {
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+
     // 2️⃣ Create GPU‑only image
     VkImageCreateInfo imgInfo{};
     imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imgInfo.imageType = VK_IMAGE_TYPE_2D;
-    imgInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imgInfo.format = format;
     imgInfo.extent.width  = static_cast<uint32_t>(texWidth);
     imgInfo.extent.height = static_cast<uint32_t>(texHeight);
     imgInfo.extent.depth  = 1;
@@ -156,7 +163,7 @@ bool Texture::loadFromFile(const std::string& filename,
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.format = format;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;

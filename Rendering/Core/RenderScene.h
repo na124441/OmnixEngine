@@ -31,10 +31,12 @@ namespace eng::renderer {
         glm::vec3 color{1.0f, 1.0f, 1.0f};
         float castShadows = 1.0f; // 1.0f for true, 0.0f for false
         glm::mat4 lightSpaceMatrix{1.0f};
-        float shadowBias = 0.005f;
-        float shadowNormalBias = 0.015f;
+        float shadowBias = 0.003f;
+        float shadowSlopeBias = 0.01f;
+        float shadowNormalBias = 0.0f;
         float shadowStrength = 1.0f;
         int shadowResolution = 2048;
+        int pcfKernelSize = 3;
     };
 
     struct PointLightGPU {

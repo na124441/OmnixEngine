@@ -613,6 +613,7 @@ namespace eng::runtime {
                     if (vpWidth > 0 && vpHeight > 0) {
                         float aspectRatio = vpWidth / vpHeight;
                         glm::mat4 proj = camera.getProjMatrix(aspectRatio);
+                        glm::mat4 shadowMatrix = sceneRenderer ? sceneRenderer->getLastLightSpaceMatrix() : glm::mat4(1.0f);
                         eng::physics::PhysicsDebugDraw::Render(
                             m_Context->ecs->getCoordinator(),
                             view,
@@ -624,7 +625,8 @@ namespace eng::runtime {
                             m_Selection.GetSelectedEntity(),
                             m_ShowColliders,
                             true, // showLights
-                            m_ShowBounds
+                            m_ShowBounds,
+                            shadowMatrix
                         );
                     }
                 }
@@ -1996,6 +1998,170 @@ namespace eng::runtime {
                         ImGui::TreePop();
                     }
                     ImGui::PopID();
+                }
+            } else {
+                ImGui::Text("SceneRenderer not available.");
+            }
+            ImGui::End();
+        }
+
+        // Render Shadow Debug UI
+        if (m_ShowDiagnostics)
+        {
+            ImGui::Begin("Shadow Debug UI");
+            auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+            if (engineLoop && engineLoop->GetSceneRenderer()) {
+                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                auto lightData = sceneRenderer->getLastLightData();
+                uint32_t currentFrame = sceneRenderer->frameIndex;
+
+                if (ImGui::CollapsingHeader("Shadow Map Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    VkDescriptorSet shadowTex = sceneRenderer->GetShadowTexture(currentFrame);
+                    if (shadowTex != VK_NULL_HANDLE) {
+                        ImGui::Text("Resolution: %u x %u", lightData.shadowResolution, lightData.shadowResolution);
+                        ImGui::Image((ImTextureID)shadowTex, ImVec2(256, 256), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
+                    } else {
+                        ImGui::Text("Shadow map texture not available.");
+                    }
+                }
+
+                if (ImGui::CollapsingHeader("Bias & Tunable Shadow Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& coordinator = m_Context->ecs->getCoordinator();
+                    bool lightFound = false;
+                    for (Entity ent : coordinator.GetActiveEntities()) {
+                        if (coordinator.GetSignature(ent).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+                            auto& dirLight = coordinator.GetComponent<DirectionalLightComponent>(ent);
+                            lightFound = true;
+                            
+                            bool changed = false;
+                            
+                            if (ImGui::Checkbox("Cast Shadows##ShadowDebug", &dirLight.castShadows)) {
+                                changed = true;
+                            }
+                            
+                            if (dirLight.castShadows) {
+                                float bias = dirLight.shadowBias;
+                                if (ImGui::SliderFloat("Constant Bias##ShadowDebug", &bias, 0.0f, 0.05f, "%.4f")) {
+                                    dirLight.shadowBias = bias;
+                                    changed = true;
+                                }
+
+                                float slopeBias = dirLight.shadowSlopeBias;
+                                if (ImGui::SliderFloat("Slope Bias##ShadowDebug", &slopeBias, 0.0f, 0.1f, "%.4f")) {
+                                    dirLight.shadowSlopeBias = slopeBias;
+                                    changed = true;
+                                }
+
+                                float normalBias = dirLight.shadowNormalBias;
+                                if (ImGui::SliderFloat("Normal Bias##ShadowDebug", &normalBias, 0.0f, 0.05f, "%.4f")) {
+                                    dirLight.shadowNormalBias = normalBias;
+                                    changed = true;
+                                }
+
+                                float strength = dirLight.shadowStrength;
+                                if (ImGui::SliderFloat("Shadow Strength##ShadowDebug", &strength, 0.0f, 1.0f)) {
+                                    dirLight.shadowStrength = strength;
+                                    changed = true;
+                                }
+
+                                int kernelSize = dirLight.pcfKernelSize;
+                                if (ImGui::SliderInt("PCF Kernel Size##ShadowDebug", &kernelSize, 1, 9)) {
+                                    if (kernelSize > 1 && kernelSize % 2 == 0) {
+                                        kernelSize += 1;
+                                    }
+                                    dirLight.pcfKernelSize = kernelSize;
+                                    changed = true;
+                                }
+
+                                int resolution = dirLight.shadowResolution;
+                                const char* resOptions[] = { "512", "1024", "2048", "4096" };
+                                int currentResIdx = 2; // Default 2048
+                                if (resolution == 512) currentResIdx = 0;
+                                else if (resolution == 1024) currentResIdx = 1;
+                                else if (resolution == 2048) currentResIdx = 2;
+                                else if (resolution == 4096) currentResIdx = 3;
+
+                                if (ImGui::Combo("Shadow Resolution##ShadowDebug", &currentResIdx, resOptions, IM_ARRAYSIZE(resOptions))) {
+                                    if (currentResIdx == 0) dirLight.shadowResolution = 512;
+                                    else if (currentResIdx == 1) dirLight.shadowResolution = 1024;
+                                    else if (currentResIdx == 2) dirLight.shadowResolution = 2048;
+                                    else if (currentResIdx == 3) dirLight.shadowResolution = 4096;
+                                    changed = true;
+                                }
+                            }
+                            
+                            if (changed) {
+                                m_DirtyState.MarkSceneDirty();
+                            }
+                        }
+                    }
+                    if (!lightFound) {
+                        ImGui::Text("No active Directional Light in scene.");
+                    }
+                }
+
+                if (ImGui::CollapsingHeader("Shadow Cascade-Ready Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& camera = sceneRenderer->getCamera();
+                    eng::renderer::CascadedShadowData csd{};
+                    csd.cascadeCount = 1;
+                    csd.cascadeSplits[0] = camera.farPlane;
+                    csd.cascadeSplits[1] = 0.0f;
+                    csd.cascadeSplits[2] = 0.0f;
+                    csd.cascadeSplits[3] = 0.0f;
+                    csd.lightViewProj[0] = sceneRenderer->getLastLightSpaceMatrix();
+                    csd.lightViewProj[1] = glm::mat4(0.0f);
+                    csd.lightViewProj[2] = glm::mat4(0.0f);
+                    csd.lightViewProj[3] = glm::mat4(0.0f);
+
+                    ImGui::Text("Cascade Count: %u", csd.cascadeCount);
+                    ImGui::Text("Cascade Splits: [ %.2f, %.2f, %.2f, %.2f ]", csd.cascadeSplits[0], csd.cascadeSplits[1], csd.cascadeSplits[2], csd.cascadeSplits[3]);
+                    
+                    ImGui::Text("Cascade 0 Light View Projection Matrix:");
+                    for (int r = 0; r < 4; ++r) {
+                        ImGui::Text("[ %.4f, %.4f, %.4f, %.4f ]", csd.lightViewProj[0][0][r], csd.lightViewProj[0][1][r], csd.lightViewProj[0][2][r], csd.lightViewProj[0][3][r]);
+                    }
+                }
+            } else {
+                ImGui::Text("SceneRenderer not available.");
+            }
+            ImGui::End();
+        }
+
+        // Render SSAO Diagnostics
+        if (m_ShowDiagnostics)
+        {
+            ImGui::Begin("SSAO Diagnostics");
+            auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+            if (engineLoop && engineLoop->GetSceneRenderer()) {
+                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                auto& ssaoSettings = sceneRenderer->GetSSAOSettings();
+                uint32_t currentFrame = sceneRenderer->frameIndex;
+
+                bool changed = false;
+                
+                if (ImGui::Checkbox("SSAO Enabled", &ssaoSettings.enabled)) {
+                    changed = true;
+                }
+
+                if (ImGui::SliderFloat("Radius", &ssaoSettings.radius, 0.0f, 2.0f, "%.3f")) {
+                    changed = true;
+                }
+
+                if (ImGui::SliderFloat("Bias", &ssaoSettings.bias, 0.0f, 0.1f, "%.4f")) {
+                    changed = true;
+                }
+
+                if (ImGui::SliderFloat("Intensity", &ssaoSettings.intensity, 0.0f, 5.0f, "%.3f")) {
+                    changed = true;
+                }
+
+                if (ImGui::CollapsingHeader("SSAO Blurred Map Preview", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    VkDescriptorSet ssaoTex = sceneRenderer->GetSSAOBlurredTexture(currentFrame);
+                    if (ssaoTex != VK_NULL_HANDLE) {
+                        ImGui::Image((ImTextureID)ssaoTex, ImVec2(256, 256), ImVec2(0, 0), ImVec2(1, 1), ImVec4(1, 1, 1, 1), ImVec4(1, 1, 1, 0.5f));
+                    } else {
+                        ImGui::Text("SSAO blurred map not available.");
+                    }
                 }
             } else {
                 ImGui::Text("SceneRenderer not available.");

@@ -31,8 +31,12 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     mat4 lightSpaceMatrix;
     float shadowBias;
     float shadowNormalBias;
+    float shadowSlopeBias;
     float shadowStrength;
     uint shadowLightCast;
+    int pcfKernelSize;
+    uint shadowResolution;
+    uint paddingVal2;
 } light;
 
 // Set 1: GBuffer samplers
@@ -42,6 +46,7 @@ layout(set = 1, binding = 2) uniform sampler2D gbufferC; // Metallic + AO + Enti
 layout(set = 1, binding = 3) uniform sampler2D depthBuffer; // Depth
 layout(set = 1, binding = 4) uniform sampler2D gbufferD; // Emissive + Shading Model
 layout(set = 1, binding = 5) uniform sampler2D shadowMap; // Shadow Depth Map
+layout(set = 1, binding = 6) uniform sampler2D ssaoMap; // SSAO Map
 
 const float PI = 3.14159265359;
 
@@ -82,18 +87,31 @@ float computeShadow(vec3 worldPos, vec3 normal) {
     }
     
     float currentDepth = uvCoords.z;
-    float bias = light.shadowBias;
     
-    // 3x3 PCF Filtering
+    // Slope-scaled bias
+    vec3 L = normalize(-light.directionalDirectionIntensity.xyz);
+    float bias = light.shadowBias + light.shadowSlopeBias * clamp(1.0 - dot(normal, L), 0.0, 1.0);
+    
+    // Tunable PCF Filtering
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for (int x = -1; x <= 1; ++x) {
-        for (int y = -1; y <= 1; ++y) {
-            float pcfDepth = texture(shadowMap, uvCoords.xy + vec2(x, y) * texelSize).r;
-            shadow += (currentDepth - bias > pcfDepth) ? 0.0 : 1.0;
+    int kernelSize = int(light.pcfKernelSize);
+    
+    if (kernelSize <= 1) {
+        float closestDepth = texture(shadowMap, uvCoords.xy).r;
+        shadow = (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
+    } else {
+        int halfSize = (kernelSize - 1) / 2;
+        float total = 0.0;
+        for (int x = -halfSize; x <= halfSize; ++x) {
+            for (int y = -halfSize; y <= halfSize; ++y) {
+                float closestDepth = texture(shadowMap, uvCoords.xy + vec2(x, y) * texelSize).r;
+                shadow += (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
+                total += 1.0;
+            }
         }
+        shadow /= total;
     }
-    shadow /= 9.0;
     
     return mix(1.0, shadow, light.shadowStrength);
 }
@@ -242,7 +260,8 @@ void main()
 
     // Mode 6: AO Debug
     if (light.shadingMode == 6) {
-        outColor = vec4(vec3(AO), 0.0);
+        float ssao = texture(ssaoMap, inUV).r;
+        outColor = vec4(vec3(AO * ssao), 0.0);
         return;
     }
 
@@ -310,9 +329,24 @@ void main()
         return;
     }
 
+    // Mode 13: Tangent Debug
+    if (light.shadingMode == 13) {
+        vec3 vWorldPos = reconstructWorldPos(inUV, depth);
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(inUV);
+        vec2 duv2 = dFdy(inUV);
+        float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
+        vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+        T = normalize(T - dot(T, N) * N);
+        vec3 tangentColor = T * 0.5 + 0.5;
+        outColor = vec4(tangentColor, 0.0);
+        return;
+    }
+
     // Material Shading Model: Unlit
     if (shadingModel == 1) {
-        vec3 color = (albedo + emissive) * exposure;
+        vec3 color = albedo * exposure + emissive;
         outColor = vec4(color, 1.0);
         return;
     }
@@ -369,7 +403,8 @@ void main()
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);
 
-        float attenuation = clamp(1.0 - (distance / radius), 0.0, 1.0);
+        float x = distance / radius;
+        float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
         attenuation = attenuation * attenuation;
 
         vec3 radiance = lightColor * intensity * attenuation;
@@ -405,19 +440,20 @@ void main()
 
         vec3 L = normalize(diff);
         
-        // Spot attenuation
-        float theta = dot(-L, lightDir);
-        float epsilon = cosInner - cosOuter;
-        float spotAttenuation = clamp((theta - cosOuter) / max(epsilon, 0.0001), 0.0, 1.0);
-        if (spotAttenuation <= 0.0) continue;
+        // Spot cone attenuation
+        float theta = dot(normalize(-diff), lightDir);
+        float cone = clamp((theta - cosOuter) / max(cosInner - cosOuter, 0.0001), 0.0, 1.0);
+        cone = cone * cone;
+        if (cone <= 0.0) continue;
 
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);
 
-        float attenuation = clamp(1.0 - (distance / range), 0.0, 1.0);
-        attenuation = attenuation * attenuation;
+        float x = distance / range;
+        float distAttenuation = clamp(1.0 - x * x, 0.0, 1.0);
+        distAttenuation = distAttenuation * distAttenuation;
 
-        vec3 radiance = lightColor * intensity * attenuation * spotAttenuation;
+        vec3 radiance = lightColor * intensity * distAttenuation * cone;
 
         vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
         float NDF = distributionGGX(N, H, roughness);
@@ -434,10 +470,12 @@ void main()
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    // Ambient sky light (multiplied by AO)
-    vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo * AO;
+    // Ambient sky light (multiplied by finalAO)
+    float ssao = texture(ssaoMap, inUV).r;
+    float finalAO = AO * ssao;
+    vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo * finalAO;
 
-    vec3 color = (ambient + Lo + emissive) * exposure;
+    vec3 color = (ambient + Lo) * exposure + emissive;
 
     outColor = vec4(color, 1.0);
 }

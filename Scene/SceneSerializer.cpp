@@ -309,9 +309,11 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("intensity", object->m_DirectionalLight.intensity, allocator);
             comp.AddMember("castShadows", object->m_DirectionalLight.castShadows, allocator);
             comp.AddMember("shadowBias", object->m_DirectionalLight.shadowBias, allocator);
+            comp.AddMember("shadowSlopeBias", object->m_DirectionalLight.shadowSlopeBias, allocator);
             comp.AddMember("shadowNormalBias", object->m_DirectionalLight.shadowNormalBias, allocator);
             comp.AddMember("shadowStrength", object->m_DirectionalLight.shadowStrength, allocator);
             comp.AddMember("shadowResolution", object->m_DirectionalLight.shadowResolution, allocator);
+            comp.AddMember("pcfKernelSize", object->m_DirectionalLight.pcfKernelSize, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasPointLight) {
