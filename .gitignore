@@ -110,3 +110,32 @@ cmake_install.cmake
 .vs/
 .idea/
 .vscode/
+# Build outputs
+build/
+build_ninja/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.cmake
+
+# Visual Studio / MSVC outputs
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.user
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exe
+*.dll
+
+# Logs
+*.log
+Omnix.log
+
+# Temporary/editor files
+.DS_Store
+Thumbs.db
