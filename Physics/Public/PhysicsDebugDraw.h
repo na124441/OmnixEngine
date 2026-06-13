@@ -17,7 +17,19 @@ namespace eng::physics {
 
     class PhysicsDebugDraw {
     public:
-        static void Render(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX = 0.0f, float viewportOffsetY = 0.0f);
+        static void Render(
+            Coordinator& coordinator,
+            const glm::mat4& view,
+            const glm::mat4& proj,
+            float screenWidth,
+            float screenHeight,
+            float viewportOffsetX = 0.0f,
+            float viewportOffsetY = 0.0f,
+            Entity selectedEntity = 0,
+            bool showColliders = true,
+            bool showLights = true,
+            bool showBounds = false
+        );
         static void RenderBounds(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX = 0.0f, float viewportOffsetY = 0.0f);
         static void AddDebugRaycast(const Vector3& origin, const Vector3& direction, float distance, bool hit, const Vector3& hitPoint, const Vector3& hitNormal);
         static void ClearDebugVisuals();

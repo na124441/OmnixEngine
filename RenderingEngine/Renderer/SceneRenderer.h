@@ -38,7 +38,7 @@ public:
 
     // -----------------------------------------------------------------
     // Access to the scene for user code (e.g. load assets later)
-    RenderScene& getScene() { return scene; }
+    RenderSceneCache& getScene() { return scene; }
     Camera&      getCamera() { return camera; }
 
     void initPipelines();
@@ -74,7 +74,7 @@ public:
     float        ambientIntensity = 0.35f;
 
     // -----------------------------------------------------------------
-    RenderScene scene;          // owns meshes, materials, render objects
+    RenderSceneCache scene;          // owns meshes, materials, render objects
     RenderQueue renderQueue;    // <-- NEW
     RenderGraph renderGraph;    // <-- NEW (Phase 3)
     Camera      camera;         // <-- NEW (Phase 5)

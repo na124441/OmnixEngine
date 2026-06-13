@@ -1,0 +1,271 @@
+#pragma once
+#include <vector>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <functional>
+#include <filesystem>
+#include <chrono>
+#include <glm/glm.hpp>
+#include <vulkan/vulkan.h>
+
+#include "Core/Engine/Log.h"
+#include "Core/Engine/Timer.h"
+#include "Core/Engine/DebugLabels.h"
+#include "Core/Vulkan/VkUtils.h"
+#include "Core/Engine/EngineResources.h"
+
+#include "Rendering/Core/RenderScene.h"
+#include "Rendering/Scene/GPUScene.h"
+#include "Rendering/Core/FrameContext.h"
+#include "Rendering/Core/RenderTypes.h"
+#include "Rendering/Core/RenderStats.h"
+#include "Rendering/Editor/EditorViewportRenderer.h"
+#include "RenderingEngine/Renderer/scene/RenderQueue.h"
+#include "RenderingEngine/Renderer/scene/Camera.h"
+#include "RenderingEngine/Renderer/LightingUBO.h"
+#include "Rendering/Graph/RenderGraph.h"
+#include "RenderingEngine/Renderer/gltf/GltfModel.h"
+
+struct CameraComponent;
+
+namespace eng::runtime {
+    class World;
+    class IECSWorld;
+    class AssetRegistry;
+}
+
+namespace eng::renderer {
+    using ECSWorld = eng::runtime::IECSWorld;
+
+    enum class ExposureMode : uint32_t {
+        Manual = 0,
+        Auto = 1
+    };
+
+    struct PostProcessSettings {
+        float exposure = 1.0f;
+        float gamma = 2.2f;
+        float bloomThreshold = 1.0f;
+        float bloomIntensity = 0.0f;
+        ExposureMode exposureMode = ExposureMode::Manual;
+        bool enableTonemapping = true;
+        bool enableGammaCorrection = true;
+        bool debugBeforePostProcess = false;
+    };
+
+    class Renderer {
+    public:
+        explicit Renderer(EngineResources& eng)
+            : resources(eng) {}
+
+        ~Renderer();
+
+        void Initialize();
+        void Shutdown();
+        void BeginFrame();
+        void RenderFrame(ECSWorld& world, const CameraComponent& camera);
+        void EndFrame();
+
+        void drawFrame(); // Compatibility entry point
+        void RenderFrame(const FrameContext& context); // Compatibility entry point
+        void onWindowResized();
+
+        void loadModel(const std::string& path);
+
+        RenderSceneCache& getScene() { return scene; }
+        Camera&      getCamera() { return camera; }
+
+        void initPipelines();
+        void recreateOffscreenPostProcessPipeline();
+        void setupRenderGraph();
+        void buildRenderQueue();
+        void buildPyramidMesh();
+        void updateGlobalUBO();
+        void updateLightingUBO();
+
+        void setDirectionalLight(const glm::vec3& dir, const glm::vec3& col, float intensity = 1.0f)
+        {
+            lightDirection = glm::normalize(dir);
+            lightColor = col;
+            lightIntensity = intensity;
+        }
+
+        // Viewport Offscreen Rendering API
+        void SetOffscreenRenderingEnabled(bool enabled) { m_ViewportRenderer.setOffscreenRenderingEnabled(enabled); }
+        bool IsOffscreenRenderingEnabled() const { return m_ViewportRenderer.isOffscreenRenderingEnabled(); }
+        void CreateOffscreenResources(uint32_t width, uint32_t height) { m_ViewportRenderer.createOffscreenResources(width, height); }
+        void DestroyOffscreenResources() { m_ViewportRenderer.destroyOffscreenResources(); }
+        VkDescriptorSet GetOffscreenTexture(uint32_t frameIdx) const { return m_ViewportRenderer.getOffscreenTexture(frameIdx); }
+
+        uint32_t GetOffscreenWidth() const { return m_ViewportRenderer.getOffscreenWidth(); }
+        uint32_t GetOffscreenHeight() const { return m_ViewportRenderer.getOffscreenHeight(); }
+        VkRenderPass GetOffscreenRenderPass() const { return m_ViewportRenderer.getOffscreenRenderPass(); }
+        uint32_t PickEntity(uint32_t x, uint32_t y);
+
+        void SetWorld(eng::runtime::World* world) { m_World = world; }
+        void SetAssetRegistry(eng::runtime::AssetRegistry* registry) { m_AssetRegistry = registry; }
+
+        LightData getLastLightData() const { return m_LastLightData; }
+        bool isFallbackLightingActive() const { return m_LastFallbackActive; }
+        PostProcessSettings& GetPostProcessSettings() { return m_PostProcessSettings; }
+        const PostProcessSettings& GetPostProcessSettings() const { return m_PostProcessSettings; }
+        const RenderStats& GetRenderStats() const { return m_RenderStats; }
+        void RequestRenderDocCapture() { m_RenderDocCaptureRequested = true; }
+
+        // Member variables
+        EngineResources& resources;
+        
+        VkPipeline      shadowPipeline       = VK_NULL_HANDLE;
+        VkPipeline      geometryPipeline     = VK_NULL_HANDLE;
+        VkPipeline      lightingPipeline    = VK_NULL_HANDLE;
+        VkPipeline      postProcessPipeline = VK_NULL_HANDLE;
+
+        uint32_t m_SelectedEntityID = 0;
+        bool m_LocalViewActive = false;
+        uint32_t m_LocalViewEntityID = 0;
+
+        glm::vec3    lightDirection = glm::vec3(-0.5f, -1.0f, -0.3f);
+        glm::vec3    lightColor     = glm::vec3(1.0f, 1.0f, 1.0f);
+        float        lightIntensity = 1.0f;
+        bool         m_UseEditorDefaultLighting = true;
+        uint32_t     m_ShadingMode = 0;
+        glm::vec3    ambientColor = glm::vec3(0.10f, 0.12f, 0.16f);
+        float        ambientIntensity = 0.35f;
+
+        RenderSceneCache scene;
+        GPUScene gpuScene;
+        RenderQueue renderQueue;
+        RenderGraph renderGraph;
+        Camera      camera;
+        uint32_t frameIndex = 0;
+        uint32_t currentSwapchainImageIndex = 0;
+        bool m_SwapchainNeedsRecreation = false;
+        FrameContext activeFrameContext;
+        RenderScene activeRenderScene;
+        eng::FrameTimer timer;
+
+        std::vector<std::unique_ptr<GltfModel>> gltfModels;
+
+        std::unordered_map<uint64_t, Mesh*> m_EcsMeshCache;
+        std::unordered_map<uint64_t, Material*> m_EcsMaterialCache;
+        std::unordered_map<uint64_t, std::filesystem::file_time_type> m_MaterialWriteTimes;
+        std::unordered_set<uint64_t> m_EcsWarningHandles;
+        uint32_t m_EcsAssignedMeshCount = 0;
+        uint32_t m_EcsFallbackMeshCount = 0;
+
+        Mesh* m_DefaultMesh = nullptr;
+        Material* m_DefaultMaterial = nullptr;
+        uint32_t m_StaticRenderCount = 0;
+        uint32_t m_EcsRenderCount = 0;
+        uint32_t m_TotalRenderCount = 0;
+        RenderQueue                 transparentRenderQueue;
+        uint32_t                    m_TransparentRenderCount = 0;
+
+        LightData m_LastLightData = {};
+        bool m_LastFallbackActive = true;
+        PostProcessSettings m_PostProcessSettings;
+        float m_AutoExposure = 1.0f;
+        RenderStats m_RenderStats;
+        bool m_RenderDocCaptureRequested = false;
+
+        std::function<void()> recreateSwapChainCallback;
+
+    public:
+        eng::runtime::World* m_World = nullptr;
+        eng::runtime::AssetRegistry* m_AssetRegistry = nullptr;
+
+    private:
+        void recreateDepthResources(uint32_t width, uint32_t height);
+        void updateGBufferDescriptorSets();
+        void updateRenderStats();
+
+        VkPipeline                  m_DepthPipeline      = VK_NULL_HANDLE;
+        VkRenderPass                m_DepthRenderPass    = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>  m_DepthFramebuffers;
+        std::vector<VkFramebuffer>  m_OffscreenDepthFramebuffers;
+        std::vector<VkImage>        m_DepthImages;
+        std::vector<VmaAllocation>  m_DepthAllocations;
+        std::vector<VkImageView>    m_DepthImageViews;
+        uint32_t                    m_DepthWidth         = 0;
+        uint32_t                    m_DepthHeight        = 0;
+
+        VkRenderPass                m_TransparentRenderPass = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>  m_TransparentFramebuffers;
+        std::vector<VkFramebuffer>  m_OffscreenTransparentFramebuffers;
+
+        VkRenderPass                m_GeometryRenderPass = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>  m_GeometryFramebuffers;
+
+        // GBuffer resources
+        VkRenderPass                m_GBufferRenderPass  = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>  m_GBufferFramebuffers;
+        std::vector<VkFramebuffer>  m_OffscreenGBufferFramebuffers;
+        
+        std::vector<VkImage>        m_GBufferAImages;
+        std::vector<VmaAllocation>  m_GBufferAAllocations;
+        std::vector<VkImageView>    m_GBufferAImageViews;
+
+        std::vector<VkImage>        m_GBufferBImages;
+        std::vector<VmaAllocation>  m_GBufferBAllocations;
+        std::vector<VkImageView>    m_GBufferBImageViews;
+
+        std::vector<VkImage>        m_GBufferCImages;
+        std::vector<VmaAllocation>  m_GBufferCAllocations;
+        std::vector<VkImageView>    m_GBufferCImageViews;
+
+        std::vector<VkImage>        m_GBufferDImages;
+        std::vector<VmaAllocation>  m_GBufferDAllocations;
+        std::vector<VkImageView>    m_GBufferDImageViews;
+
+        VkDescriptorSetLayout       m_GBufferDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_GBufferDescriptorPool      = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_GBufferDescriptorSets;
+        VkSampler                   m_GBufferSampler             = VK_NULL_HANDLE;
+
+        VkPipelineLayout            m_DeferredPipelineLayout     = VK_NULL_HANDLE;
+        VkPipeline                  m_DeferredLightingPipeline   = VK_NULL_HANDLE;
+        VkPipeline                  m_OffscreenDeferredLightingPipeline = VK_NULL_HANDLE;
+
+        // HDR Color target resources
+        std::vector<VkImage>        m_HDRColorImages;
+        std::vector<VmaAllocation>  m_HDRColorAllocations;
+        std::vector<VkImageView>    m_HDRColorImageViews;
+        std::vector<VkFramebuffer>  m_HDRColorFramebuffers;
+        VkRenderPass                m_HDRRenderPass = VK_NULL_HANDLE;
+
+        // PostProcess resources
+        VkDescriptorSetLayout       m_PostProcessDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_PostProcessDescriptorPool      = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_PostProcessDescriptorSets;
+        VkPipelineLayout            m_PostProcessPipelineLayout      = VK_NULL_HANDLE;
+        VkPipeline                  m_PostProcessPipeline            = VK_NULL_HANDLE;
+        VkPipeline                  m_OffscreenPostProcessPipeline   = VK_NULL_HANDLE;
+
+        EditorViewportRenderer m_ViewportRenderer;
+        VkRenderPass                m_SwapchainRenderPass = VK_NULL_HANDLE;
+
+        // Shadow mapping resources and methods
+        VkPipeline                  m_ShadowPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_ShadowPipelineLayout = VK_NULL_HANDLE;
+        VkRenderPass                m_ShadowRenderPass = VK_NULL_HANDLE;
+        std::vector<VkImage>        m_ShadowImages;
+        std::vector<VmaAllocation>  m_ShadowAllocations;
+        std::vector<VkImageView>    m_ShadowImageViews;
+        std::vector<VkFramebuffer>  m_ShadowFramebuffers;
+        VkSampler                   m_ShadowSampler = VK_NULL_HANDLE;
+        uint32_t                    m_CurrentShadowResolution = 2048;
+        glm::mat4                   m_LastLightSpaceMatrix{1.0f};
+
+        VkPipeline                  m_GridPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_GridPipelineLayout = VK_NULL_HANDLE;
+        void initGridPipeline();
+        void destroyGridPipeline();
+
+        void createShadowResources();
+        void destroyShadowResources();
+
+        std::chrono::steady_clock::time_point m_CpuFrameStart{};
+    };
+
+} // namespace eng::renderer

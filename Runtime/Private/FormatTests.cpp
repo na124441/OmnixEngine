@@ -592,6 +592,8 @@ namespace eng::runtime {
             coordinator.RegisterComponent<RenderableMeshComponent>();
             coordinator.RegisterComponent<MaterialComponent>();
             coordinator.RegisterComponent<NameComponent>();
+            coordinator.RegisterComponent<DirectionalLightComponent>();
+            coordinator.RegisterComponent<SkyLightComponent>();
 
             auto physicsSys = coordinator.RegisterSystem<PhysicsSystem>();
             ::Signature sig;
@@ -652,14 +654,29 @@ namespace eng::runtime {
             sceneMgr.Update(0.1f); // switches scene
 
             // Check restored entity count
-            if (coordinator.GetActiveEntities().size() != 1) {
+            if (coordinator.GetActiveEntities().size() != 4) {
                 LOG_ERROR("[FormatTest] Test 7 FAILED: Restored entity count mismatch! Restored: %zu", coordinator.GetActiveEntities().size());
                 std::filesystem::remove(tempPath);
                 return false;
             }
 
-            // Retrieve restored entity (address may change due to recreation, so we query it)
-            Entity restoredEntity = *coordinator.GetActiveEntities().begin();
+            // Retrieve restored entity (address may change due to recreation, so we query it by name)
+            Entity restoredEntity = INVALID_ENTITY;
+            for (Entity ent : coordinator.GetActiveEntities()) {
+                if (coordinator.IsEntityAlive(ent) && coordinator.GetSignature(ent).test(coordinator.GetComponentType<NameComponent>())) {
+                    if (coordinator.GetComponent<NameComponent>(ent).name == "OriginalName") {
+                        restoredEntity = ent;
+                        break;
+                    }
+                }
+            }
+
+            if (restoredEntity == INVALID_ENTITY) {
+                LOG_ERROR("[FormatTest] Test 7 FAILED: Could not find restored entity 'OriginalName'!");
+                std::filesystem::remove(tempPath);
+                return false;
+            }
+
             std::string restoredName = coordinator.GetComponent<NameComponent>(restoredEntity).name;
             float restoredY = coordinator.GetComponent<TransformComponent>(restoredEntity).position.y;
 

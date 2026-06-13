@@ -242,6 +242,7 @@ Useful deeper references:
 - `Docs/Architecture/SHUTDOWN_ORDER.md`
 - `Docs/Architecture/RELATIONSHIP_GRAPH.md`
 - `Docs/Formats/OMNIXWORLD_FORMAT.md`
+- [RADIANCE_RENDERING_SYSTEM.md](file:///d:/OmnixEngine/Docs/RADIANCE_RENDERING_SYSTEM.md)
 - `Markdown/INSTALLATION_GUIDE.md`
 - `Markdown/PROJECT_STRUCTURE_README.md`
 - `Markdown/ENGINE_COMPLETE_OVERVIEW.md`

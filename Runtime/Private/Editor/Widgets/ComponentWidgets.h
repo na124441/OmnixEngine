@@ -6,6 +6,7 @@
 namespace eng::runtime {
 
     class AssetRegistry;
+    struct RuntimeContext;
 
     class ComponentWidgets {
     public:
@@ -18,7 +19,7 @@ namespace eng::runtime {
         static bool DrawMeshRenderer(MeshRendererComponent& component, EditorDirtyState& dirtyState);
         static bool DrawPlayerController(PlayerControllerComponent& component, EditorDirtyState& dirtyState);
         static bool DrawRenderableMesh(RenderableMeshComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState);
-        static bool DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState);
+        static bool DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState, RuntimeContext* context = nullptr);
         static bool DrawStaticBody(StaticBodyComponent& component, EditorDirtyState& dirtyState);
         static bool DrawBoxCollider(BoxColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted);
         static bool DrawSphereCollider(SphereColliderComponent& component, EditorDirtyState& dirtyState, bool& outCommitted);
@@ -33,7 +34,7 @@ namespace eng::runtime {
         static bool DrawAudioSource(AudioSourceComponent& component, EditorDirtyState& dirtyState, class AudioSystem* audioSys = nullptr);
         static bool DrawDirectionalLight(DirectionalLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawPointLight(PointLightComponent& component, EditorDirtyState& dirtyState);
-        static bool DrawAmbientLight(AmbientLightComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawSkyLight(SkyLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawSpotLight(SpotLightComponent& component, EditorDirtyState& dirtyState);
         static bool DrawSimpleState(SimpleStateComponent& component, EditorDirtyState& dirtyState);
         static bool DrawActivatable(ActivatableComponent& component, EditorDirtyState& dirtyState);

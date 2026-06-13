@@ -12,8 +12,11 @@
 #include "Runtime/Public/Audio/AudioSystem.h"
 #include "Runtime/Public/Editor/EditorLayout.h"
 #include "Runtime/Public/Editor/EditorEntityCommands.h"
+#include "Runtime/Public/Editor/EditorFileService.h"
+#include "Runtime/Public/Editor/EditorSceneService.h"
 #include "Runtime/Public/Editor/PlatformFileDialog.h"
 #include "Runtime/Public/Editor/AssetImportService.h"
+#include <filesystem>
 #include "Core/Logging/Logger.h"
 #include "Core/World.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
@@ -26,9 +29,10 @@
 #include "RenderingEngine/Vulkan/VulkanSwapChain.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/World/WorldManager.h"
+#include "Runtime/Public/FrameTiming.h"
 #include "Physics/Public/PhysicsDebugDraw.h"
 #include "Physics/Public/PhysicsWorld.h"
-#include "RenderingEngine/Renderer/SceneRenderer.h"
+#include "Rendering/Core/Renderer.h"
 #include "RenderingEngine/Renderer/scene/Camera.h"
 
 #ifdef _WIN32
@@ -97,6 +101,13 @@ namespace eng::runtime {
         m_ConsolePanel.Initialize(m_Context);
         m_ViewportPanel.Initialize(m_Context);
         m_AssetBrowserPanel.Initialize(m_Context);
+        m_ImportLogPanel.Initialize(m_Context);
+
+        auto* initialSceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        auto* world = dynamic_cast<World*>(m_Context->ecs);
+        EditorSceneService sceneService(initialSceneMgr, world, &m_DirtyState, &m_Selection, &m_Notifications);
+        sceneService.EnsureActiveScene();
+        m_DirtyState.ClearSceneDirty();
 
         // 1. Initialize Dear ImGui Context
         IMGUI_CHECKVERSION();
@@ -263,6 +274,10 @@ namespace eng::runtime {
             } else {
                 sceneMgr->CreateNewScene("UntitledScene");
             }
+
+            auto* world = dynamic_cast<World*>(m_Context->ecs);
+            EditorSceneService sceneService(sceneMgr, world, &m_DirtyState, &m_Selection, &m_Notifications);
+            sceneService.CreateDefaultEditorSceneContent();
         }
 
         CORE_LOG_INFO("[EditorLayer] Initialized successfully");
@@ -280,7 +295,29 @@ namespace eng::runtime {
     }
 
     void EditorLayer::Render() {
+        // Process Drag and Drop files
+        while (eng::runtime::AssetImportService::HasDroppedFiles()) {
+            std::string file = eng::runtime::AssetImportService::PopDroppedFile();
+            CORE_LOG_INFO("[Editor] Process dropped file: %s", file.c_str());
+            std::string relPath = eng::runtime::AssetImportService::ImportModel(file, m_Context->assetRegistry);
+            if (!relPath.empty()) {
+                m_Context->assetRegistry->ScanProjectAssets();
+                AssetHandle handle = GenerateAssetUUID(relPath, AssetType::Mesh);
+                if (handle.IsValid()) {
+                    CreateEntityFromMesh(handle);
+                    m_Notifications.Success("Successfully imported: " + std::filesystem::path(file).filename().string());
+                } else {
+                    m_Notifications.Error("Imported but failed to generate handle: " + file);
+                }
+            } else {
+                m_Notifications.Error("Failed to import model: " + std::filesystem::path(file).filename().string() + ". Check Import Log.");
+            }
+        }
+
         m_ShowInteractPrompt = false;
+        if (m_Context && m_Context->timing) {
+            m_Notifications.OnUpdate(static_cast<float>(m_Context->timing->deltaTime));
+        }
 
         m_SimulationState = m_Context->editorSimulationState;
 
@@ -343,10 +380,35 @@ namespace eng::runtime {
 
         // Update the Editor Camera
         float dt = ImGui::GetIO().DeltaTime;
+        ImGuiIO& inputIO = ImGui::GetIO();
+        ImVec2 mousePos = inputIO.MousePos;
+        bool mouseInsideViewport =
+            mousePos.x >= m_ViewportPanel.GetViewportScreenX() &&
+            mousePos.y >= m_ViewportPanel.GetViewportScreenY() &&
+            mousePos.x <= (m_ViewportPanel.GetViewportScreenX() + m_ViewportPanel.GetViewportWidth()) &&
+            mousePos.y <= (m_ViewportPanel.GetViewportScreenY() + m_ViewportPanel.GetViewportHeight());
+        bool wantsViewportCamera =
+            m_SimulationState == EditorSimulationState::Edit &&
+            (m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused() || mouseInsideViewport || m_EditorCamera.m_IsDraggingRMB) &&
+            ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
+            !inputIO.WantTextInput;
+
+        m_InputOwner = EditorInputOwner::None;
+        if (wantsViewportCamera) {
+            m_InputOwner = EditorInputOwner::ViewportEditorCamera;
+        } else if (m_SimulationState == EditorSimulationState::Play && m_CursorCaptured) {
+            m_InputOwner = EditorInputOwner::Game;
+        } else if (inputIO.WantCaptureMouse || inputIO.WantCaptureKeyboard || inputIO.WantTextInput) {
+            m_InputOwner = EditorInputOwner::UI;
+        }
+
         if (m_SimulationState == EditorSimulationState::Edit) {
             auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
             bool wasDragging = m_EditorCamera.m_IsDraggingRMB;
-            m_EditorCamera.Update(dt, m_ViewportPanel.IsHovered(), m_ViewportPanel.IsFocused());
+            bool allowEditorCamera = (m_InputOwner == EditorInputOwner::ViewportEditorCamera) ||
+                                     (!inputIO.WantCaptureMouse && !inputIO.WantCaptureKeyboard && !inputIO.WantTextInput);
+            bool cameraViewportActive = m_ViewportPanel.IsHovered() || mouseInsideViewport || m_EditorCamera.m_IsDraggingRMB;
+            m_EditorCamera.Update(dt, allowEditorCamera && cameraViewportActive, allowEditorCamera && m_ViewportPanel.IsFocused());
             bool isDragging = m_EditorCamera.m_IsDraggingRMB;
 
             if (engineLoop && engineLoop->GetWindow()) {
@@ -408,6 +470,20 @@ namespace eng::runtime {
             }
         }
 
+        // Handle isolate selection (Local View) with '/' key
+        if (m_SimulationState == EditorSimulationState::Edit && (m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused()) && (ImGui::IsKeyPressed(ImGuiKey_Slash) || ImGui::IsKeyPressed(ImGuiKey_KeypadDivide))) {
+            auto* loop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
+            if (loop && loop->GetSceneRenderer()) {
+                auto* renderer = loop->GetSceneRenderer();
+                if (renderer->m_LocalViewActive) {
+                    renderer->m_LocalViewActive = false;
+                } else if (m_Selection.HasSelection()) {
+                    renderer->m_LocalViewActive = true;
+                    renderer->m_LocalViewEntityID = m_Selection.GetSelectedEntity();
+                }
+            }
+        }
+
         // If in Edit Mode, copy EditorCamera view parameters to SceneRenderer camera
         if (m_SimulationState == EditorSimulationState::Edit && m_Context && m_Context->renderer) {
             auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
@@ -453,11 +529,17 @@ namespace eng::runtime {
             auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
             if (engineLoop && engineLoop->GetWindow()) {
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                    m_CursorCaptured = false;
-                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Normal);
+                    if (m_CursorCaptured) {
+                        m_CursorCaptured = false;
+                        engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Normal);
+                        m_Notifications.Info("Cursor released.");
+                    }
                 } else if (m_ViewportPanel.IsHovered() && ImGui::IsMouseClicked(0)) {
-                    m_CursorCaptured = true;
-                    engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Disabled);
+                    if (!m_CursorCaptured) {
+                        m_CursorCaptured = true;
+                        engineLoop->GetWindow()->SetCursorMode(eng::platform::CursorMode::Disabled);
+                        m_Notifications.Info("Cursor captured by play mode.");
+                    }
                 }
             }
 
@@ -519,7 +601,7 @@ namespace eng::runtime {
         // Sync colliders toggle state from the ViewportPanel toolbar checkbox
         m_ShowColliders = m_ViewportPanel.ShowCollidersEnabled();
 
-        if (m_ShowColliders && m_Context && m_Context->ecs) {
+        if ((m_ShowColliders || m_SimulationState == EditorSimulationState::Edit) && m_Context && m_Context->ecs) {
             auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer);
             if (engineLoop) {
                 auto* sceneRenderer = engineLoop->GetSceneRenderer();
@@ -538,7 +620,11 @@ namespace eng::runtime {
                             vpWidth,
                             vpHeight,
                             m_ViewportPanel.GetViewportScreenX(),
-                            m_ViewportPanel.GetViewportScreenY()
+                            m_ViewportPanel.GetViewportScreenY(),
+                            m_Selection.GetSelectedEntity(),
+                            m_ShowColliders,
+                            true, // showLights
+                            m_ShowBounds
                         );
                     }
                 }
@@ -736,52 +822,36 @@ namespace eng::runtime {
 
         auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
 
-        auto triggerNewScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::New;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                ImGui::OpenPopup("New Scene Name");
+        EditorFileService fileService(*m_Context, m_DirtyState, m_Selection);
+
+        auto ensureActiveSceneAndSync = [&]() {
+            if (!sceneMgr) {
+                return;
             }
+            if (!sceneMgr->GetActiveScene()) {
+                sceneMgr->CreateNewScene("Untitled");
+            }
+            sceneMgr->SyncECSToScene();
+        };
+
+        auto triggerNewScene = [&]() {
+            fileService.NewScene();
         };
 
         auto triggerOpenScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::Open;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                ImGui::OpenPopup("Open Scene");
-            }
+            fileService.OpenScene();
         };
 
         auto triggerSaveScene = [&]() {
-            if (sceneMgr && sceneMgr->GetActiveScene()) {
-                std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
-                if (currentPath.empty()) {
-                    ImGui::OpenPopup("Save Scene As");
-                } else {
-                    if (sceneMgr->SaveActiveScene(currentPath)) {
-                        m_DirtyState.ClearSceneDirty();
-                    }
-                }
-            }
+            fileService.SaveScene();
         };
 
         auto triggerSaveAsScene = [&]() {
-            ImGui::OpenPopup("Save Scene As");
+            fileService.SaveSceneAs();
         };
 
         auto triggerReloadScene = [&]() {
-            if (m_DirtyState.IsSceneDirty()) {
-                pendingAction = PendingAction::Reload;
-                ImGui::OpenPopup("Unsaved Changes");
-            } else {
-                if (sceneMgr) {
-                    sceneMgr->ReloadCurrentScene();
-                    m_DirtyState.ClearSceneDirty();
-                    m_Selection.Clear();
-                }
-            }
+            fileService.ReloadScene();
         };
 
         auto triggerExit = [&]() {
@@ -996,6 +1066,7 @@ namespace eng::runtime {
                     
                     m_Selection.Select(newEntity);
                     m_DirtyState.MarkSceneDirty();
+                    ensureActiveSceneAndSync();
                     
                     // Frame selected automatically
                     m_EditorCamera.FrameEntity(glm::vec3(0.0f, 0.5f, 0.0f), 2.0f);
@@ -1049,6 +1120,7 @@ namespace eng::runtime {
                     coord.AddComponent<PlayerStartComponent>(psEnt, PlayerStartComponent());
 
                     m_DirtyState.MarkSceneDirty();
+                    ensureActiveSceneAndSync();
                     // Frame camera on the floor so it's immediately visible
                     m_EditorCamera.position = glm::vec3(0.0f, 6.0f, 14.0f);
                     m_EditorCamera.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -1063,22 +1135,12 @@ namespace eng::runtime {
                     } else {
                         auto& coordinator = m_Context->ecs->getCoordinator();
                         EditorEntityCommands::CreateEmpty(coordinator, m_DirtyState, m_Selection);
+                        ensureActiveSceneAndSync();
                     }
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Validate Scene")) {
-                    if (sceneMgr && sceneMgr->GetActiveScene()) {
-                        std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
-                        if (!currentPath.empty()) {
-                            SceneValidator validator;
-                            auto report = validator.ValidateSceneFile(currentPath, m_Context->assetRegistry, &PrefabRegistry::Get());
-                            auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
-                            if (casted) {
-                                casted->SetLastValidationReport(report);
-                                casted->TriggerValidationFailedModal();
-                            }
-                        }
-                    }
+                    fileService.ValidateScene();
                 }
 
                 ImGui::EndMenuBar();
@@ -1140,20 +1202,7 @@ namespace eng::runtime {
                     triggerReloadScene();
                 }
                 if (ImGui::MenuItem("Validate Scene", NULL, false, !isPlaying)) {
-                    if (sceneMgr && sceneMgr->GetActiveScene()) {
-                        std::string currentPath = sceneMgr->GetActiveScene()->GetFilePath();
-                        if (!currentPath.empty()) {
-                            SceneValidator validator;
-                            auto report = validator.ValidateSceneFile(currentPath, m_Context->assetRegistry, &PrefabRegistry::Get());
-                            auto* casted = dynamic_cast<SceneManager*>(sceneMgr);
-                            if (casted) {
-                                casted->SetLastValidationReport(report);
-                                casted->TriggerValidationFailedModal();
-                            }
-                        } else {
-                            CORE_LOG_WARN("[Editor] Active scene has no saved file path to validate.");
-                        }
-                    }
+                    fileService.ValidateScene();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit", "Alt+F4")) {
@@ -1161,7 +1210,57 @@ namespace eng::runtime {
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Edit")) { ImGui::EndMenu(); }
+            if (ImGui::BeginMenu("Edit")) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                auto* world = dynamic_cast<World*>(m_Context->ecs);
+                EditorSceneService sceneService(sceneMgr, world, &m_DirtyState, &m_Selection, &m_Notifications);
+                Entity selectedEntity = m_Selection.GetSelectedEntity();
+                bool hasSelection = selectedEntity != 0 && coordinator.IsEntityAlive(selectedEntity);
+
+                ImGui::BeginDisabled(true);
+                ImGui::MenuItem("Undo", "Ctrl+Z");
+                ImGui::MenuItem("Redo", "Ctrl+Y");
+                ImGui::EndDisabled();
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Create Empty Entity", nullptr, false, !isPlaying)) {
+                    sceneService.CreateEmptyObject();
+                }
+                if (ImGui::MenuItem("Create Player Start", nullptr, false, !isPlaying)) {
+                    sceneService.CreatePlayerStart();
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Duplicate", "Ctrl+D", false, !isPlaying && hasSelection)) {
+                    sceneService.DuplicateObject(selectedEntity);
+                }
+                if (ImGui::MenuItem("Delete", "Del", false, !isPlaying && hasSelection)) {
+                    if (m_Context->physicsWorld) {
+                        m_Context->physicsWorld->UnregisterEntity(selectedEntity);
+                    }
+                    sceneService.DeleteObject(selectedEntity);
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Create Directional Light", nullptr, false, !isPlaying)) {
+                    sceneService.CreateDirectionalLight();
+                }
+                if (ImGui::MenuItem("Create Point Light", nullptr, false, !isPlaying)) {
+                    sceneService.CreatePointLight();
+                }
+                if (ImGui::MenuItem("Create Sky Light", nullptr, false, !isPlaying)) {
+                    sceneService.CreateSkyLight();
+                }
+                if (ImGui::MenuItem("Create Spot Light", nullptr, false, !isPlaying)) {
+                    sceneService.CreateSpotLight();
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Deselect", "Esc", false, m_Selection.HasSelection())) {
+                    m_Selection.Clear();
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("View")) {
                 bool show = m_ShowColliders;
                 if (ImGui::MenuItem("Show Colliders", nullptr, &show)) {
@@ -1232,6 +1331,7 @@ namespace eng::runtime {
         m_HierarchyPanel.Render(m_Selection, m_DirtyState);
         m_InspectorPanel.Render(m_Selection, m_DirtyState);
         m_ConsolePanel.Render();
+        m_ImportLogPanel.Render();
         DrawGameplayValidatorWindow();
 
         // Retrieve offscreen viewport texture for current frame
@@ -1241,10 +1341,16 @@ namespace eng::runtime {
             auto* sceneRenderer = engineLoop->GetSceneRenderer();
             uint32_t currentFrame = sceneRenderer->frameIndex;
             viewportTexture = sceneRenderer->GetOffscreenTexture(currentFrame);
+            sceneRenderer->m_SelectedEntityID = m_Selection.HasSelection() ? static_cast<uint32_t>(m_Selection.GetSelectedEntity()) : 0;
         }
 
         float panelWidth = 0.0f;
         float panelHeight = 0.0f;
+        const char* inputOwnerLabel = "None";
+        if (m_InputOwner == EditorInputOwner::UI) inputOwnerLabel = "UI";
+        else if (m_InputOwner == EditorInputOwner::ViewportEditorCamera) inputOwnerLabel = "ViewportEditorCamera";
+        else if (m_InputOwner == EditorInputOwner::Game) inputOwnerLabel = "Game";
+        m_ViewportPanel.SetInputDiagnostics(inputOwnerLabel, m_CursorCaptured);
         m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera.movementSpeed);
 
         // Save the viewport size for recreation check at the start of the next frame
@@ -2132,6 +2238,8 @@ namespace eng::runtime {
             ImGui::EndPopup();
         }
 
+        m_Notifications.OnImGuiRender();
+
         ImGui::End();
     }
 
@@ -2424,23 +2532,44 @@ namespace eng::runtime {
         coordinator.AddComponent<MeshRendererComponent>(newEntity, MeshRendererComponent());
         coordinator.AddComponent<RenderableMeshComponent>(newEntity, RenderableMeshComponent(meshHandle));
 
-        // Create default.omnixmat if missing on disk, and register it
-        std::filesystem::create_directories("Assets/Materials");
-        std::string defaultMatPath = "Assets/Materials/default.omnixmat";
-        if (!std::filesystem::exists(defaultMatPath)) {
-            OmnixMaterial dmat;
-            dmat.name = "default";
-            dmat.header.blendMode = 0;
-            dmat.header.cullMode = 0;
-            dmat.header.depthTest = 1;
-            SerializeMaterial(dmat, defaultMatPath);
+        AssetHandle materialHandle;
+        if (meta) {
+            for (AssetHandle depHandle : meta->dependencies) {
+                const AssetMetadata* depMeta = m_Context->assetRegistry->GetMetadata(depHandle);
+                if (depMeta && depMeta->type == AssetType::Material) {
+                    materialHandle = depHandle;
+                    break;
+                }
+            }
         }
 
-        AssetHandle defaultMatHandle = m_Context->assetRegistry->RegisterAsset(defaultMatPath, AssetType::Material);
-        coordinator.AddComponent<MaterialComponent>(newEntity, MaterialComponent(defaultMatHandle));
+        if (!materialHandle.IsValid()) {
+            // Create default.omnixmat if missing on disk, and register it
+            std::filesystem::create_directories("Assets/Materials");
+            std::string defaultMatPath = "Assets/Materials/default.omnixmat";
+            if (!std::filesystem::exists(defaultMatPath)) {
+                OmnixMaterial dmat;
+                dmat.name = "default";
+                dmat.header.blendMode = 0;
+                dmat.header.cullMode = 0;
+                dmat.header.depthTest = 1;
+                SerializeMaterial(dmat, defaultMatPath);
+            }
+            materialHandle = m_Context->assetRegistry->RegisterAsset(defaultMatPath, AssetType::Material);
+        }
+
+        coordinator.AddComponent<MaterialComponent>(newEntity, MaterialComponent(materialHandle));
 
         m_Selection.Select(newEntity);
         m_DirtyState.MarkSceneDirty();
+
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        if (sceneMgr) {
+            if (!sceneMgr->GetActiveScene()) {
+                sceneMgr->CreateNewScene("Untitled");
+            }
+            sceneMgr->SyncECSToScene();
+        }
 
         // Frame camera on the new entity immediately!
         m_EditorCamera.position = entityPos - m_EditorCamera.getForward() * 5.0f;

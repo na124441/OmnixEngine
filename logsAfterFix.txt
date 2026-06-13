@@ -1,0 +1,1710 @@
+PS D:\OmnixEngine> .\build_ninja\Application.exe
+--- Omnix Engine: main() started ---
+--- Omnix Engine: Initializing EngineRuntime ---
+[00:18:11.396][Runtime][Info] Logger initialised
+[00:18:11.401][Runtime][Info] [Runtime] Beginning EngineRuntime Initialization...
+[00:18:11.402][Runtime][Info] [Memory] Allocated Input : 192 bytes (Total: 192 bytes across 1 allocations)
+[00:18:11.403][Runtime][Info] [Validation] Registered Startup: Input
+[InputManager] Initialized with 3 devices
+[InputManager] Loaded 8 bindings
+[00:18:11.406][Runtime][Info] [Memory] Allocated Events : 232 bytes (Total: 232 bytes across 1 allocations)
+[00:18:11.407][Runtime][Info] [Validation] Registered Startup: Events
+[00:18:11.408][Runtime][Info] [Memory] Allocated GameplayEvents : 272 bytes (Total: 272 bytes across 1 allocations)
+[00:18:11.409][Runtime][Info] [Memory] Allocated Audio : 1584 bytes (Total: 1584 bytes across 1 allocations)
+[00:18:11.410][Runtime][Info] [Memory] Allocated SaveSystem : 448 bytes (Total: 448 bytes across 1 allocations)
+[00:18:11.411][Runtime][Info] [Memory] Allocated SchemaRegistry : 24 bytes (Total: 24 bytes across 1 allocations)
+[00:18:12.116][Runtime][Info] World: Golden Scene ECS initialized
+[00:18:12.117][Runtime][Info] [Memory] Allocated ECS : 64 bytes (Total: 64 bytes across 1 allocations)
+[00:18:12.118][Runtime][Info] [Validation] Registered Startup: ECS
+[00:18:12.118][Runtime][Info] World: ECS World Initialize called
+[00:18:12.118][Runtime][Info] [Memory] Allocated Scheduler : 128 bytes (Total: 128 bytes across 1 allocations)
+[00:18:12.119][Runtime][Info] [Validation] Registered Startup: Scheduler
+[00:18:12.119][Runtime][Info] Creating EngineLoop instance
+[00:18:12.120][Runtime][Info] [Memory] Allocated Renderer : 1248 bytes (Total: 1248 bytes across 1 allocations)
+[00:18:12.120][Runtime][Info] [Validation] Registered Startup: Renderer
+[00:18:12.120][Runtime][Info] Initializing EngineLoop...
+[00:18:12.121][Runtime][Info] Initializing platform...
+[00:18:12.434][Runtime][Info] Successfully created Win32 window: {}x{} '{}'
+[00:18:12.435][Runtime][Info] Platform initialized successfully
+[00:18:12.436][Runtime][Info] Initializing RHI (Vulkan)...
+[00:18:13.707][Runtime][Info] RHI (Vulkan) initialized successfully
+[00:18:13.708][Runtime][Info] Initializing runtime systems...
+[00:18:13.708][Runtime][Info] Using externally supplied World (non-owning)
+[00:18:13.709][Runtime][Info] SceneBuilder created
+[00:18:13.709][Runtime][Info] Runtime systems initialized successfully
+[00:18:13.709][Runtime][Info] Initializing renderer (Vulkan clear screen)...
+[00:18:13.793][Runtime][Info] Sync objects created (3 image-available, 3 render-finished, 3 fences).
+[00:18:13.794][Runtime][Info] Material descriptor set layout created.
+[00:18:13.795][Runtime][Info] Material descriptor pool created (maxSets = 256).
+[00:18:13.795][Runtime][Info] Lighting descriptor set layout (set = 2) created.
+[00:18:13.795][Runtime][Info] Lighting descriptor pool created.
+[00:18:13.796][Runtime][Info] Lighting UBOs and descriptor sets allocated.
+[00:18:13.797][Runtime][Info] Pipeline layout created (2 descriptor sets + 4-byte push constant).
+[00:18:13.797][Runtime][Info] Created perΓÇæframe UBOs and descriptor pools.
+[00:18:13.798][Runtime][Info] Created 3 command pools (one per frame).
+[00:18:13.799][Runtime][Info] Allocated 5 command buffers per frame.
+[00:18:13.799][Runtime][Info] GPUScene: Initializing...
+[00:18:13.801][Runtime][Info] GPUScene: Initialization complete.
+[00:18:13.801][Runtime][Info] Pipeline layout created (2 descriptor sets + 4-byte push constant).
+[00:18:13.813][Runtime][Info] Creating staging buffer of size 232 bytes
+[00:18:13.816][Runtime][Info] Mesh created ΓÇô vertices: 5, indices: 18
+[00:18:13.817][Runtime][Info] Attempting to open shader: shaders/gbuffer_vert.spv
+[00:18:13.819][Runtime][Info] Attempting to open shader: shaders/gbuffer_frag.spv
+[00:18:13.821][Runtime][Info] Shader modules loaded: shaders/gbuffer_vert.spv + shaders/gbuffer_frag.spv
+[00:18:13.822][Runtime][Info] Material PBR uniform buffer created.
+[00:18:13.823][Runtime][Error] Failed to load texture image: textures/brick_albedo.png
+[00:18:13.823][Runtime][Warning] Failed to load albedo texture: textures/brick_albedo.png - using fallback white.
+[00:18:13.824][Runtime][Error] Failed to load texture image: textures/brick_normal.png
+[00:18:13.824][Runtime][Warning] Failed to load normal texture: textures/brick_normal.png - using fallback flat normal.
+[00:18:13.825][Runtime][Info] Creating fallback 1x1 white texture...
+[00:18:13.828][Runtime][Info] Fallback 1x1 white texture ready.
+[00:18:13.829][Runtime][Info] Creating fallback 1x1 flat normal texture...
+[00:18:13.830][Runtime][Info] Fallback 1x1 flat normal texture ready.
+[00:18:13.831][Runtime][Info] Creating fallback 1x1 black texture...
+[00:18:13.833][Runtime][Info] Fallback 1x1 black texture ready.
+[00:18:13.833][Runtime][Info] Material PBR created successfully.
+[00:18:13.834][Runtime][Info] Renderer initialized successfully
+[00:18:13.834][Runtime][Info] EngineLoop initialized successfully
+[00:18:13.835][Runtime][Info] [Memory] Allocated PhysicsWorld : 216 bytes (Total: 216 bytes across 1 allocations)
+[00:18:13.836][Runtime][Info] [Validation] Registered Startup: PhysicsWorld
+[00:18:13.836][Runtime][Info] [Physics] Initializing PhysicsWorld...
+[00:18:14.440][Runtime][Info] [Physics] PhysicsWorld successfully initialized using real NVIDIA PhysX SDK.
+[00:18:14.441][Runtime][Info] [Memory] Allocated Assets : 8 bytes (Total: 8 bytes across 1 allocations)
+[00:18:14.442][Runtime][Info] [Validation] Registered Startup: Assets
+[SceneManager] Initialized
+[00:18:14.451][Runtime][Info] [Memory] Allocated Scene : 152 bytes (Total: 152 bytes across 1 allocations)
+[00:18:14.452][Runtime][Info] [Validation] Registered Startup: Scene
+[00:18:14.452][Runtime][Info] [Memory] Allocated WorldManager : 752 bytes (Total: 752 bytes across 1 allocations)
+[00:18:14.453][Runtime][Info] [Validation] Registered Startup: WorldManager
+[00:18:14.454][Runtime][Info] [Validation] Registered Startup: Audio
+[00:18:14.687][Runtime][Info] [AudioSystem] AudioSystem initialized successfully.
+[00:18:14.688][Runtime][Info] [Runtime] EngineRuntime Initialized Successfully in 3286.42 ms
+[00:18:14.689][Runtime][Info] [Runtime] Engine entering main loop
+[00:18:14.690][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:14.691][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:14.692][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:14.693][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:14.694][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:14.696][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:14.697][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:14.698][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:14.699][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:14.700][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:14.839][Runtime][Info] ================= Render Graph Debug Dump =================
+[00:18:14.839][Runtime][Info] Execution Order (9 passes):
+[00:18:14.839][Runtime][Info]   [0] Pass: "ShadowPass"
+[00:18:14.840][Runtime][Info]       Physical Slot: 0
+[00:18:14.840][Runtime][Info]       Inputs:        []
+[00:18:14.840][Runtime][Info]       Outputs:       [ShadowMap]
+[00:18:14.841][Runtime][Info]   [1] Pass: "DepthPrepass"
+[00:18:14.841][Runtime][Info]       Physical Slot: 1
+[00:18:14.842][Runtime][Info]       Inputs:        [ShadowMap]
+[00:18:14.842][Runtime][Info]       Outputs:       [DepthBuffer]
+[00:18:14.843][Runtime][Info]   [2] Pass: "GBufferPass"
+[00:18:14.843][Runtime][Info]       Physical Slot: 1
+[00:18:14.843][Runtime][Info]       Inputs:        [DepthBuffer]
+[00:18:14.844][Runtime][Info]       Outputs:       [GBufferA, GBufferB, GBufferC, GBufferD]
+[00:18:14.844][Runtime][Info]   [3] Pass: "DeferredLightingPass"
+[00:18:14.845][Runtime][Info]       Physical Slot: 2
+[00:18:14.845][Runtime][Info]       Inputs:        [GBufferA, GBufferB, GBufferC, GBufferD, DepthBuffer]
+[00:18:14.845][Runtime][Info]       Outputs:       [HDRColor]
+[00:18:14.846][Runtime][Info]   [4] Pass: "TransparentPass"
+[00:18:14.846][Runtime][Info]       Physical Slot: 2
+[00:18:14.846][Runtime][Info]       Inputs:        [DepthBuffer]
+[00:18:14.847][Runtime][Info]       Outputs:       [HDRColor]
+[00:18:14.847][Runtime][Info]   [5] Pass: "PostProcessPass"
+[00:18:14.847][Runtime][Info]       Physical Slot: 3
+[00:18:14.848][Runtime][Info]       Inputs:        [HDRColor]
+[00:18:14.848][Runtime][Info]       Outputs:       [LDRColor]
+[00:18:14.848][Runtime][Info]   [6] Pass: "EditorOverlayPass"
+[00:18:14.849][Runtime][Info]       Physical Slot: 3
+[00:18:14.849][Runtime][Info]       Inputs:        [LDRColor]
+[00:18:14.849][Runtime][Info]       Outputs:       [ViewportColor]
+[00:18:14.850][Runtime][Info]   [7] Pass: "UIPass"
+[00:18:14.850][Runtime][Info]       Physical Slot: 4
+[00:18:14.850][Runtime][Info]       Inputs:        [ViewportColor]
+[00:18:14.851][Runtime][Info]       Outputs:       [Swapchain]
+[00:18:14.851][Runtime][Info]   [8] Pass: "PresentPass"
+[00:18:14.851][Runtime][Info]       Physical Slot: 4
+[00:18:14.852][Runtime][Info]       Inputs:        [Swapchain]
+[00:18:14.852][Runtime][Info]       Outputs:       [Backbuffer]
+[00:18:14.852][Runtime][Info] Resource Lifetimes:
+[00:18:14.853][Runtime][Info]   Resource: "ShadowMap" | First Pass: 0 | Last Pass: 1
+[00:18:14.853][Runtime][Info]   Resource: "HDRColor" | First Pass: 3 | Last Pass: 5
+[00:18:14.853][Runtime][Info]   Resource: "GBufferD" | First Pass: 2 | Last Pass: 3
+[00:18:14.854][Runtime][Info]   Resource: "DepthBuffer" | First Pass: 1 | Last Pass: 4
+[00:18:14.854][Runtime][Info]   Resource: "GBufferA" | First Pass: 2 | Last Pass: 3
+[00:18:14.854][Runtime][Info]   Resource: "GBufferB" | First Pass: 2 | Last Pass: 3
+[00:18:14.855][Runtime][Info]   Resource: "GBufferC" | First Pass: 2 | Last Pass: 3
+[00:18:14.855][Runtime][Info]   Resource: "LDRColor" | First Pass: 5 | Last Pass: 6
+[00:18:14.855][Runtime][Info]   Resource: "ViewportColor" | First Pass: 6 | Last Pass: 7
+[00:18:14.856][Runtime][Info]   Resource: "Swapchain" | First Pass: 7 | Last Pass: 8
+[00:18:14.856][Runtime][Info]   Resource: "Backbuffer" | First Pass: 8 | Last Pass: 8
+[00:18:14.856][Runtime][Info] ===========================================================
+[00:18:14.859][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:14.885][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:14.886][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:14.886][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:14.887][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:14.888][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:14.889][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:14.889][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:14.895][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:14.895][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:14.896][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:14.902][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:14.920][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:14.921][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:14.921][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:14.922][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:14.923][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:14.924][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:14.925][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:14.927][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:14.927][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:14.928][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:14.934][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:14.954][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:14.954][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:14.955][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:14.956][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:14.956][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:14.958][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:14.958][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:14.961][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:14.962][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:14.962][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:14.974][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:14.996][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:14.997][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:14.998][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:14.999][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.000][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.002][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.003][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.005][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.006][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.007][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.021][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.044][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.045][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.046][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.047][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.048][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.051][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.055][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.056][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.057][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.071][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.094][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.095][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.096][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.097][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.098][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.100][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.101][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.105][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.105][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.106][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.122][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.145][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.146][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.147][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.148][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.149][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.151][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.152][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.156][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.156][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.158][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.174][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.199][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.200][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.200][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.201][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.202][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.205][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.206][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.209][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.210][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.211][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.225][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.249][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.250][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.251][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.252][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.252][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.254][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.255][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.258][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.259][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.260][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.274][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.298][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.299][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.300][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.301][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.302][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.304][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.305][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.308][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.309][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.310][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.324][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.347][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.348][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.349][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.350][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.351][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.353][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.354][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.357][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.358][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.359][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.370][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.396][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.397][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.398][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.399][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.400][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.402][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.403][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.406][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.407][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.408][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.424][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.454][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.455][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.456][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.457][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.458][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.460][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.461][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.465][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.466][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.467][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.482][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.504][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.506][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.507][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.507][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.508][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.510][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.515][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.515][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.516][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.529][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.554][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.555][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.556][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.557][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.558][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.560][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.561][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.564][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.565][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.566][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.584][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.602][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.603][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.604][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.605][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.606][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.608][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.609][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.612][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.613][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.614][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.628][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.646][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.647][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.648][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.649][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.650][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.652][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.653][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.656][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.657][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.657][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.670][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.688][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.689][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.690][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.691][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.692][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.694][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.695][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.698][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.700][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.700][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.716][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.746][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.746][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.748][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.749][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.750][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.750][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.751][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.756][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.780][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.936][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.937][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.939][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.940][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.943][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.944][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:15.947][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:15.948][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:15.949][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:15.964][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:15.988][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:15.989][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:15.990][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:15.991][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:15.992][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:15.994][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:15.995][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.001][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.002][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.003][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.019][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.046][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.047][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.048][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.049][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.052][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.053][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.057][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.058][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.059][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.074][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.095][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.097][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.098][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.098][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.099][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.102][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.103][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.106][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.107][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.108][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.122][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.150][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.151][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.152][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.153][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.154][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.156][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.157][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.161][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.162][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.163][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.172][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.192][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.194][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.195][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.195][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.196][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.198][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.199][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.202][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.203][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.204][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.218][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.240][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.241][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.242][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.243][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.244][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.246][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.247][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.250][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.251][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.252][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.266][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.288][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.289][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.290][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.291][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.292][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.294][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.295][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.298][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.299][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.300][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.315][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.346][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.347][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.348][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.349][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.350][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.352][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.353][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.357][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.358][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.359][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.372][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.395][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.396][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.397][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.398][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.399][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.401][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.402][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.405][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.406][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.407][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.422][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.455][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.456][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.457][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.458][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.458][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.460][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.461][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.465][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.466][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.467][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.482][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.510][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.512][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.513][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.515][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.516][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.520][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.521][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.522][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.534][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.552][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.553][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.554][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.555][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.556][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.558][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.559][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.563][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.564][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.565][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.579][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.599][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.600][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.601][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.602][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.603][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.605][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.606][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.610][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.611][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.611][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.626][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.648][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.649][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.650][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.651][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.652][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.654][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.655][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.658][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.659][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.660][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.674][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.697][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.698][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.698][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.699][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.700][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.701][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.702][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.704][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.705][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.705][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.713][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.738][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.739][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.739][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.740][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.740][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.741][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.742][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.743][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.743][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.744][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.750][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.774][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.775][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.775][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.776][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.776][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.777][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.777][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.778][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.779][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.779][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.785][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.816][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.816][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.817][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.817][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.818][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.819][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.819][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.821][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.822][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.822][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.829][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.850][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.850][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.851][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.851][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.852][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.853][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.853][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.854][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.855][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.855][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.862][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.883][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.883][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.884][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.884][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.885][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.886][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.886][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.887][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.888][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.888][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.895][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.928][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.929][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.929][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.930][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.930][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.931][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.932][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.933][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.934][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.934][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.938][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.961][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.962][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.963][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.963][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.964][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.965][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.965][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:16.966][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:16.967][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:16.967][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:16.974][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:16.994][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:16.995][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:16.996][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:16.997][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:16.997][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:16.999][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:16.999][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.001][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.002][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.002][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.010][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.042][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.043][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.043][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.044][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.045][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.046][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.047][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.049][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.062][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.090][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.091][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.092][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.093][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.093][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.095][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.096][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.100][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.100][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.101][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.117][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.140][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.363][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.364][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.365][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.367][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.369][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.370][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.374][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.375][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.376][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.392][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.415][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.416][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.417][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.418][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.419][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.421][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.422][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.428][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.429][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.430][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.442][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.465][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.466][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.466][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.467][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.468][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.470][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.470][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.474][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.474][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.475][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.489][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.512][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.513][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.514][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.515][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.516][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.518][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.519][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.522][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.523][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.524][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.538][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.563][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.564][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.565][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.566][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.567][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.569][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.570][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.574][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.575][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.576][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.589][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.614][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.615][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.616][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.617][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.618][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.620][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.621][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.624][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.625][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.626][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.640][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.663][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.664][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.664][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.665][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.666][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.669][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.670][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.673][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.674][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.675][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.689][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.713][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.714][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.714][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.715][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.716][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.717][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.718][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.720][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.721][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.721][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.728][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.747][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.748][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.748][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.749][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.750][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.751][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.751][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.751][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.756][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.779][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.780][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.780][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.781][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.781][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.782][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.783][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.784][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.785][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.785][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.792][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.819][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.820][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.820][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.821][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.821][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.822][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.823][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.824][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.825][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.825][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.830][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.862][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.863][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.863][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.864][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.864][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.865][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.866][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.867][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.867][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.868][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.874][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.895][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.896][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.897][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.897][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.898][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.899][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.900][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.902][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.902][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.903][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.913][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:17.944][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:17.945][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:17.946][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:17.947][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:17.948][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:17.950][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:17.951][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:17.954][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:17.955][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:17.956][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:17.957][Runtime][Trace] Frame Stats: Avg {:.2f}ms ({:.1f} FPS), Min {:.2f}ms, Max {:.2f}ms
+[00:18:17.970][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:18.002][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:18.003][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:18.004][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:18.005][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:18.005][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:18.008][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:18.009][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:18.012][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:18.013][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:18.014][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:18.028][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:18.060][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:18.061][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:18.062][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:18.063][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:18.063][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:18.066][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:18.067][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:18.071][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:18.072][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:18.073][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:18.282][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:18.306][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:18.307][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:18.308][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:18.309][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:18.310][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[PhysicsSystem] Updating 0 entities...
+[00:18:18.312][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:18.313][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:18.319][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:18.319][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:18.320][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:18.333][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:18.355][Runtime][Info] [Runtime] Beginning EngineRuntime Shutdown...
+[00:18:18.356][Runtime][Info] [Validation] Registered Shutdown: Audio
+[00:18:18.398][Runtime][Info] [AudioSystem] AudioSystem shut down cleanly.
+[00:18:18.399][Runtime][Info] [Memory] Deallocated Audio : 1584 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.400][Runtime][Info] [Memory] Deallocated SaveSystem : 448 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.401][Runtime][Info] [Validation] Registered Shutdown: PhysicsWorld
+[00:18:18.401][Runtime][Info] [Physics] Shutting down PhysicsWorld...
+[00:18:18.404][Runtime][Info] [Physics] PhysicsWorld shutdown complete.
+[00:18:18.405][Runtime][Info] [Physics] Shutting down PhysicsWorld...
+[00:18:18.406][Runtime][Info] [Physics] PhysicsWorld shutdown complete.
+[00:18:18.407][Runtime][Info] [Memory] Deallocated PhysicsWorld : 216 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.408][Runtime][Info] [Validation] Registered Shutdown: WorldManager
+[00:18:18.409][Runtime][Info] [Memory] Deallocated WorldManager : 752 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.410][Runtime][Info] [Validation] Registered Shutdown: Scene
+[SceneManager] Destroyed
+[00:18:18.412][Runtime][Info] [Memory] Deallocated Scene : 152 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.412][Runtime][Info] [Validation] Registered Shutdown: Assets
+[00:18:18.413][Runtime][Info] [Memory] Deallocated Assets : 8 bytes (Remaining: 0 bytes across 0 active)
+[00:18:18.414][Runtime][Info] [Validation] Registered Shutdown: Renderer
+[00:18:18.415][Runtime][Info] Shutting down EngineLoop...
+[00:18:18.416][Runtime][Info] GPUScene: Shutting down...
+[00:18:18.418][Runtime][Info] GPUScene: Shutdown complete.
+[00:18:18.422][Runtime][Info] GPUScene: Shutting down...
+PS D:\OmnixEngine> .\build_ninja\Application.exe --editor
+--- Omnix Engine: main() started ---
+--- Omnix Engine: Initializing EngineRuntime ---
+[00:18:34.932][Runtime][Info] Logger initialised
+[00:18:34.936][Runtime][Info] [Runtime] Beginning EngineRuntime Initialization...
+[00:18:34.937][Runtime][Info] [Memory] Allocated Input : 192 bytes (Total: 192 bytes across 1 allocations)
+[00:18:34.938][Runtime][Info] [Validation] Registered Startup: Input
+[InputManager] Initialized with 3 devices
+[InputManager] Loaded 8 bindings
+[00:18:34.941][Runtime][Info] [Memory] Allocated Events : 232 bytes (Total: 232 bytes across 1 allocations)
+[00:18:34.942][Runtime][Info] [Validation] Registered Startup: Events
+[00:18:34.943][Runtime][Info] [Memory] Allocated GameplayEvents : 272 bytes (Total: 272 bytes across 1 allocations)
+[00:18:34.944][Runtime][Info] [Memory] Allocated Audio : 1584 bytes (Total: 1584 bytes across 1 allocations)
+[00:18:34.945][Runtime][Info] [Memory] Allocated SaveSystem : 448 bytes (Total: 448 bytes across 1 allocations)
+[00:18:34.946][Runtime][Info] [Memory] Allocated SchemaRegistry : 24 bytes (Total: 24 bytes across 1 allocations)
+[00:18:35.658][Runtime][Info] World: Golden Scene ECS initialized
+[00:18:35.659][Runtime][Info] [Memory] Allocated ECS : 64 bytes (Total: 64 bytes across 1 allocations)
+[00:18:35.659][Runtime][Info] [Validation] Registered Startup: ECS
+[00:18:35.660][Runtime][Info] World: ECS World Initialize called
+[00:18:35.660][Runtime][Info] [Memory] Allocated Scheduler : 128 bytes (Total: 128 bytes across 1 allocations)
+[00:18:35.660][Runtime][Info] [Validation] Registered Startup: Scheduler
+[00:18:35.661][Runtime][Info] Creating EngineLoop instance
+[00:18:35.661][Runtime][Info] [Memory] Allocated Renderer : 1248 bytes (Total: 1248 bytes across 1 allocations)
+[00:18:35.662][Runtime][Info] [Validation] Registered Startup: Renderer
+[00:18:35.662][Runtime][Info] Initializing EngineLoop...
+[00:18:35.662][Runtime][Info] Initializing platform...
+[00:18:35.712][Runtime][Info] Successfully created Win32 window: {}x{} '{}'
+[00:18:35.712][Runtime][Info] Platform initialized successfully
+[00:18:35.713][Runtime][Info] Initializing RHI (Vulkan)...
+[00:18:36.900][Runtime][Info] RHI (Vulkan) initialized successfully
+[00:18:36.901][Runtime][Info] Initializing runtime systems...
+[00:18:36.901][Runtime][Info] Using externally supplied World (non-owning)
+[00:18:36.902][Runtime][Info] SceneBuilder created
+[00:18:36.902][Runtime][Info] Runtime systems initialized successfully
+[00:18:36.903][Runtime][Info] Initializing renderer (Vulkan clear screen)...
+[00:18:36.987][Runtime][Info] Sync objects created (3 image-available, 3 render-finished, 3 fences).
+[00:18:36.988][Runtime][Info] Material descriptor set layout created.
+[00:18:36.989][Runtime][Info] Material descriptor pool created (maxSets = 256).
+[00:18:36.990][Runtime][Info] Lighting descriptor set layout (set = 2) created.
+[00:18:36.991][Runtime][Info] Lighting descriptor pool created.
+[00:18:36.992][Runtime][Info] Lighting UBOs and descriptor sets allocated.
+[00:18:36.993][Runtime][Info] Pipeline layout created (2 descriptor sets + 4-byte push constant).
+[00:18:36.994][Runtime][Info] Created perΓÇæframe UBOs and descriptor pools.
+[00:18:36.994][Runtime][Info] Created 3 command pools (one per frame).
+[00:18:36.996][Runtime][Info] Allocated 5 command buffers per frame.
+[00:18:36.996][Runtime][Info] GPUScene: Initializing...
+[00:18:36.999][Runtime][Info] GPUScene: Initialization complete.
+[00:18:37.000][Runtime][Info] Pipeline layout created (2 descriptor sets + 4-byte push constant).
+[00:18:37.016][Runtime][Info] Creating staging buffer of size 232 bytes
+[00:18:37.019][Runtime][Info] Mesh created ΓÇô vertices: 5, indices: 18
+[00:18:37.020][Runtime][Info] Attempting to open shader: shaders/gbuffer_vert.spv
+[00:18:37.022][Runtime][Info] Attempting to open shader: shaders/gbuffer_frag.spv
+[00:18:37.026][Runtime][Info] Shader modules loaded: shaders/gbuffer_vert.spv + shaders/gbuffer_frag.spv
+[00:18:37.027][Runtime][Info] Material PBR uniform buffer created.
+[00:18:37.028][Runtime][Error] Failed to load texture image: textures/brick_albedo.png
+[00:18:37.029][Runtime][Warning] Failed to load albedo texture: textures/brick_albedo.png - using fallback white.
+[00:18:37.030][Runtime][Error] Failed to load texture image: textures/brick_normal.png
+[00:18:37.030][Runtime][Warning] Failed to load normal texture: textures/brick_normal.png - using fallback flat normal.
+[00:18:37.031][Runtime][Info] Creating fallback 1x1 white texture...
+[00:18:37.033][Runtime][Info] Fallback 1x1 white texture ready.
+[00:18:37.034][Runtime][Info] Creating fallback 1x1 flat normal texture...
+[00:18:37.036][Runtime][Info] Fallback 1x1 flat normal texture ready.
+[00:18:37.036][Runtime][Info] Creating fallback 1x1 black texture...
+[00:18:37.038][Runtime][Info] Fallback 1x1 black texture ready.
+[00:18:37.039][Runtime][Info] Material PBR created successfully.
+[00:18:37.039][Runtime][Info] Renderer initialized successfully
+[00:18:37.040][Runtime][Info] EngineLoop initialized successfully
+[00:18:37.041][Runtime][Info] [Memory] Allocated PhysicsWorld : 216 bytes (Total: 216 bytes across 1 allocations)
+[00:18:37.042][Runtime][Info] [Validation] Registered Startup: PhysicsWorld
+[00:18:37.042][Runtime][Info] [Physics] Initializing PhysicsWorld...
+[00:18:37.049][Runtime][Info] [Physics] PhysicsWorld successfully initialized using real NVIDIA PhysX SDK.
+[00:18:37.050][Runtime][Info] [Memory] Allocated Assets : 8 bytes (Total: 8 bytes across 1 allocations)
+[00:18:37.050][Runtime][Info] [Validation] Registered Startup: Assets
+[SceneManager] Initialized
+[00:18:37.055][Runtime][Info] [Memory] Allocated Scene : 152 bytes (Total: 152 bytes across 1 allocations)
+[00:18:37.055][Runtime][Info] [Validation] Registered Startup: Scene
+[00:18:37.056][Runtime][Info] [Memory] Allocated WorldManager : 752 bytes (Total: 752 bytes across 1 allocations)
+[00:18:37.056][Runtime][Info] [Validation] Registered Startup: WorldManager
+[00:18:37.057][Runtime][Info] [Validation] Registered Startup: Audio
+[00:18:37.251][Runtime][Info] [AudioSystem] AudioSystem initialized successfully.
+[00:18:37.252][Runtime][Info] [Memory] Allocated Editor : 528 bytes (Total: 528 bytes across 1 allocations)
+[00:18:37.253][Runtime][Info] [Validation] Registered Startup: Editor
+[Scene] Created scene: Untitled
+[SceneManager] Created new scene: Untitled
+[00:18:37.256][Runtime][Info] [Editor] Created Untitled scene.
+[SceneObject] Created: Directional Light (ID: 1)
+[Scene] Adding object: Directional Light (ID: 1)
+[Scene]   - Added to root objects list
+[Scene]   - Registering with ECS (EntityID: 1)
+[Scene]   - ECS registration complete (placeholder)
+[00:18:37.262][Runtime][Info] [Editor] Scene hierarchy synced: create directional light
+[00:18:37.263][Runtime][Info] [Editor] Created Directional Light.
+[SceneObject] Created: Sky Light (ID: 2)
+[Scene] Adding object: Sky Light (ID: 2)
+[Scene]   - Added to root objects list
+[Scene]   - Registering with ECS (EntityID: 2)
+[Scene]   - ECS registration complete (placeholder)
+[00:18:37.270][Runtime][Info] [Editor] Scene hierarchy synced: create sky light
+[00:18:37.271][Runtime][Info] [Editor] Created Sky Light.
+[00:18:37.272][Runtime][Info] [Editor] Scene hierarchy synced: create default editor scene content
+[00:18:37.280][Runtime][Info] [EditorLayer] ImGui Vulkan Init: ImageCount = 3, MinImageCount = 2, swapChainImages size = 3
+[SceneManager] Unloading scene: Untitled
+[Scene] Cleaning up scene: Untitled
+[SceneObject] Destroying: Sun Light (ID: 1)
+[SceneObject] Destroying: Sky Light (ID: 2)
+[Scene] Scene cleanup complete
+[Scene] Destroying scene: Untitled
+[Scene] Cleaning up scene: Untitled
+[Scene] Scene cleanup complete
+[SceneManager] Scene unloaded successfully
+[Scene] Created scene: UntitledScene
+[SceneManager] Created new scene: UntitledScene
+[00:18:37.305][Runtime][Info] [EditorLayer] Initialized successfully
+[00:18:37.305][Runtime][Info] [Runtime] EngineRuntime Initialized Successfully in 2368.64 ms
+[00:18:37.306][Runtime][Info] [Runtime] Engine entering main loop
+[00:18:37.307][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:37.311][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:37.311][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:37.312][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:37.312][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:37.313][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:37.314][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:37.314][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:37.315][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:37.316][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:37.383][Runtime][Info] ================= Render Graph Debug Dump =================
+[00:18:37.383][Runtime][Info] Execution Order (9 passes):
+[00:18:37.384][Runtime][Info]   [0] Pass: "ShadowPass"
+[00:18:37.384][Runtime][Info]       Physical Slot: 0
+[00:18:37.385][Runtime][Info]       Inputs:        []
+[00:18:37.385][Runtime][Info]       Outputs:       [ShadowMap]
+[00:18:37.386][Runtime][Info]   [1] Pass: "DepthPrepass"
+[00:18:37.387][Runtime][Info]       Physical Slot: 1
+[00:18:37.387][Runtime][Info]       Inputs:        [ShadowMap]
+[00:18:37.388][Runtime][Info]       Outputs:       [DepthBuffer]
+[00:18:37.388][Runtime][Info]   [2] Pass: "GBufferPass"
+[00:18:37.389][Runtime][Info]       Physical Slot: 1
+[00:18:37.389][Runtime][Info]       Inputs:        [DepthBuffer]
+[00:18:37.390][Runtime][Info]       Outputs:       [GBufferA, GBufferB, GBufferC, GBufferD]
+[00:18:37.390][Runtime][Info]   [3] Pass: "DeferredLightingPass"
+[00:18:37.391][Runtime][Info]       Physical Slot: 2
+[00:18:37.391][Runtime][Info]       Inputs:        [GBufferA, GBufferB, GBufferC, GBufferD, DepthBuffer]
+[00:18:37.392][Runtime][Info]       Outputs:       [HDRColor]
+[00:18:37.392][Runtime][Info]   [4] Pass: "TransparentPass"
+[00:18:37.392][Runtime][Info]       Physical Slot: 2
+[00:18:37.393][Runtime][Info]       Inputs:        [DepthBuffer]
+[00:18:37.393][Runtime][Info]       Outputs:       [HDRColor]
+[00:18:37.394][Runtime][Info]   [5] Pass: "PostProcessPass"
+[00:18:37.394][Runtime][Info]       Physical Slot: 3
+[00:18:37.394][Runtime][Info]       Inputs:        [HDRColor]
+[00:18:37.394][Runtime][Info]       Outputs:       [LDRColor]
+[00:18:37.395][Runtime][Info]   [6] Pass: "EditorOverlayPass"
+[00:18:37.395][Runtime][Info]       Physical Slot: 3
+[00:18:37.396][Runtime][Info]       Inputs:        [LDRColor]
+[00:18:37.396][Runtime][Info]       Outputs:       [ViewportColor]
+[00:18:37.397][Runtime][Info]   [7] Pass: "UIPass"
+[00:18:37.397][Runtime][Info]       Physical Slot: 4
+[00:18:37.397][Runtime][Info]       Inputs:        [ViewportColor]
+[00:18:37.398][Runtime][Info]       Outputs:       [Swapchain]
+[00:18:37.398][Runtime][Info]   [8] Pass: "PresentPass"
+[00:18:37.399][Runtime][Info]       Physical Slot: 4
+[00:18:37.399][Runtime][Info]       Inputs:        [Swapchain]
+[00:18:37.400][Runtime][Info]       Outputs:       [Backbuffer]
+[00:18:37.400][Runtime][Info] Resource Lifetimes:
+[00:18:37.400][Runtime][Info]   Resource: "ShadowMap" | First Pass: 0 | Last Pass: 1
+[00:18:37.401][Runtime][Info]   Resource: "HDRColor" | First Pass: 3 | Last Pass: 5
+[00:18:37.401][Runtime][Info]   Resource: "GBufferD" | First Pass: 2 | Last Pass: 3
+[00:18:37.402][Runtime][Info]   Resource: "DepthBuffer" | First Pass: 1 | Last Pass: 4
+[00:18:37.402][Runtime][Info]   Resource: "GBufferA" | First Pass: 2 | Last Pass: 3
+[00:18:37.403][Runtime][Info]   Resource: "GBufferB" | First Pass: 2 | Last Pass: 3
+[00:18:37.403][Runtime][Info]   Resource: "GBufferC" | First Pass: 2 | Last Pass: 3
+[00:18:37.404][Runtime][Info]   Resource: "LDRColor" | First Pass: 5 | Last Pass: 6
+[00:18:37.404][Runtime][Info]   Resource: "ViewportColor" | First Pass: 6 | Last Pass: 7
+[00:18:37.405][Runtime][Info]   Resource: "Swapchain" | First Pass: 7 | Last Pass: 8
+[00:18:37.405][Runtime][Info]   Resource: "Backbuffer" | First Pass: 8 | Last Pass: 8
+[00:18:37.406][Runtime][Info] ===========================================================
+[00:18:37.409][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:37.413][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:37.443][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:37.444][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:37.445][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:37.445][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:37.446][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:37.446][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:37.447][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:37.448][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:37.448][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:37.448][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+Validation Error: [ VUID-vkCmdDraw-None-09600 ] | MessageID = 0x46582f7b
+vkQueueSubmit(): pSubmits[0] command buffer VkCommandBuffer 0x1aea8658b98 expects VkImage 0x30000000003 (subresource: aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, mipLevel = 0, arrayLayer = 0) to be in layout VK_IMAGE_LAYOUT_PRESENT_SRC_KHR--instead, current layout is VK_IMAGE_LAYOUT_UNDEFINED.
+The Vulkan spec states: If a descriptor with type equal to any of VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is accessed as a result of this command, all image subresources identified by that descriptor must be in the image layout identified when the descriptor was written (https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdDraw-None-09600)
+Objects: 2
+    [0] VkCommandBuffer 0x1aea8658b98
+    [1] VkImage 0x30000000003
+
+[00:18:37.477][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:37.479][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:37.509][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:37.510][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:37.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:37.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:37.512][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:37.512][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:37.513][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:37.513][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:37.514][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:37.514][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+Validation Error: [ VUID-vkCmdDraw-None-09600 ] | MessageID = 0x46582f7b
+vkQueueSubmit(): pSubmits[0] command buffer VkCommandBuffer 0x1aea868c308 expects VkImage 0x40000000004 (subresource: aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, mipLevel = 0, arrayLayer = 0) to be in layout VK_IMAGE_LAYOUT_PRESENT_SRC_KHR--instead, current layout is VK_IMAGE_LAYOUT_UNDEFINED.
+The Vulkan spec states: If a descriptor with type equal to any of VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is accessed as a result of this command, all image subresources identified by that descriptor must be in the image layout identified when the descriptor was written (https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdDraw-None-09600)
+Objects: 2
+    [0] VkCommandBuffer 0x1aea868c308
+    [1] VkImage 0x40000000004
+
+[00:18:37.526][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:37.529][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:37.550][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:37.551][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:37.552][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:37.553][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:37.553][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:37.554][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:37.554][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:37.555][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:37.555][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:37.556][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+Validation Error: [ VUID-vkCmdDraw-None-09600 ] | MessageID = 0x46582f7b
+vkQueueSubmit(): pSubmits[0] command buffer VkCommandBuffer 0x1aea86bfa78 expects VkImage 0x50000000005 (subresource: aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, mipLevel = 0, arrayLayer = 0) to be in layout VK_IMAGE_LAYOUT_PRESENT_SRC_KHR--instead, current layout is VK_IMAGE_LAYOUT_UNDEFINED.
+The Vulkan spec states: If a descriptor with type equal to any of VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, or VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT is accessed as a result of this command, all image subresources identified by that descriptor must be in the image layout identified when the descriptor was written (https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdDraw-None-09600)
+Objects: 2
+    [0] VkCommandBuffer 0x1aea86bfa78
+    [1] VkImage 0x50000000005
+
+[00:18:37.569][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:37.571][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:37.600][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:37.601][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:37.602][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:37.602][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:37.603][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:37.603][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:37.604][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:37.605][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:37.605][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:37.606][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.096][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.099][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.123][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.125][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.126][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.127][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.128][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.129][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.129][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.130][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.131][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.132][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.149][Runtime][Info] [EditorLayer] Recreated viewport offscreen targets: 1339x706 (throttled)
+[00:18:38.159][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.161][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.189][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.190][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.191][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.192][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.193][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.194][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.195][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.196][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.197][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.197][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.210][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.212][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.238][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.239][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.240][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.241][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.242][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.243][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.244][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.245][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.246][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.246][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.257][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.260][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.287][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.288][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.289][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.290][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.291][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.292][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.293][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.294][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.295][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.295][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.313][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.315][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.346][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.347][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.348][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.349][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.350][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.351][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.352][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.353][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.354][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.354][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.373][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.376][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.394][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.396][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.397][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.398][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.399][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.399][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.400][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.401][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.402][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.403][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.421][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.424][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.442][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.445][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.446][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.447][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.447][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.448][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.449][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.450][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.451][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.452][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.470][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.473][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.501][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.504][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.505][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.506][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.507][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.508][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.508][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.509][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.510][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.511][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.527][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.529][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.550][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.551][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.552][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.553][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.554][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.555][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.556][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.557][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.558][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.559][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.577][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.580][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.609][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.611][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.612][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.613][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.614][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.614][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.615][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.616][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.617][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.618][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.636][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.638][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.659][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.661][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.662][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.663][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.664][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.665][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.666][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.667][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.668][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.668][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.686][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.688][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.708][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.710][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.711][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.712][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.713][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.714][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.715][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.716][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.717][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.718][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.736][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.739][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.758][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.761][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.762][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.763][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.764][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.765][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.766][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.766][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.767][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.768][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.783][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.785][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.807][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.808][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.809][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.809][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.810][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.810][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.811][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.811][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.812][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.812][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.820][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.821][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.848][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.849][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.849][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.850][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.850][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.851][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.851][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.852][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.852][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.852][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.861][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.863][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.881][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.882][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.882][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.883][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.883][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.884][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.884][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.884][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.885][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.885][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.896][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.897][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.922][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.923][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.923][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.924][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.924][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.924][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.925][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.926][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.926][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.927][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.936][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.937][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:38.963][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:38.964][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:38.965][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:38.965][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:38.966][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:38.966][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:38.967][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:38.967][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:38.968][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:38.968][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:38.981][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:38.982][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.004][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.006][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.007][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.007][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.008][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.008][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.009][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.010][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.010][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.011][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.021][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.022][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.046][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.047][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.048][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.049][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.049][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.050][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.051][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.052][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.052][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.070][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.072][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.094][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.096][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.097][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.098][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.098][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.099][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.100][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.101][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.102][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.102][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.128][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.131][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.155][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.156][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.158][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.159][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.159][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.160][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.161][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.162][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.163][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.164][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.186][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.189][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.211][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.213][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.214][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.215][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.215][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.216][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.217][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.218][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.219][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.220][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.240][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.243][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.267][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.270][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.270][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.271][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.272][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.273][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.274][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.275][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.276][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.277][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.299][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.302][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.334][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.539][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.540][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.541][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.542][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.543][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.544][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.545][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.546][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.547][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.567][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.569][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.590][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.592][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.593][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.594][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.595][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.596][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.597][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.598][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.599][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.600][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.625][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.628][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.655][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.657][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.658][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.659][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.660][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.661][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.662][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.663][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.664][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.665][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.692][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.695][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.713][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.715][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.716][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.717][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.718][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.719][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.719][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.720][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.721][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.722][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.743][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.745][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.762][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.762][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.763][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.763][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.764][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.764][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.765][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.765][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.766][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.766][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.777][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.778][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.803][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.804][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.804][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.805][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.805][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.806][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.806][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.807][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.807][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.808][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.816][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.817][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.844][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.845][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.846][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.847][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.847][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.848][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.849][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.849][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.850][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.851][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.863][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.865][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.886][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.887][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.887][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.888][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.889][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.889][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.890][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.891][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.891][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.892][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.913][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.915][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:39.934][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:39.935][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:39.936][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:39.937][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:39.938][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:39.939][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:39.940][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:39.941][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:39.942][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:39.943][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:39.969][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:39.971][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.001][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.003][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.004][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.005][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.006][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.006][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.007][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.008][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.009][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.010][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.032][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.034][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.059][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.060][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.061][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.063][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.064][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.064][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.065][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.066][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.067][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.068][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.087][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.089][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.116][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.118][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.118][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.119][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.120][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.121][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.122][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.123][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.124][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.125][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.143][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.145][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.165][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.166][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.167][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.168][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.169][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.170][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.171][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.172][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.173][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.174][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.191][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.194][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.214][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.216][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.217][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.217][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.218][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.219][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.220][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.221][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.222][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.223][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.242][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.244][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.265][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.266][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.267][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.268][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.269][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.270][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.271][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.272][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.273][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.274][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.292][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.295][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.323][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.325][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.326][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.327][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.327][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.328][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.329][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.330][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.331][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.332][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.351][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.354][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.382][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.383][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.384][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.385][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.386][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.387][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.388][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.389][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.390][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.391][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.409][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.412][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.439][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.440][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.441][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.442][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.443][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.444][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.445][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.446][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.447][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.448][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.663][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.665][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.689][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameBegin
+[00:18:40.892][Runtime][Trace] [Runtime] Transitioning to FrameStage: Input
+[00:18:40.893][Runtime][Trace] [Runtime] Transitioning to FrameStage: Events
+[00:18:40.894][Runtime][Trace] [Runtime] Transitioning to FrameStage: PreUpdate
+[00:18:40.895][Runtime][Trace] [Runtime] Transitioning to FrameStage: Update
+[00:18:40.896][Runtime][Trace] [Runtime] Transitioning to FrameStage: PostUpdate
+[00:18:40.896][Runtime][Trace] [Runtime] Transitioning to FrameStage: Physics
+[00:18:40.897][Runtime][Trace] [Runtime] Transitioning to FrameStage: Animation
+[00:18:40.898][Runtime][Trace] [Runtime] Transitioning to FrameStage: RenderPreparation
+[00:18:40.899][Runtime][Trace] [Runtime] Transitioning to FrameStage: Render
+[00:18:40.917][Runtime][Error] PostProcessPass: activePipeline or framebuffer is NULL
+[00:18:40.920][Runtime][Trace] [Runtime] Transitioning to FrameStage: FrameEnd
+[00:18:40.948][Runtime][Info] [Runtime] Beginning EngineRuntime Shutdown...
+[00:18:40.950][Runtime][Info] [Validation] Registered Shutdown: Editor
+[00:18:40.956][Runtime][Info] [EditorLayer] Shutdown complete
+[00:18:40.957][Runtime][Info] [Memory] Deallocated Editor : 528 bytes (Remaining: 0 bytes across 0 active)
+[00:18:40.958][Runtime][Info] [Validation] Registered Shutdown: Audio
+[00:18:41.000][Runtime][Info] [AudioSystem] AudioSystem shut down cleanly.
+[00:18:41.001][Runtime][Info] [Memory] Deallocated Audio : 1584 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.002][Runtime][Info] [Memory] Deallocated SaveSystem : 448 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.002][Runtime][Info] [Validation] Registered Shutdown: PhysicsWorld
+[00:18:41.003][Runtime][Info] [Physics] Shutting down PhysicsWorld...
+[00:18:41.006][Runtime][Info] [Physics] PhysicsWorld shutdown complete.
+[00:18:41.007][Runtime][Info] [Physics] Shutting down PhysicsWorld...
+[00:18:41.008][Runtime][Info] [Physics] PhysicsWorld shutdown complete.
+[00:18:41.009][Runtime][Info] [Memory] Deallocated PhysicsWorld : 216 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.010][Runtime][Info] [Validation] Registered Shutdown: WorldManager
+[00:18:41.011][Runtime][Info] [Memory] Deallocated WorldManager : 752 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.012][Runtime][Info] [Validation] Registered Shutdown: Scene
+[SceneManager] Unloading scene: UntitledScene
+[Scene] Cleaning up scene: UntitledScene
+[Scene] Scene cleanup complete
+[Scene] Destroying scene: UntitledScene
+[Scene] Cleaning up scene: UntitledScene
+[Scene] Scene cleanup complete
+[SceneManager] Scene unloaded successfully
+[SceneManager] Destroyed
+[00:18:41.019][Runtime][Info] [Memory] Deallocated Scene : 152 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.020][Runtime][Info] [Validation] Registered Shutdown: Assets
+[00:18:41.021][Runtime][Info] [Memory] Deallocated Assets : 8 bytes (Remaining: 0 bytes across 0 active)
+[00:18:41.022][Runtime][Info] [Validation] Registered Shutdown: Renderer
+[00:18:41.023][Runtime][Info] Shutting down EngineLoop...
+[00:18:41.024][Runtime][Info] GPUScene: Shutting down...
+[00:18:41.025][Runtime][Info] GPUScene: Shutdown complete.
+PS D:\OmnixEngine> ^C

@@ -267,7 +267,7 @@ void EngineResources::createPerFrameResources()
         uboBinding.binding            = 0;
         uboBinding.descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboBinding.descriptorCount    = 1;
-        uboBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+        uboBinding.stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         uboBinding.pImmutableSamplers = nullptr;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -367,10 +367,13 @@ void EngineResources::destroyPerFrameResources()
 void EngineResources::createMaterialDescriptorResources()
 {
     // Bindings:
-    // 0 – per‑material uniform buffer (roughness/metallic)
+    // 0 – per‑material uniform buffer (roughness/metallic/etc.)
     // 1 – albedo texture (combined image sampler)
     // 2 – normal texture (combined image sampler)
-    VkDescriptorSetLayoutBinding bindings[3]{};
+    // 3 – metallic-roughness texture (combined image sampler)
+    // 4 – AO texture (combined image sampler)
+    // 5 – emissive texture (combined image sampler)
+    VkDescriptorSetLayoutBinding bindings[6]{};
 
     // 0 – material uniform buffer
     bindings[0].binding            = 0;
@@ -393,9 +396,30 @@ void EngineResources::createMaterialDescriptorResources()
     bindings[2].stageFlags        = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[2].pImmutableSamplers = nullptr;
 
+    // 3 – metallic-roughness texture
+    bindings[3].binding            = 3;
+    bindings[3].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[3].descriptorCount   = 1;
+    bindings[3].stageFlags        = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[3].pImmutableSamplers = nullptr;
+
+    // 4 – AO texture
+    bindings[4].binding            = 4;
+    bindings[4].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[4].descriptorCount   = 1;
+    bindings[4].stageFlags        = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[4].pImmutableSamplers = nullptr;
+
+    // 5 – emissive texture
+    bindings[5].binding            = 5;
+    bindings[5].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[5].descriptorCount   = 1;
+    bindings[5].stageFlags        = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[5].pImmutableSamplers = nullptr;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 3;
+    layoutInfo.bindingCount = 6;
     layoutInfo.pBindings = bindings;
 
     VK_CHECK(vkCreateDescriptorSetLayout(device,
@@ -411,7 +435,7 @@ void EngineResources::createMaterialDescriptorResources()
     poolSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = maxMaterials;          // one per material
     poolSizes[1].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = maxMaterials * 2;      // albedo + normal
+    poolSizes[1].descriptorCount = maxMaterials * 5;      // albedo + normal + metallic/roughness + AO + emissive
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -536,16 +560,20 @@ void EngineResources::destroyLightingDescriptorResources()
 
 void EngineResources::createPipelineLayout()
 {
+    if (pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+    }
+
     std::vector<VkDescriptorSetLayout> setLayouts = {
-        globalSetLayout,   // set 0 – camera
-        materialSetLayout, // set 1 – material
-        lightingSetLayout  // set 2 – lighting
+        globalSetLayout,   // set 0 – GPUScene
+        materialSetLayout  // set 1 – material textures
     };
 
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushRange.offset = 0;
-    pushRange.size = sizeof(glm::mat4); // model matrix
+    pushRange.size = sizeof(uint32_t); // instance index
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -555,7 +583,7 @@ void EngineResources::createPipelineLayout()
     layoutInfo.pPushConstantRanges = &pushRange;
 
     VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout));
-    LOG_INFO("Pipeline layout created (3 descriptor sets + push constant).");
+    LOG_INFO("Pipeline layout created (2 descriptor sets + 4-byte push constant).");
 }
 
 } // namespace eng::renderer

@@ -1,19 +1,21 @@
 #include "Runtime/Private/Editor/Panels/ViewportPanel.h"
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/imgui_internal.h"
+#include "Rendering/Core/Renderer.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
-#include "RenderingEngine/Renderer/SceneRenderer.h"
 #include "RenderingEngine/Renderer/scene/Mesh.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneObject.h"
 #include "Scene/SceneManager.h"
 #include "ImGuizmo.h"
 #include "ECS/ECSComponents.h"
+#include "ECS/LightCollectionSystem.h"
 #include "ECS/Public/IECSWorld.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorDirtyState.h"
 #include "Runtime/Public/Editor/EditorMath.h"
+#include "Core/World.h"
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -187,7 +189,7 @@ namespace eng::runtime {
 
         // Draw 3D Grid floor and axes
         auto* loop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
-        eng::renderer::SceneRenderer* renderer = nullptr;
+        eng::renderer::Renderer* renderer = nullptr;
         if (loop && loop->GetSceneRenderer()) {
             renderer = loop->GetSceneRenderer();
             auto& cam = renderer->getCamera();
@@ -196,6 +198,179 @@ namespace eng::runtime {
             glm::mat4 proj = cam.getProjMatrix(aspect);
 
             ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+            auto projectWorldToScreen = [&](const glm::vec3& worldPos, ImVec2& outPos) -> bool {
+                glm::vec4 clipPos = proj * view * glm::vec4(worldPos, 1.0f);
+                if (clipPos.w <= 0.001f) return false;
+                glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+                if (ndc.z < 0.0f || ndc.z > 1.0f) return false;
+                outPos.x = imageStartPos.x + (ndc.x + 1.0f) * 0.5f * size.x;
+                outPos.y = imageStartPos.y + (1.0f - ndc.y) * 0.5f * size.y;
+                return true;
+            };
+
+            auto drawWireframeBox = [&](const glm::mat4& modelMatrix, const glm::vec3& localMin, const glm::vec3& localMax, ImU32 color) {
+                glm::vec3 corners[8] = {
+                    glm::vec3(localMin.x, localMin.y, localMin.z),
+                    glm::vec3(localMax.x, localMin.y, localMin.z),
+                    glm::vec3(localMax.x, localMax.y, localMin.z),
+                    glm::vec3(localMin.x, localMax.y, localMin.z),
+                    glm::vec3(localMin.x, localMin.y, localMax.z),
+                    glm::vec3(localMax.x, localMin.y, localMax.z),
+                    glm::vec3(localMax.x, localMax.y, localMax.z),
+                    glm::vec3(localMin.x, localMax.y, localMax.z)
+                };
+                ImVec2 screenCorners[8];
+                bool cornerVisible[8];
+                for (int i = 0; i < 8; ++i) {
+                    glm::vec3 worldCorner = glm::vec3(modelMatrix * glm::vec4(corners[i], 1.0f));
+                    screenCorners[i] = ImVec2(0.0f, 0.0f);
+                    cornerVisible[i] = projectWorldToScreen(worldCorner, screenCorners[i]);
+                }
+                int edges[12][2] = {
+                    {0, 1}, {1, 2}, {2, 3}, {3, 0},
+                    {4, 5}, {5, 6}, {6, 7}, {7, 4},
+                    {0, 4}, {1, 5}, {2, 6}, {3, 7}
+                };
+                for (int i = 0; i < 12; ++i) {
+                    int p1_idx = edges[i][0];
+                    int p2_idx = edges[i][1];
+                    if (cornerVisible[p1_idx] && cornerVisible[p2_idx]) {
+                        drawList->AddLine(screenCorners[p1_idx], screenCorners[p2_idx], color, 1.5f);
+                    }
+                }
+            };
+
+            auto drawWireframeCircle = [&](const glm::vec3& center, float radius, const glm::vec3& axis1, const glm::vec3& axis2, ImU32 color, int segments = 32) {
+                ImVec2 prevPoint;
+                bool prevValid = false;
+                for (int i = 0; i <= segments; ++i) {
+                    float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
+                    glm::vec3 worldPos = center + radius * (std::cos(theta) * axis1 + std::sin(theta) * axis2);
+                    ImVec2 screenPos;
+                    if (projectWorldToScreen(worldPos, screenPos)) {
+                        if (prevValid) {
+                            drawList->AddLine(prevPoint, screenPos, color, 1.5f);
+                        }
+                        prevPoint = screenPos;
+                        prevValid = true;
+                    } else {
+                        prevValid = false;
+                    }
+                }
+            };
+
+            auto drawWireframeSphere = [&](const glm::mat4& modelMatrix, const glm::vec3& localCenter, float radius, ImU32 color) {
+                glm::vec3 worldCenter = glm::vec3(modelMatrix * glm::vec4(localCenter, 1.0f));
+                float sx = glm::length(glm::vec3(modelMatrix[0]));
+                float sy = glm::length(glm::vec3(modelMatrix[1]));
+                float sz = glm::length(glm::vec3(modelMatrix[2]));
+                float maxScale = std::max({sx, sy, sz});
+                float worldRadius = radius * maxScale;
+
+                drawWireframeCircle(worldCenter, worldRadius, glm::vec3(1,0,0), glm::vec3(0,1,0), color);
+                drawWireframeCircle(worldCenter, worldRadius, glm::vec3(1,0,0), glm::vec3(0,0,1), color);
+                drawWireframeCircle(worldCenter, worldRadius, glm::vec3(0,1,0), glm::vec3(0,0,1), color);
+            };
+
+            auto drawWireframeCapsule = [&](const glm::mat4& modelMatrix, const glm::vec3& localCenter, float radius, float height, ImU32 color) {
+                float halfH = height * 0.5f - radius;
+                if (halfH < 0.0f) halfH = 0.0f;
+
+                glm::vec3 topCenter = localCenter + glm::vec3(0, halfH, 0);
+                glm::vec3 bottomCenter = localCenter - glm::vec3(0, halfH, 0);
+
+                auto drawLocalCircleXZ = [&](const glm::vec3& localC, float r) {
+                    ImVec2 prevPoint;
+                    bool prevValid = false;
+                    int segments = 32;
+                    for (int i = 0; i <= segments; ++i) {
+                        float theta = (float)i / (float)segments * 2.0f * glm::pi<float>();
+                        glm::vec3 localPos = localC + r * glm::vec3(std::cos(theta), 0.0f, std::sin(theta));
+                        glm::vec3 worldPos = glm::vec3(modelMatrix * glm::vec4(localPos, 1.0f));
+                        ImVec2 screenPos;
+                        if (projectWorldToScreen(worldPos, screenPos)) {
+                            if (prevValid) {
+                                drawList->AddLine(prevPoint, screenPos, color, 1.5f);
+                            }
+                            prevPoint = screenPos;
+                            prevValid = true;
+                        } else {
+                            prevValid = false;
+                        }
+                    }
+                };
+
+                drawLocalCircleXZ(topCenter, radius);
+                drawLocalCircleXZ(bottomCenter, radius);
+
+                glm::vec3 dirs[4] = { {1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1} };
+                for (int i = 0; i < 4; ++i) {
+                    glm::vec3 localP1 = bottomCenter + dirs[i] * radius;
+                    glm::vec3 localP2 = topCenter + dirs[i] * radius;
+                    glm::vec3 w1 = glm::vec3(modelMatrix * glm::vec4(localP1, 1.0f));
+                    glm::vec3 w2 = glm::vec3(modelMatrix * glm::vec4(localP2, 1.0f));
+                    ImVec2 s1, s2;
+                    if (projectWorldToScreen(w1, s1) && projectWorldToScreen(w2, s2)) {
+                        drawList->AddLine(s1, s2, color, 1.5f);
+                    }
+                }
+
+                auto drawArc = [&](const glm::vec3& localC, float r, float startAngle, float endAngle, const glm::vec3& axis1, const glm::vec3& axis2) {
+                    ImVec2 prevPoint;
+                    bool prevValid = false;
+                    int segments = 16;
+                    for (int i = 0; i <= segments; ++i) {
+                        float angle = startAngle + (endAngle - startAngle) * (float)i / (float)segments;
+                        glm::vec3 localPos = localC + r * (std::cos(angle) * axis1 + std::sin(angle) * axis2);
+                        glm::vec3 worldPos = glm::vec3(modelMatrix * glm::vec4(localPos, 1.0f));
+                        ImVec2 screenPos;
+                        if (projectWorldToScreen(worldPos, screenPos)) {
+                            if (prevValid) {
+                                drawList->AddLine(prevPoint, screenPos, color, 1.5f);
+                            }
+                            prevPoint = screenPos;
+                            prevValid = true;
+                        } else {
+                            prevValid = false;
+                        }
+                    }
+                };
+
+                drawArc(topCenter, radius, 0.0f, glm::pi<float>(), glm::vec3(1,0,0), glm::vec3(0,1,0));
+                drawArc(bottomCenter, radius, glm::pi<float>(), 2.0f * glm::pi<float>(), glm::vec3(1,0,0), glm::vec3(0,1,0));
+                drawArc(topCenter, radius, 0.0f, glm::pi<float>(), glm::vec3(0,0,1), glm::vec3(0,1,0));
+                drawArc(bottomCenter, radius, glm::pi<float>(), 2.0f * glm::pi<float>(), glm::vec3(0,0,1), glm::vec3(0,1,0));
+            };
+
+            auto drawWireframeCone = [&](const glm::vec3& apex, const glm::quat& rotation, float range, float outerAngle, ImU32 color) {
+                glm::vec3 forward = rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+                glm::vec3 right = rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::vec3 up = rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+
+                glm::vec3 baseCenter = apex + forward * range;
+                float baseRadius = range * std::tan(glm::radians(outerAngle));
+
+                drawWireframeCircle(baseCenter, baseRadius, right, up, color);
+
+                glm::vec3 edges[4] = {
+                    baseCenter + right * baseRadius,
+                    baseCenter - right * baseRadius,
+                    baseCenter + up * baseRadius,
+                    baseCenter - up * baseRadius
+                };
+
+                ImVec2 sApex;
+                if (projectWorldToScreen(apex, sApex)) {
+                    for (int i = 0; i < 4; ++i) {
+                        ImVec2 sEdge;
+                        if (projectWorldToScreen(edges[i], sEdge)) {
+                            drawList->AddLine(sApex, sEdge, color, 1.5f);
+                        }
+                    }
+                }
+            };
+
             if (m_ShowGrid) {
                 DrawGrid(drawList, view, proj, imageStartPos, size, cam.position, m_GridScale);
             }
@@ -303,17 +478,6 @@ namespace eng::runtime {
                         worldCorners[i] = glm::vec3(modelMatrix * glm::vec4(corners[i], 1.0f));
                     }
 
-                    // Project corners to screen
-                    auto projectWorldToScreen = [&](const glm::vec3& worldPos, ImVec2& outPos) -> bool {
-                        glm::vec4 clipPos = proj * view * glm::vec4(worldPos, 1.0f);
-                        if (clipPos.w <= 0.001f) return false;
-                        glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
-                        if (ndc.z < 0.0f || ndc.z > 1.0f) return false;
-                        outPos.x = imageStartPos.x + (ndc.x + 1.0f) * 0.5f * size.x;
-                        outPos.y = imageStartPos.y + (1.0f - ndc.y) * 0.5f * size.y;
-                        return true;
-                    };
-
                     ImVec2 screenCorners[8];
                     bool cornerVisible[8];
                     for (int i = 0; i < 8; ++i) {
@@ -338,6 +502,180 @@ namespace eng::runtime {
                     }
                 }
             }
+
+            // Draw 2D Icon overlays, hybrid picking, and debug wireframes
+            if (m_Context && m_Context->ecs) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                auto transformType = coordinator.GetComponentType<TransformComponent>();
+                auto camType = coordinator.GetComponentType<CameraComponent>();
+                auto dirLightType = coordinator.GetComponentType<DirectionalLightComponent>();
+                auto pointLightType = coordinator.GetComponentType<PointLightComponent>();
+                auto spotLightType = coordinator.GetComponentType<SpotLightComponent>();
+                auto skyLightType = coordinator.GetComponentType<SkyLightComponent>();
+
+                struct IconOverlay {
+                    Entity entity;
+                    ImVec2 screenPos;
+                    std::string typeName;
+                };
+                std::vector<IconOverlay> iconOverlays;
+
+                // 1. Draw debug wireframes for all entities that have colliders and debugDraw == true
+                if (m_ShowColliders) {
+                    auto boxType = coordinator.GetComponentType<BoxColliderComponent>();
+                    auto sphereType = coordinator.GetComponentType<SphereColliderComponent>();
+                    auto capsuleType = coordinator.GetComponentType<CapsuleColliderComponent>();
+
+                    ImU32 greenColor = IM_COL32(50, 220, 50, 225);
+
+                    for (Entity ent : coordinator.GetActiveEntities()) {
+                        if (ent == 0 || !coordinator.IsEntityAlive(ent)) continue;
+                        const auto& sig = coordinator.GetSignature(ent);
+                        if (!sig.test(transformType)) continue;
+
+                        const auto& tc = coordinator.GetComponent<TransformComponent>(ent);
+                        glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
+                        glm::quat glmRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
+                        glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
+
+                        glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), glmPos) *
+                                                glm::mat4_cast(glmRot) *
+                                                glm::scale(glm::mat4(1.0f), glmScale);
+
+                        if (sig.test(boxType)) {
+                            const auto& bc = coordinator.GetComponent<BoxColliderComponent>(ent);
+                            if (bc.debugDraw) {
+                                glm::vec3 offset(bc.offset.x, bc.offset.y, bc.offset.z);
+                                glm::vec3 bsize(bc.size.x, bc.size.y, bc.size.z);
+                                drawWireframeBox(modelMatrix, offset - bsize * 0.5f, offset + bsize * 0.5f, greenColor);
+                            }
+                        }
+                        if (sig.test(sphereType)) {
+                            const auto& sc = coordinator.GetComponent<SphereColliderComponent>(ent);
+                            if (sc.debugDraw) {
+                                glm::vec3 offset(sc.offset.x, sc.offset.y, sc.offset.z);
+                                drawWireframeSphere(modelMatrix, offset, sc.radius, greenColor);
+                            }
+                        }
+                        if (sig.test(capsuleType)) {
+                            const auto& cc = coordinator.GetComponent<CapsuleColliderComponent>(ent);
+                            if (cc.debugDraw) {
+                                glm::vec3 offset(cc.offset.x, cc.offset.y, cc.offset.z);
+                                drawWireframeCapsule(modelMatrix, offset, cc.radius, cc.height, greenColor);
+                            }
+                        }
+                    }
+                }
+
+                // 2. Collect 2D icon overlays for lights and cameras
+                for (Entity ent : coordinator.GetActiveEntities()) {
+                    if (ent == 0 || !coordinator.IsEntityAlive(ent)) continue;
+                    const auto& sig = coordinator.GetSignature(ent);
+                    if (!sig.test(transformType)) continue;
+
+                    const auto& tc = coordinator.GetComponent<TransformComponent>(ent);
+                    glm::vec3 worldPos(tc.position.x, tc.position.y, tc.position.z);
+                    ImVec2 screenPos;
+                    if (projectWorldToScreen(worldPos, screenPos)) {
+                        if (sig.test(camType)) {
+                            iconOverlays.push_back({ent, screenPos, "Camera"});
+                        } else if (sig.test(dirLightType)) {
+                            iconOverlays.push_back({ent, screenPos, "DirectionalLight"});
+                        } else if (sig.test(pointLightType)) {
+                            iconOverlays.push_back({ent, screenPos, "PointLight"});
+                        } else if (sig.test(spotLightType)) {
+                            iconOverlays.push_back({ent, screenPos, "SpotLight"});
+                        } else if (sig.test(skyLightType)) {
+                            iconOverlays.push_back({ent, screenPos, "SkyLight"});
+                        }
+                    }
+                }
+
+                // 3. Draw 2D Icon overlays
+                for (const auto& icon : iconOverlays) {
+                    ImU32 iconColor = IM_COL32(200, 200, 200, 255);
+                    ImU32 iconBg = IM_COL32(40, 45, 55, 220);
+                    const char* label = "I";
+                    if (icon.typeName == "Camera") {
+                        iconColor = IM_COL32(80, 160, 240, 255);
+                        label = "C";
+                    } else if (icon.typeName == "DirectionalLight") {
+                        iconColor = IM_COL32(255, 220, 60, 255);
+                        label = "D";
+                    } else if (icon.typeName == "PointLight") {
+                        iconColor = IM_COL32(255, 170, 40, 255);
+                        label = "P";
+                    } else if (icon.typeName == "SpotLight") {
+                        iconColor = IM_COL32(255, 110, 30, 255);
+                        label = "S";
+                    } else if (icon.typeName == "SkyLight") {
+                        iconColor = IM_COL32(100, 200, 255, 255);
+                        label = "K";
+                    }
+
+                    if (icon.entity == selectedEntity) {
+                        drawList->AddCircleFilled(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 100));
+                        drawList->AddCircle(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 255), 0, 2.0f);
+                    }
+
+                    drawList->AddCircleFilled(icon.screenPos, 10.0f, iconBg);
+                    drawList->AddCircle(icon.screenPos, 10.0f, iconColor, 0, 1.5f);
+
+                    ImVec2 labelSize = ImGui::CalcTextSize(label);
+                    ImVec2 labelPos(icon.screenPos.x - labelSize.x * 0.5f, icon.screenPos.y - labelSize.y * 0.5f);
+                    drawList->AddText(labelPos, iconColor, label);
+                }
+
+                // 4. Draw selected light debug guides (radius/cone)
+                if (selectedEntity != 0 && coordinator.IsEntityAlive(selectedEntity)) {
+                    const auto& sig = coordinator.GetSignature(selectedEntity);
+                    const auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
+                    glm::vec3 worldPos(tc.position.x, tc.position.y, tc.position.z);
+                    glm::quat qRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
+
+                    if (sig.test(pointLightType)) {
+                        const auto& ptComp = coordinator.GetComponent<PointLightComponent>(selectedEntity);
+                        glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), worldPos);
+                        drawWireframeSphere(modelMatrix, glm::vec3(0.0f), ptComp.radius, IM_COL32(255, 170, 40, 200));
+                    }
+                    if (sig.test(spotLightType)) {
+                        const auto& spotComp = coordinator.GetComponent<SpotLightComponent>(selectedEntity);
+                        drawWireframeCone(worldPos, qRot, spotComp.range, spotComp.outerConeAngle, IM_COL32(255, 110, 30, 200));
+                        drawWireframeCone(worldPos, qRot, spotComp.range, spotComp.innerConeAngle, IM_COL32(255, 110, 30, 100));
+                    }
+                }
+
+                // 5. Handle hybrid picking
+                if (m_IsHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver()) {
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    Entity clickedEntity = 0;
+                    float closestDist = 12.0f;
+
+                    for (const auto& icon : iconOverlays) {
+                        float dist = glm::distance(glm::vec2(mousePos.x, mousePos.y), glm::vec2(icon.screenPos.x, icon.screenPos.y));
+                        if (dist < closestDist) {
+                            closestDist = dist;
+                            clickedEntity = icon.entity;
+                        }
+                    }
+
+                    if (clickedEntity != 0) {
+                        selection.Select(clickedEntity);
+                    } else {
+                        uint32_t clickX = static_cast<uint32_t>(mousePos.x - imageStartPos.x);
+                        uint32_t clickY = static_cast<uint32_t>(mousePos.y - imageStartPos.y);
+
+                        if (renderer) {
+                            uint32_t pickedID = renderer->PickEntity(clickX, clickY);
+                            if (pickedID != 0 && coordinator.IsEntityAlive(static_cast<Entity>(pickedID))) {
+                                selection.Select(static_cast<Entity>(pickedID));
+                            } else {
+                                selection.Clear();
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Viewport Toolbar Overlay (Horizontal floating panel)
@@ -353,24 +691,89 @@ namespace eng::runtime {
         
         ImGui::AlignTextToFramePadding();
         ImGui::Text(" Mode: "); ImGui::SameLine();
-        const char* renderModes[] = { "Scene Lights", "Preview Sunny", "Unlit", "Wireframe" };
+        const char* renderModes[] = {
+            "Lit",
+            "Preview Lit",
+            "Unlit",
+            "Wireframe",
+            "Albedo",
+            "Normal",
+            "Depth",
+            "Roughness",
+            "Metallic",
+            "AO",
+            "Shadow Map",
+            "Object ID",
+            "Light Complexity"
+        };
+        auto applyRenderMode = [&](int mode) {
+            m_RenderMode = mode;
+            if (!renderer) {
+                return;
+            }
+            renderer->m_UseEditorDefaultLighting = (mode == 1);
+            switch (mode) {
+                case 0: renderer->m_ShadingMode = 0; break;  // Lit
+                case 1: renderer->m_ShadingMode = 0; break;  // Preview Lit
+                case 2: renderer->m_ShadingMode = 1; break;  // Unlit
+                case 3: renderer->m_ShadingMode = 11; break; // Wireframe-style edges
+                case 4: renderer->m_ShadingMode = 10; break; // Albedo
+                case 5: renderer->m_ShadingMode = 3; break;  // Normal
+                case 6: renderer->m_ShadingMode = 2; break;  // Depth
+                case 7: renderer->m_ShadingMode = 4; break;  // Roughness
+                case 8: renderer->m_ShadingMode = 5; break;  // Metallic
+                case 9: renderer->m_ShadingMode = 6; break;  // AO
+                case 10: renderer->m_ShadingMode = 9; break; // Shadow Map
+                case 11: renderer->m_ShadingMode = 7; break; // Object ID
+                case 12: renderer->m_ShadingMode = 12; break; // Light Complexity
+                default: renderer->m_ShadingMode = 0; break;
+            }
+        };
+
+        if (renderer && m_IsFocused && !ImGui::GetIO().WantTextInput) {
+            if (ImGui::IsKeyPressed(ImGuiKey_1)) applyRenderMode(0);
+            if (ImGui::IsKeyPressed(ImGuiKey_2)) applyRenderMode(2);
+            if (ImGui::IsKeyPressed(ImGuiKey_3)) applyRenderMode(3);
+            if (ImGui::IsKeyPressed(ImGuiKey_4)) applyRenderMode(4);
+            if (ImGui::IsKeyPressed(ImGuiKey_5)) applyRenderMode(5);
+            if (ImGui::IsKeyPressed(ImGuiKey_6)) applyRenderMode(6);
+            if (ImGui::IsKeyPressed(ImGuiKey_7)) applyRenderMode(11);
+            if (ImGui::IsKeyPressed(ImGuiKey_F12)) renderer->RequestRenderDocCapture();
+        }
+
         ImGui::SetNextItemWidth(120.0f);
         if (ImGui::Combo("##RenderModeCombo", &m_RenderMode, renderModes, IM_ARRAYSIZE(renderModes))) {
-            if (renderer) {
-                if (m_RenderMode == 0) {
-                    renderer->m_UseEditorDefaultLighting = false;
-                    renderer->m_ShadingMode = 0;
-                } else if (m_RenderMode == 1) {
-                    renderer->m_UseEditorDefaultLighting = true;
-                    renderer->m_ShadingMode = 0;
-                } else if (m_RenderMode == 2) {
-                    renderer->m_ShadingMode = 1;
-                } else if (m_RenderMode == 3) {
-                    renderer->m_ShadingMode = 1;
-                }
-            }
+            applyRenderMode(m_RenderMode);
         }
         
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        
+        {
+            bool isTranslate = (m_GizmoType == ImGuizmo::TRANSLATE);
+            bool isRotate = (m_GizmoType == ImGuizmo::ROTATE);
+            bool isScale = (m_GizmoType == ImGuizmo::SCALE);
+
+            if (isTranslate) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Translate")) {
+                m_GizmoType = ImGuizmo::TRANSLATE;
+            }
+            if (isTranslate) ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+            if (isRotate) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Rotate")) {
+                m_GizmoType = ImGuizmo::ROTATE;
+            }
+            if (isRotate) ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+            if (isScale) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Scale")) {
+                m_GizmoType = ImGuizmo::SCALE;
+            }
+            if (isScale) ImGui::PopStyleColor();
+        }
+
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         ImGui::Checkbox("Grid", &m_ShowGrid);
 
@@ -402,9 +805,31 @@ namespace eng::runtime {
             ImGui::GetIO().AddKeyEvent(ImGuiKey_F, false);
         }
 
+        if (renderer && renderer->m_LocalViewActive) {
+            ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+            if (ImGui::Button("Isolate Active [Toggle]")) {
+                renderer->m_LocalViewActive = false;
+            }
+            ImGui::PopStyleColor();
+        }
+
         if (renderer) {
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+            auto& post = renderer->GetPostProcessSettings();
+            bool autoExposure = post.exposureMode == eng::renderer::ExposureMode::Auto;
+            if (ImGui::Checkbox("Auto Exposure", &autoExposure)) {
+                post.exposureMode = autoExposure ? eng::renderer::ExposureMode::Auto : eng::renderer::ExposureMode::Manual;
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::SliderFloat("Exposure", &post.exposure, 0.05f, 8.0f, "%.2f");
+            ImGui::SameLine();
+            ImGui::Checkbox("Before", &post.debugBeforePostProcess);
+            ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
             ImGui::Text("Queue Count: %u", renderer->m_TotalRenderCount);
+            ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+            ImGui::Text("Transparent Count: %u", renderer->m_TransparentRenderCount);
         }
 
         ImGui::EndChild();
@@ -469,7 +894,7 @@ namespace eng::runtime {
             auto playerStartType = coordinator.GetComponentType<PlayerStartComponent>();
             auto dirLightType = coordinator.GetComponentType<DirectionalLightComponent>();
             auto pointLightType = coordinator.GetComponentType<PointLightComponent>();
-            auto ambientLightType = coordinator.GetComponentType<AmbientLightComponent>();
+            auto skyLightType = coordinator.GetComponentType<SkyLightComponent>();
             auto spotLightType = coordinator.GetComponentType<SpotLightComponent>();
 
             for (Entity ent : coordinator.GetActiveEntities()) {
@@ -481,7 +906,7 @@ namespace eng::runtime {
                 if (sig.test(playerStartType)) {
                     hasPlayerStart = true;
                 }
-                if (sig.test(dirLightType) || sig.test(pointLightType) || sig.test(ambientLightType) || sig.test(spotLightType)) {
+                if (sig.test(dirLightType) || sig.test(pointLightType) || sig.test(skyLightType) || sig.test(spotLightType)) {
                     hasLight = true;
                 }
             }
@@ -554,17 +979,87 @@ namespace eng::runtime {
             uint32_t frameIdx = renderer->frameIndex;
             uint32_t renderQueueCount = renderer->m_TotalRenderCount;
             bool textureValid = (viewportTexture != VK_NULL_HANDLE);
+            const auto& renderStats = renderer->GetRenderStats();
+            uint32_t ecsCount = 0;
+            size_t sceneObjectCount = activeScene ? activeScene->GetAllSceneObjects().size() : 0;
+            uint32_t directionalLights = 0;
+            uint32_t pointLights = 0;
+            uint32_t skyLights = 0;
+            bool lightCollectionOk = false;
+            std::string selectedName = "None";
+
+            if (m_Context && m_Context->ecs) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                ecsCount = coordinator.GetLivingEntityCount();
+                Entity selected = selection.GetSelectedEntity();
+                if (selected != 0 && coordinator.IsEntityAlive(selected)) {
+                    if (coordinator.GetSignature(selected).test(coordinator.GetComponentType<NameComponent>())) {
+                        selectedName = coordinator.GetComponent<NameComponent>(selected).name;
+                    } else {
+                        selectedName = "Entity " + std::to_string(selected);
+                    }
+                }
+
+                for (Entity ent : coordinator.GetActiveEntities()) {
+                    if (ent == 0 || !coordinator.IsEntityAlive(ent)) continue;
+                    const auto& sig = coordinator.GetSignature(ent);
+                    if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>())) ++directionalLights;
+                    if (sig.test(coordinator.GetComponentType<PointLightComponent>())) ++pointLights;
+                    if (sig.test(coordinator.GetComponentType<SkyLightComponent>())) ++skyLights;
+                }
+            }
+
+            if (renderer->m_World) {
+                lightCollectionOk = renderer->m_World->getCoordinator().GetSystem<eng::runtime::LightCollectionSystem>() != nullptr;
+            }
 
             ImGui::SetCursorScreenPos(ImVec2(imageStartPos.x + 10.0f, imageStartPos.y + size.y - 120.0f));
             
-            ImGui::BeginChild("ViewportStats", ImVec2(280.0f, 110.0f), ImGuiChildFlags_Borders, 
+            ImGui::BeginChild("ViewportStats", ImVec2(390.0f, 520.0f), ImGuiChildFlags_Borders, 
                               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.9f, 1.0f));
             ImGui::Text("--- Viewport Diagnostics ---");
+            ImGui::Text("Scene: %s", activeScene ? activeScene->GetName().c_str() : "Untitled");
+            ImGui::Text("Path: %s", (activeScene && !activeScene->GetFilePath().empty()) ? activeScene->GetFilePath().c_str() : "Unsaved");
+            ImGui::Text("Dirty: %s", dirtyState.IsSceneDirty() ? "Yes" : "No");
+            ImGui::Text("Mode: %s", simulationState == EditorSimulationState::Play ? "Play" : "Edit");
+            ImGui::Text("Selected: %s", selectedName.c_str());
+            ImGui::Text("ECS Entities: %u", ecsCount);
+            ImGui::Text("Scene Objects: %zu", sceneObjectCount);
+            ImGui::Text("Input Owner: %s", m_InputOwnerLabel);
+            ImGui::Text("Viewport Hovered: %s", m_IsHovered ? "Yes" : "No");
+            ImGui::Text("Viewport Focused: %s", m_IsFocused ? "Yes" : "No");
+            ImGui::Text("Cursor Captured: %s", m_CursorCaptured ? "Yes" : "No");
+            ImGui::Text("Fallback Lighting: %s", renderer->isFallbackLightingActive() ? "ON" : "OFF");
+            ImGui::Text("Directional Lights: %u", directionalLights);
+            ImGui::Text("Point Lights: %u", pointLights);
+            ImGui::Text("Sky Lights: %u", skyLights);
+            ImGui::Text("LightCollectionSystem: %s", lightCollectionOk ? "OK" : "Missing");
+            ImGui::Separator();
             ImGui::Text("Panel Size: %.0fx%.0f", outWidth, outHeight);
             ImGui::Text("Render Target: %ux%u", offscreenWidth, offscreenHeight);
             ImGui::Text("Frame Index: %u (Queue Count: %u)", frameIdx, renderQueueCount);
             ImGui::Text("Texture Handle: %s", textureValid ? "VALID" : "INVALID");
+            ImGui::Separator();
+            ImGui::Text("CPU Frame: %.2f ms", renderStats.cpuFrameTimeMs);
+            ImGui::Text("GPU Frame: %.2f ms", renderStats.gpuFrameTimeMs);
+            ImGui::Text("Draw Calls: %u", renderStats.drawCallCount);
+            ImGui::Text("Visible Meshes: %u", renderStats.visibleMeshCount);
+            ImGui::Text("Triangles: %u", renderStats.triangleCount);
+            ImGui::Text("Materials: %u", renderStats.materialCount);
+            ImGui::Text("Textures Est: %u", renderStats.textureCount);
+            ImGui::Text("Lights: %u", renderStats.lightCount);
+            ImGui::Text("Shadow Casters: %u", renderStats.shadowCasterCount);
+            ImGui::Text("Transparent: %u", renderStats.transparentObjectCount);
+            ImGui::Text("GBuffer Est: %.1f MB", renderStats.gbufferMemoryMB);
+            ImGui::Text("RenderDoc: F12 capture foundation");
+            if (!renderStats.passTimings.empty()) {
+                ImGui::Separator();
+                ImGui::Text("GPU Pass Timings");
+                for (const auto& passTiming : renderStats.passTimings) {
+                    ImGui::Text("%s: %.3f ms", passTiming.name.c_str(), passTiming.gpuMs);
+                }
+            }
             ImGui::PopStyleColor();
             ImGui::EndChild();
         }

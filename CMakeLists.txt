@@ -67,6 +67,7 @@ set(ENGINE_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/ThirdParty/ImGuizmo
     ${Vulkan_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/Physics/Public
+    ${CMAKE_SOURCE_DIR}/Rendering
 )
 
 # -------------------------------
@@ -172,7 +173,25 @@ add_library(RenderingEngine
     RenderingEngine/Platform/time/Timer.cpp
     RenderingEngine/runtime/render_scene/SceneBuilder.cpp
     RenderingEngine/Renderer/PyramidRenderer.cpp
-    RenderingEngine/Renderer/SceneRenderer.cpp
+    Rendering/Core/Renderer.cpp
+    Rendering/Graph/RenderGraph.cpp
+    Rendering/Scene/RenderSceneExtractor.cpp
+    Rendering/Scene/GPUScene.cpp
+    Rendering/Geometry/MeshRenderer.cpp
+    Rendering/Geometry/VisibilitySystem.cpp
+    Rendering/Materials/MaterialSystem.cpp
+    Rendering/Materials/ShaderLibrary.cpp
+    Rendering/Lighting/DeferredLightingPass.cpp
+    Rendering/Lighting/ShadowRenderer.cpp
+    Rendering/Lighting/SkyLightRenderer.cpp
+    Rendering/PostProcess/TonemapPass.cpp
+    Rendering/PostProcess/ExposurePass.cpp
+    Rendering/Editor/EditorViewportRenderer.cpp
+    Rendering/Editor/GridRenderer.cpp
+    Rendering/Editor/SelectionOutlinePass.cpp
+    Rendering/Editor/DebugViewRenderer.cpp
+    Rendering/Debug/GPUProfiler.cpp
+    Rendering/Debug/DebugDraw.cpp
     RenderingEngine/Renderer/scene/Mesh.cpp
     RenderingEngine/Renderer/scene/ModelLoader.cpp
     RenderingEngine/Renderer/scene/Scene.cpp
@@ -198,6 +217,16 @@ if(GLSLC)
         COMMAND powershell.exe -Command "if (-Not (Test-Path '${CMAKE_SOURCE_DIR}/shaders')) { New-Item -ItemType Directory -Path '${CMAKE_SOURCE_DIR}/shaders' }"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/pbr_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/pbr_vert.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/pbr_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/pbr_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/depth_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/depth_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/shadow_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/shadow_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/gbuffer_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/gbuffer_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/gbuffer_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/gbuffer_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/fullscreen_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/fullscreen_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/deferred_lighting.glsl -o ${CMAKE_SOURCE_DIR}/shaders/deferred_lighting.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/postprocess_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/postprocess_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/transparent_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/transparent_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/grid_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/grid_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_frag.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
     add_dependencies(RenderingEngine CompileShaders)
@@ -231,9 +260,13 @@ add_library(EngineRuntime
     Runtime/Private/Editor/Utils/EditorMath.cpp
     Runtime/Private/Editor/Utils/ImGuiHelpers.cpp
     Runtime/Private/Editor/Commands/EditorEntityCommands.cpp
+    Runtime/Private/Editor/EditorFileService.cpp
+    Runtime/Private/Editor/EditorNotificationService.cpp
+    Runtime/Private/Editor/EditorSceneService.cpp
     Runtime/Private/Editor/Panels/SceneHierarchyPanel.cpp
     Runtime/Private/Editor/Panels/InspectorPanel.cpp
     Runtime/Private/Editor/Panels/ConsolePanel.cpp
+    Runtime/Private/Editor/Panels/ImportLogPanel.cpp
     Runtime/Private/Editor/Panels/ViewportPanel.cpp
     Runtime/Private/Editor/Panels/AssetBrowserPanel.cpp
     Runtime/Private/Editor/Widgets/TransformWidget.cpp

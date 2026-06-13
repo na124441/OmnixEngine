@@ -32,6 +32,10 @@ namespace eng::runtime {
         float GetViewportScreenY() const { return m_ViewportScreenY; }
         float GetViewportWidth() const { return m_ViewportWidth; }
         float GetViewportHeight() const { return m_ViewportHeight; }
+        void SetInputDiagnostics(const char* owner, bool cursorCaptured) {
+            m_InputOwnerLabel = owner ? owner : "None";
+            m_CursorCaptured = cursorCaptured;
+        }
 
     private:
         RuntimeContext* m_Context = nullptr;
@@ -42,12 +46,14 @@ namespace eng::runtime {
         float m_GridScale = 1.0f;
         bool m_IsFocused = false;
         bool m_IsHovered = false;
-        int m_RenderMode = 1; // 0 = Scene Lights, 1 = Preview Sunny, 2 = Unlit, 3 = Wireframe
+        int m_RenderMode = 1; // 0 = Lit, 1 = Preview Lit, 2+ = debug views
         float m_ViewportScreenX = 0.0f;
         float m_ViewportScreenY = 0.0f;
         float m_ViewportWidth = 1.0f;
         float m_ViewportHeight = 1.0f;
         int m_GizmoType = 7; // ImGuizmo::TRANSLATE
+        const char* m_InputOwnerLabel = "None";
+        bool m_CursorCaptured = false;
     };
 
 } // namespace eng::runtime

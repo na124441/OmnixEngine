@@ -36,6 +36,9 @@ public:
     /** Returns a fallback 1x1 flat normal texture (cached, survives until shutdown). */
     static Texture* getFlatNormalTexture(const struct EngineResources& res);
 
+    /** Returns a fallback 1x1 black texture (cached, survives until shutdown). */
+    static Texture* getBlackTexture(const struct EngineResources& res);
+
     void destroy();
 
 private:

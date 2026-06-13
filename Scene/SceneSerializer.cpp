@@ -167,6 +167,7 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("nearPlane", object->m_CameraComponent.nearPlane, allocator);
             comp.AddMember("farPlane", object->m_CameraComponent.farPlane, allocator);
             comp.AddMember("isPrimary", object->m_CameraComponent.isPrimary, allocator);
+            comp.AddMember("exposure", object->m_CameraComponent.exposure, allocator);
 
             Value offsetVal(kObjectType);
             offsetVal.AddMember("x", object->m_CameraComponent.localOffset.x, allocator);
@@ -307,6 +308,10 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             
             comp.AddMember("intensity", object->m_DirectionalLight.intensity, allocator);
             comp.AddMember("castShadows", object->m_DirectionalLight.castShadows, allocator);
+            comp.AddMember("shadowBias", object->m_DirectionalLight.shadowBias, allocator);
+            comp.AddMember("shadowNormalBias", object->m_DirectionalLight.shadowNormalBias, allocator);
+            comp.AddMember("shadowStrength", object->m_DirectionalLight.shadowStrength, allocator);
+            comp.AddMember("shadowResolution", object->m_DirectionalLight.shadowResolution, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasPointLight) {
@@ -325,18 +330,18 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("castShadows", object->m_PointLight.castShadows, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasAmbientLight) {
+        if (object->m_HasSkyLight) {
             Value comp(kObjectType);
-            comp.AddMember("type", "AmbientLight", allocator);
-            comp.AddMember("enabled", object->m_AmbientLight.enabled, allocator);
+            comp.AddMember("type", "SkyLight", allocator);
+            comp.AddMember("enabled", object->m_SkyLight.enabled, allocator);
             
             Value colorVal(kObjectType);
-            colorVal.AddMember("x", object->m_AmbientLight.color.x, allocator);
-            colorVal.AddMember("y", object->m_AmbientLight.color.y, allocator);
-            colorVal.AddMember("z", object->m_AmbientLight.color.z, allocator);
+            colorVal.AddMember("x", object->m_SkyLight.color.x, allocator);
+            colorVal.AddMember("y", object->m_SkyLight.color.y, allocator);
+            colorVal.AddMember("z", object->m_SkyLight.color.z, allocator);
             comp.AddMember("color", colorVal, allocator);
             
-            comp.AddMember("intensity", object->m_AmbientLight.intensity, allocator);
+            comp.AddMember("intensity", object->m_SkyLight.intensity, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasSpotLight) {

@@ -27,10 +27,10 @@
  // Forward declarations to avoid including heavy headers
 namespace eng::runtime {
     class World;
-    class RenderScene;
-    class VisibleSet;
+    struct RenderScene;
+    struct VisibleSet;
     class FrameResources;
-    class FrameMetrics;
+    struct FrameMetrics;
     struct Camera;
 
     namespace framegraph {

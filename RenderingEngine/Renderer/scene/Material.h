@@ -8,18 +8,9 @@
 #include "Core/Engine/Log.h"
 #include "Core/Engine/VmaHelpers.h"
 #include "Core/Engine/ResourceTracker.h"
+#include "Rendering/Materials/MaterialAsset.h"
 
 namespace eng::renderer {
-
-/* Per‑material uniform data – can be expanded later */
-struct MaterialUBO
-{
-    glm::vec4 albedoColor = {1.0f, 1.0f, 1.0f, 1.0f};
-    float roughness = 0.5f;
-    float metallic  = 0.0f;
-    float hasAlbedoMap = 0.0f;
-    float hasNormalMap = 0.0f;
-};
 
 class Material
 {
@@ -41,6 +32,17 @@ public:
                 const std::string& normalPath,   // optional
                 EngineResources& resources);
 
+    /** Build a material using all 5 PBR texture paths and material asset parameters. */
+    bool createPBR(const std::string& vertPath,
+                   const std::string& fragPath,
+                   const MaterialAsset& asset,
+                   const std::string& albedoPath,
+                   const std::string& normalPath,
+                   const std::string& metallicRoughnessPath,
+                   const std::string& aoPath,
+                   const std::string& emissivePath,
+                   EngineResources& resources);
+
     /** Bind the pipeline **and** the material descriptor set (set = 1). */
     void bind(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout) const
     {
@@ -60,11 +62,55 @@ public:
     VkPipeline pipeline() const { return pipelineHandle; }
     void setFallbackPipeline(VkPipeline p) { pipelineHandle = p; }
 
-    /** Update the per‑material uniform buffer (e.g. roughness/metallic/albedoColor). */
-    void setAlbedoColor(const glm::vec4& color) { uboData.albedoColor = color; if(resources) updateUniform(*resources); }
-    glm::vec4 getAlbedoColor() const { return uboData.albedoColor; }
-    void setRoughness(float r) { uboData.roughness = r; if(resources) updateUniform(*resources); }
-    void setMetallic (float m) { uboData.metallic  = m; if(resources) updateUniform(*resources); }
+    // Factor Getters/Setters that sync with both assetData and uboData
+    void setAlbedoColor(const glm::vec4& color) {
+        assetData.baseColorFactor = color;
+        uboData.baseColorFactor = color;
+        if(resources) updateUniform(*resources);
+    }
+    glm::vec4 getAlbedoColor() const { return assetData.baseColorFactor; }
+
+    void setRoughness(float r) {
+        assetData.roughnessFactor = r;
+        uboData.roughnessFactor = r;
+        if(resources) updateUniform(*resources);
+    }
+    float getRoughness() const { return assetData.roughnessFactor; }
+
+    void setMetallic(float m) {
+        assetData.metallicFactor = m;
+        uboData.metallicFactor = m;
+        if(resources) updateUniform(*resources);
+    }
+    float getMetallic() const { return assetData.metallicFactor; }
+
+    void setNormalScale(float s) {
+        assetData.normalScale = s;
+        uboData.normalScale = s;
+        if(resources) updateUniform(*resources);
+    }
+    float getNormalScale() const { return assetData.normalScale; }
+
+    void setEmissiveStrength(float e) {
+        assetData.emissiveStrength = e;
+        uboData.emissiveStrength = e;
+        if(resources) updateUniform(*resources);
+    }
+    float getEmissiveStrength() const { return assetData.emissiveStrength; }
+
+    void setBlendMode(MaterialBlendMode mode) {
+        assetData.blendMode = mode;
+        uboData.blendMode = static_cast<uint32_t>(mode);
+        if(resources) updateUniform(*resources);
+    }
+    MaterialBlendMode getBlendMode() const { return assetData.blendMode; }
+
+    void setShadingModel(MaterialShadingModel model) {
+        assetData.shadingModel = model;
+        uboData.shadingModel = static_cast<uint32_t>(model);
+        if(resources) updateUniform(*resources);
+    }
+    MaterialShadingModel getShadingModel() const { return assetData.shadingModel; }
 
     void setAlbedoTexture(std::shared_ptr<Texture> tex) { 
         albedoTexture = std::move(tex); 
@@ -76,13 +122,32 @@ public:
         uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
         if(resources) updateUniform(*resources);
     }
+    void setMetallicRoughnessTexture(std::shared_ptr<Texture> tex) { 
+        metallicRoughnessTexture = std::move(tex); 
+        uboData.hasMetallicRoughnessMap = metallicRoughnessTexture ? 1.0f : 0.0f;
+        if(resources) updateUniform(*resources);
+    }
+    void setAOTexture(std::shared_ptr<Texture> tex) { 
+        aoTexture = std::move(tex); 
+        uboData.hasAOMap = aoTexture ? 1.0f : 0.0f;
+        if(resources) updateUniform(*resources);
+    }
+    void setEmissiveTexture(std::shared_ptr<Texture> tex) { 
+        emissiveTexture = std::move(tex); 
+        uboData.hasEmissiveMap = emissiveTexture ? 1.0f : 0.0f;
+        if(resources) updateUniform(*resources);
+    }
 
     void destroy();
 
     // Public for ease of access by loaders/systems
-    MaterialUBO         uboData{};
-    std::shared_ptr<Texture> albedoTexture;   // shared ownership
-    std::shared_ptr<Texture> normalTexture;   // optional
+    MaterialGPU         uboData{};
+    MaterialAsset       assetData{};
+    std::shared_ptr<Texture> albedoTexture;
+    std::shared_ptr<Texture> normalTexture;
+    std::shared_ptr<Texture> metallicRoughnessTexture;
+    std::shared_ptr<Texture> aoTexture;
+    std::shared_ptr<Texture> emissiveTexture;
     bool                dirty = true;          // flag to trigger uniform upload
 
 private:

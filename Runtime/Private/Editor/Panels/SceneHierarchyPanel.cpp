@@ -1,6 +1,8 @@
 #include "Runtime/Private/Editor/Panels/SceneHierarchyPanel.h"
 #include "Runtime/Public/Editor/EditorEntityCommands.h"
+#include "Runtime/Public/Editor/EditorSceneService.h"
 #include "Physics/Public/PhysicsWorld.h"
+#include "Core/World.h"
 #include "ECS/Coordinator.h"
 #include "ECS/ECSComponents.h"
 #include "ECS/Public/IECSWorld.h"
@@ -17,6 +19,14 @@ namespace eng::runtime {
         m_Context = context;
     }
 
+    void SceneHierarchyPanel::EnsureActiveSceneAndSync() {
+        auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+        auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+        EditorSceneService sceneService(sceneMgr, world, nullptr, nullptr, nullptr);
+        sceneService.EnsureActiveScene();
+        sceneService.SyncAfterMutation("hierarchy panel");
+    }
+
     void SceneHierarchyPanel::DrawNode(::SceneObject* obj, EditorSelection& selection, EditorDirtyState& dirtyState, const std::string& searchFilter) {
         if (!obj) return;
         
@@ -28,7 +38,7 @@ namespace eng::runtime {
         // Component Icons: [C] Camera, [L] Light, [M] Mesh, [A] Audio, [T] Trigger Volume, [P] Player Spawn
         std::string prefix = "";
         if (obj->m_HasCameraComponent) prefix += "[C]";
-        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasAmbientLight || obj->m_HasSpotLight) prefix += "[L]";
+        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasSkyLight || obj->m_HasSpotLight) prefix += "[L]";
         if (obj->m_HasRenderableMesh) prefix += "[M]";
         if (obj->m_HasAudioSource) prefix += "[A]";
         if (obj->m_HasTrigger) prefix += "[T]";
@@ -51,20 +61,18 @@ namespace eng::runtime {
         if (isRenamingThis) {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 40.0f);
             if (ImGui::InputText("##rename", renameBuffer, IM_ARRAYSIZE(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                obj->SetName(renameBuffer);
-                if (coordinator.IsEntityAlive(entity) && coordinator.GetSignature(entity).test(coordinator.GetComponentType<NameComponent>())) {
-                    coordinator.GetComponent<NameComponent>(entity).name = renameBuffer;
-                }
-                dirtyState.MarkSceneDirty();
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService sceneService(sceneMgr, world, &dirtyState, &selection, nullptr);
+                sceneService.RenameObject(entity, renameBuffer);
                 renamingEntity = 0;
             }
             ImGui::SameLine();
             if (ImGui::Button("OK")) {
-                obj->SetName(renameBuffer);
-                if (coordinator.IsEntityAlive(entity) && coordinator.GetSignature(entity).test(coordinator.GetComponentType<NameComponent>())) {
-                    coordinator.GetComponent<NameComponent>(entity).name = renameBuffer;
-                }
-                dirtyState.MarkSceneDirty();
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService sceneService(sceneMgr, world, &dirtyState, &selection, nullptr);
+                sceneService.RenameObject(entity, renameBuffer);
                 renamingEntity = 0;
             }
         } else {
@@ -82,13 +90,17 @@ namespace eng::runtime {
                     renameBuffer[sizeof(renameBuffer) - 1] = '\0';
                 }
                 if (ImGui::MenuItem("Duplicate (Ctrl+D)")) {
-                    EditorEntityCommands::Duplicate(coordinator, entity, dirtyState, selection);
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DuplicateObject(entity);
                 }
                 if (ImGui::MenuItem("Delete (Del)")) {
                     if (m_Context->physicsWorld) {
                         m_Context->physicsWorld->UnregisterEntity(entity);
                     }
-                    EditorEntityCommands::Delete(coordinator, entity, dirtyState, selection);
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DeleteObject(entity);
                 }
                 ImGui::EndPopup();
             }
@@ -131,11 +143,15 @@ namespace eng::runtime {
 
         // CRUD buttons
         if (ImGui::Button("Create Empty")) {
-            EditorEntityCommands::CreateEmpty(coordinator, dirtyState, selection);
+            auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+            auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+            EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreateEmptyObject();
         }
         ImGui::SameLine();
         if (ImGui::Button("Create Player Start")) {
-            EditorEntityCommands::CreatePlayerStart(coordinator, dirtyState, selection);
+            auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+            auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+            EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreatePlayerStart();
         }
         
         ImGui::SameLine();
@@ -147,12 +163,16 @@ namespace eng::runtime {
             if (m_Context->physicsWorld) {
                 m_Context->physicsWorld->UnregisterEntity(selectedEntity);
             }
-            EditorEntityCommands::Delete(coordinator, selectedEntity, dirtyState, selection);
+            auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+            auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+            EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DeleteObject(selectedEntity);
             hasSelection = false;
         }
         ImGui::SameLine();
         if (ImGui::Button("Duplicate")) {
-            EditorEntityCommands::Duplicate(coordinator, selectedEntity, dirtyState, selection);
+            auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+            auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+            EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DuplicateObject(selectedEntity);
         }
         if (!hasSelection) {
             ImGui::EndDisabled();
@@ -176,13 +196,17 @@ namespace eng::runtime {
                     if (m_Context->physicsWorld) {
                         m_Context->physicsWorld->UnregisterEntity(selectedEntity);
                     }
-                    EditorEntityCommands::Delete(coordinator, selectedEntity, dirtyState, selection);
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DeleteObject(selectedEntity);
                     hasSelection = false;
                 }
             }
             if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_D)) {
                 if (hasSelection) {
-                    EditorEntityCommands::Duplicate(coordinator, selectedEntity, dirtyState, selection);
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DuplicateObject(selectedEntity);
                 }
             }
         }
@@ -209,7 +233,7 @@ namespace eng::runtime {
                         
                         std::string prefix = "";
                         if (obj->m_HasCameraComponent) prefix += "[C]";
-                        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasAmbientLight || obj->m_HasSpotLight) prefix += "[L]";
+                        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasSkyLight || obj->m_HasSpotLight) prefix += "[L]";
                         if (obj->m_HasRenderableMesh) prefix += "[M]";
                         if (obj->m_HasAudioSource) prefix += "[A]";
                         if (obj->m_HasTrigger) prefix += "[T]";
@@ -231,26 +255,57 @@ namespace eng::runtime {
             ImGui::Text("No active scene");
         }
 
+        ImGui::Separator();
+        uint32_t ecsCount = m_Context->ecs ? m_Context->ecs->getCoordinator().GetLivingEntityCount() : 0;
+        size_t sceneObjectCount = activeScene ? activeScene->GetAllSceneObjects().size() : 0;
+        std::string selectedName = "None";
+        if (hasSelection && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<NameComponent>())) {
+            selectedName = coordinator.GetComponent<NameComponent>(selectedEntity).name;
+        } else if (hasSelection) {
+            selectedName = "Entity " + std::to_string(selectedEntity);
+        }
+
+        ImGui::Text("Scene: %s", activeScene ? activeScene->GetName().c_str() : "Untitled");
+        ImGui::Text("Dirty: %s", dirtyState.IsSceneDirty() ? "Yes" : "No");
+        ImGui::Text("ECS Entities: %u", ecsCount);
+        ImGui::Text("Scene Objects: %zu", sceneObjectCount);
+        ImGui::Text("Selected: %s", selectedName.c_str());
+        if (ecsCount != sceneObjectCount) {
+            ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), "WARNING: ECS / Scene graph mismatch detected.");
+        }
+
         // Context menu on empty space
         if (ImGui::BeginPopupContextWindow(nullptr, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
             if (ImGui::MenuItem("Create Empty Entity")) {
-                EditorEntityCommands::CreateEmpty(coordinator, dirtyState, selection);
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreateEmptyObject();
             }
             if (ImGui::MenuItem("Create Player Start")) {
-                EditorEntityCommands::CreatePlayerStart(coordinator, dirtyState, selection);
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreatePlayerStart();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Create Directional Light")) {
-                EditorEntityCommands::CreateDirectionalLight(coordinator, dirtyState, selection);
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreateDirectionalLight();
             }
             if (ImGui::MenuItem("Create Point Light")) {
-                EditorEntityCommands::CreatePointLight(coordinator, dirtyState, selection);
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreatePointLight();
             }
-            if (ImGui::MenuItem("Create Ambient Light")) {
-                EditorEntityCommands::CreateAmbientLight(coordinator, dirtyState, selection);
+            if (ImGui::MenuItem("Create Sky Light")) {
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreateSkyLight();
             }
             if (ImGui::MenuItem("Create Spot Light")) {
-                EditorEntityCommands::CreateSpotLight(coordinator, dirtyState, selection);
+                auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).CreateSpotLight();
             }
             ImGui::EndPopup();
         }

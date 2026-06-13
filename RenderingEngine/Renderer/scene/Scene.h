@@ -7,12 +7,12 @@
 
 namespace eng::renderer {
 
-/// A lightweight container that owns meshes & materials and
-/// provides a simple API for adding/removing objects.
-class RenderScene {
+#ifndef OMNIX_LEGACY_RENDER_SCENE_CLASS
+#define OMNIX_LEGACY_RENDER_SCENE_CLASS
+class RenderSceneCache {
 public:
-    RenderScene() = default;
-    ~RenderScene() = default;
+    RenderSceneCache() = default;
+    ~RenderSceneCache() = default;
 
     // -----------------------------------------------------------------
     // Mesh management
@@ -22,6 +22,7 @@ public:
         return meshes.back().get();
     }
     Mesh* createMeshFromOBJ(const std::string& path, EngineResources& resources);
+    Mesh* createMeshFromOmnixMesh(const std::string& path, EngineResources& resources);
     void destroyMesh(Mesh* m)
     {
         auto it = std::find_if(meshes.begin(), meshes.end(),
@@ -71,5 +72,6 @@ private:
     std::vector<std::unique_ptr<Material>>materials;
     std::vector<RenderObject>               objects;
 };
+#endif
 
 } // namespace eng::renderer

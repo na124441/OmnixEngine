@@ -7,8 +7,8 @@
 #include "ECS/Public/IECSWorld.h"
 #include "ThirdParty/imgui/imgui.h"
 #include "Runtime/Public/AssetRegistry.h"
+#include "Rendering/Core/Renderer.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
-#include "RenderingEngine/Renderer/SceneRenderer.h"
 #include "RenderingEngine/Renderer/scene/Mesh.h"
 
 namespace eng::runtime {
@@ -295,7 +295,7 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<MaterialComponent>())) {
                 if (ImGui::CollapsingHeader("Material Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& comp = coordinator.GetComponent<MaterialComponent>(selectedEntity);
-                    ComponentWidgets::DrawMaterial(comp, *m_Context->assetRegistry, dirtyState);
+                    ComponentWidgets::DrawMaterial(comp, *m_Context->assetRegistry, dirtyState, m_Context);
                     ImGui::Spacing();
                     if (ImGui::Button("Remove Material Component")) {
                         coordinator.RemoveComponent<MaterialComponent>(selectedEntity);
@@ -647,14 +647,14 @@ namespace eng::runtime {
                 ImGui::Separator();
             }
 
-            // Ambient Light Component
-            if (sig.test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                if (ImGui::CollapsingHeader("Ambient Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    auto& comp = coordinator.GetComponent<AmbientLightComponent>(selectedEntity);
-                    ComponentWidgets::DrawAmbientLight(comp, dirtyState);
+            // Sky Light Component
+            if (sig.test(coordinator.GetComponentType<SkyLightComponent>())) {
+                if (ImGui::CollapsingHeader("Sky Light Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    auto& comp = coordinator.GetComponent<SkyLightComponent>(selectedEntity);
+                    ComponentWidgets::DrawSkyLight(comp, dirtyState);
                     ImGui::Spacing();
-                    if (ImGui::Button("Remove Ambient Light Component")) {
-                        coordinator.RemoveComponent<AmbientLightComponent>(selectedEntity);
+                    if (ImGui::Button("Remove Sky Light Component")) {
+                        coordinator.RemoveComponent<SkyLightComponent>(selectedEntity);
                         dirtyState.MarkSceneDirty();
                     }
                 }
@@ -840,9 +840,9 @@ namespace eng::runtime {
                         dirtyState.MarkSceneDirty();
                     }
                 }
-                if (!sig.test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                    if (ImGui::MenuItem("AmbientLight Component")) {
-                        coordinator.AddComponent<AmbientLightComponent>(selectedEntity, AmbientLightComponent());
+                if (!sig.test(coordinator.GetComponentType<SkyLightComponent>())) {
+                    if (ImGui::MenuItem("SkyLight Component")) {
+                        coordinator.AddComponent<SkyLightComponent>(selectedEntity, SkyLightComponent());
                         dirtyState.MarkSceneDirty();
                     }
                 }

@@ -88,7 +88,19 @@ namespace eng::physics {
         }
     }
 
-    void PhysicsDebugDraw::Render(Coordinator& coordinator, const glm::mat4& view, const glm::mat4& proj, float screenWidth, float screenHeight, float viewportOffsetX, float viewportOffsetY) {
+    void PhysicsDebugDraw::Render(
+        Coordinator& coordinator,
+        const glm::mat4& view,
+        const glm::mat4& proj,
+        float screenWidth,
+        float screenHeight,
+        float viewportOffsetX,
+        float viewportOffsetY,
+        Entity selectedEntity,
+        bool showColliders,
+        bool showLights,
+        bool showBounds
+    ) {
         s_ViewportOffsetX = viewportOffsetX;
         s_ViewportOffsetY = viewportOffsetY;
         ImDrawList* drawList = ImGui::GetForegroundDrawList();
@@ -109,7 +121,7 @@ namespace eng::physics {
             glm::mat4 entityTransform = ToGlmMatrix(trs);
 
             // 1. Box Collider
-            if (signature.test(coordinator.GetComponentType<BoxColliderComponent>())) {
+            if (showColliders && signature.test(coordinator.GetComponentType<BoxColliderComponent>())) {
                 const auto& box = coordinator.GetComponent<BoxColliderComponent>(entity);
                 if (box.debugDraw) {
                     ImU32 color = box.isTrigger ? triggerColor : colliderColor;
@@ -144,7 +156,7 @@ namespace eng::physics {
             }
 
             // 2. Sphere Collider
-            if (signature.test(coordinator.GetComponentType<SphereColliderComponent>())) {
+            if (showColliders && signature.test(coordinator.GetComponentType<SphereColliderComponent>())) {
                 const auto& sphere = coordinator.GetComponent<SphereColliderComponent>(entity);
                 if (sphere.debugDraw) {
                     ImU32 color = sphere.isTrigger ? triggerColor : colliderColor;
@@ -158,7 +170,7 @@ namespace eng::physics {
             }
 
             // 3. Capsule Collider
-            if (signature.test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
+            if (showColliders && signature.test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
                 const auto& capsule = coordinator.GetComponent<CapsuleColliderComponent>(entity);
                 if (capsule.debugDraw) {
                     ImU32 color = capsule.isTrigger ? triggerColor : colliderColor;
@@ -210,7 +222,7 @@ namespace eng::physics {
             }
 
             // 4. Trigger Volumes
-            if (signature.test(coordinator.GetComponentType<TriggerComponent>())) {
+            if (showColliders && signature.test(coordinator.GetComponentType<TriggerComponent>())) {
                 const auto& trigger = coordinator.GetComponent<TriggerComponent>(entity);
                 if (trigger.enabled) {
                     ImU32 color = IM_COL32(255, 255, 0, 255); // Yellow default
@@ -303,72 +315,99 @@ namespace eng::physics {
             }
 
             // 5. Directional Light Debug Visuals
-            if (signature.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
+            if (showLights && signature.test(coordinator.GetComponentType<DirectionalLightComponent>())) {
                 const auto& dirLight = coordinator.GetComponent<DirectionalLightComponent>(entity);
                 if (dirLight.enabled) {
                     ImU32 color = IM_COL32(255, 255, 0, 255); // Yellow
-                    glm::vec3 start = glm::vec3(0.0f);
-                    glm::vec3 end = glm::vec3(0.0f, 0.0f, -2.0f);
-                    bool behindStart = false, behindEnd = false;
-                    glm::vec2 pStart = ProjectPoint(start, entityTransform, view, proj, screenWidth, screenHeight, behindStart);
-                    glm::vec2 pEnd = ProjectPoint(end, entityTransform, view, proj, screenWidth, screenHeight, behindEnd);
-                    if (!behindStart && !behindEnd) {
-                        drawList->AddLine(ImVec2(pStart.x, pStart.y), ImVec2(pEnd.x, pEnd.y), color, 2.0f);
-                        drawList->AddCircle(ImVec2(pStart.x, pStart.y), 4.0f, color, 12, 2.0f);
+                    bool drawBounds = (entity == selectedEntity) || showBounds;
+                    if (drawBounds) {
+                        glm::vec3 start = glm::vec3(0.0f);
+                        glm::vec3 end = glm::vec3(0.0f, 0.0f, -2.0f);
+                        bool behindStart = false, behindEnd = false;
+                        glm::vec2 pStart = ProjectPoint(start, entityTransform, view, proj, screenWidth, screenHeight, behindStart);
+                        glm::vec2 pEnd = ProjectPoint(end, entityTransform, view, proj, screenWidth, screenHeight, behindEnd);
+                        if (!behindStart && !behindEnd) {
+                            drawList->AddLine(ImVec2(pStart.x, pStart.y), ImVec2(pEnd.x, pEnd.y), color, 2.0f);
+                        }
+                    }
+                    bool behindStart = false;
+                    glm::vec2 pStart = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behindStart);
+                    if (!behindStart) {
+                        drawList->AddCircle(ImVec2(pStart.x, pStart.y), 6.0f, color, 8, 2.0f);
+                        drawList->AddText(ImVec2(pStart.x + 10.0f, pStart.y - 10.0f), color, "[Directional Light]");
                     }
                 }
             }
 
             // 6. Point Light Debug Visuals
-            if (signature.test(coordinator.GetComponentType<PointLightComponent>())) {
+            if (showLights && signature.test(coordinator.GetComponentType<PointLightComponent>())) {
                 const auto& ptLight = coordinator.GetComponent<PointLightComponent>(entity);
                 if (ptLight.enabled) {
                     ImU32 color = IM_COL32(255, 128, 0, 255); // Orange
-                    float r = ptLight.radius;
-                    DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,1,0), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XY
-                    DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XZ
-                    DrawCircle(glm::vec3(0.0f), glm::vec3(0,1,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // YZ
+                    bool drawBounds = (entity == selectedEntity) || showBounds;
+                    if (drawBounds) {
+                        float r = ptLight.radius;
+                        DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,1,0), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XY
+                        DrawCircle(glm::vec3(0.0f), glm::vec3(1,0,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // XZ
+                        DrawCircle(glm::vec3(0.0f), glm::vec3(0,1,0), glm::vec3(0,0,1), r, entityTransform, view, proj, screenWidth, screenHeight, drawList, color); // YZ
+                    }
+                    bool behind = false;
+                    glm::vec2 pCenter = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behind);
+                    if (!behind) {
+                        drawList->AddCircle(ImVec2(pCenter.x, pCenter.y), 6.0f, color, 8, 2.0f);
+                        drawList->AddText(ImVec2(pCenter.x + 10.0f, pCenter.y - 10.0f), color, "[Point Light]");
+                    }
                 }
             }
 
-            // 7. Ambient Light Debug Visuals
-            if (signature.test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                const auto& ambLight = coordinator.GetComponent<AmbientLightComponent>(entity);
-                if (ambLight.enabled) {
+            // 7. Sky Light Debug Visuals
+            if (showLights && signature.test(coordinator.GetComponentType<SkyLightComponent>())) {
+                const auto& skyLight = coordinator.GetComponent<SkyLightComponent>(entity);
+                if (skyLight.enabled) {
                     ImU32 color = IM_COL32(0, 128, 255, 255); // Blue
                     bool behind = false;
                     glm::vec2 pCenter = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behind);
                     if (!behind) {
-                        drawList->AddCircle(ImVec2(pCenter.x, pCenter.y), 8.0f, color, 12, 2.0f);
+                        drawList->AddCircle(ImVec2(pCenter.x, pCenter.y), 6.0f, color, 8, 2.0f);
+                        drawList->AddText(ImVec2(pCenter.x + 10.0f, pCenter.y - 10.0f), color, "[Sky Light]");
                     }
                 }
             }
 
             // 8. Spot Light Debug Visuals
-            if (signature.test(coordinator.GetComponentType<SpotLightComponent>())) {
+            if (showLights && signature.test(coordinator.GetComponentType<SpotLightComponent>())) {
                 const auto& spotLight = coordinator.GetComponent<SpotLightComponent>(entity);
                 if (spotLight.enabled) {
                     ImU32 color = IM_COL32(255, 255, 255, 255); // White
-                    float r = spotLight.range;
-                    float angleRad = glm::radians(spotLight.outerConeAngle);
-                    float baseRadius = r * tanf(angleRad);
-                    glm::vec3 tip = glm::vec3(0.0f);
-                    glm::vec3 baseCenter = glm::vec3(0.0f, 0.0f, -r);
-                    DrawCircle(baseCenter, glm::vec3(1,0,0), glm::vec3(0,1,0), baseRadius, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
-                    
-                    glm::vec3 directions[4] = {
-                        glm::vec3(baseRadius, 0.0f, -r),
-                        glm::vec3(-baseRadius, 0.0f, -r),
-                        glm::vec3(0.0f, baseRadius, -r),
-                        glm::vec3(0.0f, -baseRadius, -r)
-                    };
-                    for (int i = 0; i < 4; ++i) {
-                        bool behindTip = false, behindBase = false;
-                        glm::vec2 pTip = ProjectPoint(tip, entityTransform, view, proj, screenWidth, screenHeight, behindTip);
-                        glm::vec2 pBase = ProjectPoint(directions[i], entityTransform, view, proj, screenWidth, screenHeight, behindBase);
-                        if (!behindTip && !behindBase) {
-                            drawList->AddLine(ImVec2(pTip.x, pTip.y), ImVec2(pBase.x, pBase.y), color, 2.0f);
+                    bool drawBounds = (entity == selectedEntity) || showBounds;
+                    if (drawBounds) {
+                        float r = spotLight.range;
+                        float angleRad = glm::radians(spotLight.outerConeAngle);
+                        float baseRadius = r * tanf(angleRad);
+                        glm::vec3 tip = glm::vec3(0.0f);
+                        glm::vec3 baseCenter = glm::vec3(0.0f, 0.0f, -r);
+                        DrawCircle(baseCenter, glm::vec3(1,0,0), glm::vec3(0,1,0), baseRadius, entityTransform, view, proj, screenWidth, screenHeight, drawList, color);
+                        
+                        glm::vec3 directions[4] = {
+                            glm::vec3(baseRadius, 0.0f, -r),
+                            glm::vec3(-baseRadius, 0.0f, -r),
+                            glm::vec3(0.0f, baseRadius, -r),
+                            glm::vec3(0.0f, -baseRadius, -r)
+                        };
+                        for (int i = 0; i < 4; ++i) {
+                            bool behindTip = false, behindBase = false;
+                            glm::vec2 pTip = ProjectPoint(tip, entityTransform, view, proj, screenWidth, screenHeight, behindTip);
+                            glm::vec2 pBase = ProjectPoint(directions[i], entityTransform, view, proj, screenWidth, screenHeight, behindBase);
+                            if (!behindTip && !behindBase) {
+                                drawList->AddLine(ImVec2(pTip.x, pTip.y), ImVec2(pBase.x, pBase.y), color, 2.0f);
+                            }
                         }
+                    }
+                    bool behindTip = false;
+                    glm::vec2 pTip = ProjectPoint(glm::vec3(0.0f), entityTransform, view, proj, screenWidth, screenHeight, behindTip);
+                    if (!behindTip) {
+                        drawList->AddCircle(ImVec2(pTip.x, pTip.y), 6.0f, color, 8, 2.0f);
+                        drawList->AddText(ImVec2(pTip.x + 10.0f, pTip.y - 10.0f), color, "[Spot Light]");
                     }
                 }
             }

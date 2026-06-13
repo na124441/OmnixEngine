@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <glm/glm.hpp>
 
 #pragma pack(push, 1)
 
@@ -83,6 +84,17 @@ struct OmnixMaterial
     // These take priority over the texture binding AssetHandles in the renderer.
     std::string albedoTexturePath;  // e.g. "Assets/Textures/brick.png"
     std::string normalTexturePath;  // optional
+    std::string metallicRoughnessTexturePath;
+    std::string aoTexturePath;
+    std::string emissiveTexturePath;
+
+    glm::vec4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
+    float metallicFactor = 1.0f;
+    float roughnessFactor = 1.0f;
+    float normalScale = 1.0f;
+    float emissiveStrength = 1.0f;
+    uint32_t blendMode = 0; // 0=Opaque, 1=Mask, 2=Blend
+    uint32_t shadingModel = 0; // 0=Lit, 1=Unlit
 };
 
 inline bool SerializeMaterial(const OmnixMaterial& mat, const std::string& filepath) {
@@ -109,9 +121,24 @@ inline bool SerializeMaterial(const OmnixMaterial& mat, const std::string& filep
     // Vectors
     writer.WriteBytes(reinterpret_cast<const uint8_t*>(mat.vectors.data()), mat.vectors.size() * sizeof(MaterialVectorParameter));
 
-    // Texture paths (plain strings, appended after the binary blobs)
+    // Texture paths
     writer.WriteString(mat.albedoTexturePath);
     writer.WriteString(mat.normalTexturePath);
+    writer.WriteString(mat.metallicRoughnessTexturePath);
+    writer.WriteString(mat.aoTexturePath);
+    writer.WriteString(mat.emissiveTexturePath);
+
+    // Factors & settings
+    writer.WriteFloat(mat.baseColorFactor.x);
+    writer.WriteFloat(mat.baseColorFactor.y);
+    writer.WriteFloat(mat.baseColorFactor.z);
+    writer.WriteFloat(mat.baseColorFactor.w);
+    writer.WriteFloat(mat.metallicFactor);
+    writer.WriteFloat(mat.roughnessFactor);
+    writer.WriteFloat(mat.normalScale);
+    writer.WriteFloat(mat.emissiveStrength);
+    writer.WriteU32(mat.blendMode);
+    writer.WriteU32(mat.shadingModel);
 
     return writer.SaveToFile(filepath);
 }
@@ -156,9 +183,72 @@ inline bool DeserializeMaterial(OmnixMaterial& mat, const std::string& filepath)
             reader.ReadBytes(reinterpret_cast<uint8_t*>(mat.vectors.data()), mat.header.vectorParameterCount * sizeof(MaterialVectorParameter));
         }
 
-        // Texture paths (may be absent in older files — read safely)
+        // Texture paths (safely bounds-checked)
         mat.albedoTexturePath = reader.ReadString();
         mat.normalTexturePath = reader.ReadString();
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.metallicRoughnessTexturePath = reader.ReadString();
+        } else {
+            mat.metallicRoughnessTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.aoTexturePath = reader.ReadString();
+        } else {
+            mat.aoTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.emissiveTexturePath = reader.ReadString();
+        } else {
+            mat.emissiveTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.baseColorFactor.x = reader.ReadFloat();
+            mat.baseColorFactor.y = reader.ReadFloat();
+            mat.baseColorFactor.z = reader.ReadFloat();
+            mat.baseColorFactor.w = reader.ReadFloat();
+        } else {
+            mat.baseColorFactor = glm::vec4(1.0f);
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.metallicFactor = reader.ReadFloat();
+        } else {
+            mat.metallicFactor = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.roughnessFactor = reader.ReadFloat();
+        } else {
+            mat.roughnessFactor = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.normalScale = reader.ReadFloat();
+        } else {
+            mat.normalScale = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.emissiveStrength = reader.ReadFloat();
+        } else {
+            mat.emissiveStrength = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.blendMode = reader.ReadU32();
+        } else {
+            mat.blendMode = 0;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.shadingModel = reader.ReadU32();
+        } else {
+            mat.shadingModel = 0;
+        }
 
     } catch (const std::exception&) {
         return false;
@@ -207,9 +297,72 @@ inline bool DeserializeMaterialFromMemory(OmnixMaterial& mat, const uint8_t* dat
             reader.ReadBytes(reinterpret_cast<uint8_t*>(mat.vectors.data()), mat.header.vectorParameterCount * sizeof(MaterialVectorParameter));
         }
 
-        // Texture paths (may be absent in older files — read safely)
+        // Texture paths (safely bounds-checked)
         mat.albedoTexturePath = reader.ReadString();
         mat.normalTexturePath = reader.ReadString();
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.metallicRoughnessTexturePath = reader.ReadString();
+        } else {
+            mat.metallicRoughnessTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.aoTexturePath = reader.ReadString();
+        } else {
+            mat.aoTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.emissiveTexturePath = reader.ReadString();
+        } else {
+            mat.emissiveTexturePath = "";
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.baseColorFactor.x = reader.ReadFloat();
+            mat.baseColorFactor.y = reader.ReadFloat();
+            mat.baseColorFactor.z = reader.ReadFloat();
+            mat.baseColorFactor.w = reader.ReadFloat();
+        } else {
+            mat.baseColorFactor = glm::vec4(1.0f);
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.metallicFactor = reader.ReadFloat();
+        } else {
+            mat.metallicFactor = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.roughnessFactor = reader.ReadFloat();
+        } else {
+            mat.roughnessFactor = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.normalScale = reader.ReadFloat();
+        } else {
+            mat.normalScale = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.emissiveStrength = reader.ReadFloat();
+        } else {
+            mat.emissiveStrength = 1.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.blendMode = reader.ReadU32();
+        } else {
+            mat.blendMode = 0;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.shadingModel = reader.ReadU32();
+        } else {
+            mat.shadingModel = 0;
+        }
 
     } catch (const std::exception&) {
         return false;

@@ -26,9 +26,11 @@
 #endif
 
 #include <windows.h>
+#include <shellapi.h>
 #include <string>
 #include <cstdint>
 #include "platform/window/Window.h"
+#include "Runtime/Public/Editor/AssetImportService.h"
 #include "core/types/Result.h"
 #include "core/log/Log.h"
 
@@ -414,6 +416,7 @@ namespace eng::platform {
         // Associate this window instance with the HWND for message routing
         SetWindowLongPtr(m_hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         detail::SetCurrentWindow(this);
+        DragAcceptFiles(m_hWnd, TRUE);
 
         return true;
     }
@@ -487,6 +490,31 @@ namespace eng::platform {
             case WM_CLOSE:
                 window->m_ShouldClose = true;
                 return 0;
+
+            case WM_DROPFILES: {
+                HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+                UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+                for (UINT i = 0; i < fileCount; ++i) {
+                    UINT len = DragQueryFileW(hDrop, i, nullptr, 0);
+                    if (len > 0) {
+                        std::wstring widePath(len + 1, L'\0');
+                        DragQueryFileW(hDrop, i, &widePath[0], len + 1);
+                        
+                        // Convert wide string to UTF-8
+                        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, widePath.c_str(), -1, nullptr, 0, nullptr, nullptr);
+                        if (utf8Len > 0) {
+                            std::string utf8Path(utf8Len, '\0');
+                            WideCharToMultiByte(CP_UTF8, 0, widePath.c_str(), -1, &utf8Path[0], utf8Len, nullptr, nullptr);
+                            if (!utf8Path.empty() && utf8Path.back() == '\0') {
+                                utf8Path.pop_back();
+                            }
+                            eng::runtime::AssetImportService::AddDroppedFile(utf8Path);
+                        }
+                    }
+                }
+                DragFinish(hDrop);
+                return 0;
+            }
 
             case WM_DESTROY:
                 PostQuitMessage(0);

@@ -63,7 +63,7 @@ namespace eng::runtime {
             // Start drag only when the viewport is hovered, but keep it alive
             // as long as the mouse button stays down (allows looking around even
             // if the cursor briefly leaves the viewport bounds).
-            if (isViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            if (isViewportHovered && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
                 m_IsDraggingRMB = true;
             }
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {

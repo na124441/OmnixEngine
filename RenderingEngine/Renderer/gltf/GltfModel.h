@@ -37,7 +37,7 @@ public:
      */
     bool load(const std::string& filename,
               EngineResources& resources,
-              RenderScene& scene);
+              RenderSceneCache& scene);
 
 private:
     // Load a single GLTF image (by its index) into a Texture.

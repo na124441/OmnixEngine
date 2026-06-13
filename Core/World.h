@@ -64,7 +64,7 @@ public:
         m_coordinator.RegisterComponent<InteractableComponent>();
         m_coordinator.RegisterComponent<DirectionalLightComponent>();
         m_coordinator.RegisterComponent<PointLightComponent>();
-        m_coordinator.RegisterComponent<AmbientLightComponent>();
+        m_coordinator.RegisterComponent<SkyLightComponent>();
         m_coordinator.RegisterComponent<SpotLightComponent>();
         m_coordinator.RegisterComponent<PlayerStateComponent>();
         m_coordinator.RegisterComponent<PlayerTagComponent>();

@@ -259,8 +259,8 @@ public:
     bool m_HasPointLight = false;
     PointLightComponent m_PointLight;
 
-    bool m_HasAmbientLight = false;
-    AmbientLightComponent m_AmbientLight;
+    bool m_HasSkyLight = false;
+    SkyLightComponent m_SkyLight;
 
     bool m_HasSpotLight = false;
     SpotLightComponent m_SpotLight;
@@ -325,8 +325,8 @@ public:
     void SetPointLight(const PointLightComponent& comp) { m_PointLight = comp; m_HasPointLight = true; }
     void ClearPointLight() { m_HasPointLight = false; }
 
-    void SetAmbientLight(const AmbientLightComponent& comp) { m_AmbientLight = comp; m_HasAmbientLight = true; }
-    void ClearAmbientLight() { m_HasAmbientLight = false; }
+    void SetSkyLight(const SkyLightComponent& comp) { m_SkyLight = comp; m_HasSkyLight = true; }
+    void ClearSkyLight() { m_HasSkyLight = false; }
 
     void SetSpotLight(const SpotLightComponent& comp) { m_SpotLight = comp; m_HasSpotLight = true; }
     void ClearSpotLight() { m_HasSpotLight = false; }

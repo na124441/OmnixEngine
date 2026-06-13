@@ -8,6 +8,7 @@
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/backends/imgui_impl_vulkan.h"
 #include <fstream>
+#include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -77,8 +78,8 @@ void SceneRenderer::init()
     m_DefaultMesh->init(vertices.data(), vertices.size(), indices.data(), indices.size(), resources);
 
     m_DefaultMaterial = scene.createMaterial();
-    bool ok = m_DefaultMaterial->create("shaders/pbr_vert.spv", 
-                                        "shaders/pbr_frag.spv", 
+    bool ok = m_DefaultMaterial->create("shaders/gbuffer_vert.spv", 
+                                        "shaders/gbuffer_frag.spv", 
                                         "textures/brick_albedo.png", 
                                         "textures/brick_normal.png", 
                                         resources);
@@ -573,14 +574,19 @@ void SceneRenderer::buildRenderQueue()
                                 if (m_AssetRegistry) {
                                     const auto* meta = m_AssetRegistry->GetMetadata(rm.meshAssetHandle);
                                     if (meta && meta->type == AssetType::Mesh) {
-                                        Mesh* loadedMesh = scene.createMeshFromOBJ(meta->sourcePath, resources);
+                                        Mesh* loadedMesh = nullptr;
+                                        if (!meta->importedPath.empty() && std::filesystem::exists(meta->importedPath)) {
+                                            loadedMesh = scene.createMeshFromOmnixMesh(meta->importedPath, resources);
+                                        } else {
+                                            loadedMesh = scene.createMeshFromOBJ(meta->sourcePath, resources);
+                                        }
                                         if (loadedMesh) {
                                             m_EcsMeshCache[handleVal] = loadedMesh;
                                             item.mesh = loadedMesh;
                                             m_EcsAssignedMeshCount++;
                                         } else {
                                             m_EcsWarningHandles.insert(handleVal);
-                                            ::Logger::Log(::LogLevel::Warn, "[SceneRenderer] Failed to load mesh asset from path: " + meta->sourcePath + " (falling back to default)");
+                                            ::Logger::Log(::LogLevel::Warn, "[SceneRenderer] Failed to load mesh asset from path: " + (meta->importedPath.empty() ? meta->sourcePath : meta->importedPath) + " (falling back to default)");
                                             m_EcsFallbackMeshCount++;
                                         }
                                     } else {
@@ -627,8 +633,8 @@ void SceneRenderer::buildRenderQueue()
                                         }
 
                                         Material* loadedMat = scene.createMaterial();
-                                        bool ok = loadedMat->create("shaders/pbr_vert.spv", 
-                                                                    "shaders/pbr_frag.spv", 
+                                        bool ok = loadedMat->create("shaders/gbuffer_vert.spv", 
+                                                                    "shaders/gbuffer_frag.spv", 
                                                                     albedoPath, 
                                                                     normalPath, 
                                                                     resources);
@@ -676,7 +682,12 @@ void SceneRenderer::loadModel(const std::string& path)
         return;
     }
 
-    Mesh* m = scene.createMeshFromOBJ(path, resources);
+    Mesh* m = nullptr;
+    if (path.find(".omnixmesh") != std::string::npos) {
+        m = scene.createMeshFromOmnixMesh(path, resources);
+    } else {
+        m = scene.createMeshFromOBJ(path, resources);
+    }
     if (m) {
         glm::vec3 size = m->maxBounds - m->minBounds;
         float maxDim = std::max({size.x, size.y, size.z});
@@ -688,8 +699,8 @@ void SceneRenderer::loadModel(const std::string& path)
         transform = glm::translate(transform, -center);
 
         Material* mat = scene.createMaterial();
-        bool ok = mat->create("shaders/pbr_vert.spv", 
-                              "shaders/pbr_frag.spv", 
+        bool ok = mat->create("shaders/gbuffer_vert.spv", 
+                              "shaders/gbuffer_frag.spv", 
                               "textures/brick_albedo.png", 
                               "textures/brick_normal.png", 
                               resources);
@@ -744,7 +755,7 @@ void SceneRenderer::updateLightingUBO()
             auto sig = coordinator.GetSignature(ent);
             if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>()) ||
                 sig.test(coordinator.GetComponentType<PointLightComponent>()) ||
-                sig.test(coordinator.GetComponentType<AmbientLightComponent>()) ||
+                sig.test(coordinator.GetComponentType<SkyLightComponent>()) ||
                 sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
                 sceneHasLights = true;
                 break;
@@ -762,8 +773,8 @@ void SceneRenderer::updateLightingUBO()
             uboData.directionalDirectionIntensity = glm::vec4(lightData.directionalLight.direction, lightData.directionalLight.intensity);
             uboData.directionalColor = glm::vec4(lightData.directionalLight.color, 1.0f);
             
-            // Map ambient light
-            uboData.ambientColorIntensity = glm::vec4(lightData.ambientLight.color, lightData.ambientLight.intensity);
+            // Map sky light
+            uboData.ambientColorIntensity = glm::vec4(lightData.skyLight.color, lightData.skyLight.intensity);
             
             // Map point lights
             uboData.pointLightCount = static_cast<uint32_t>(lightData.pointLights.size());
@@ -771,6 +782,16 @@ void SceneRenderer::updateLightingUBO()
                 const auto& pt = lightData.pointLights[i];
                 uboData.pointPositionsRadius[i] = glm::vec4(pt.position, pt.radius);
                 uboData.pointColorsIntensity[i] = glm::vec4(pt.color, pt.intensity);
+            }
+
+            // Map spot lights
+            uboData.spotLightCount = static_cast<uint32_t>(lightData.spotLights.size());
+            for (uint32_t i = 0; i < uboData.spotLightCount && i < 16; ++i) {
+                const auto& sl = lightData.spotLights[i];
+                uboData.spotPositionsRange[i] = glm::vec4(sl.position, sl.range);
+                uboData.spotDirectionsIntensity[i] = glm::vec4(sl.direction, sl.intensity);
+                uboData.spotColors[i] = glm::vec4(sl.color, std::cos(glm::radians(sl.innerConeAngle)));
+                uboData.spotAngles[i] = glm::vec4(std::cos(glm::radians(sl.outerConeAngle)), 0.0f, 0.0f, 0.0f);
             }
         }
     }

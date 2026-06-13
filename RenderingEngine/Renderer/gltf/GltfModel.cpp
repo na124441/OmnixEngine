@@ -176,13 +176,13 @@ std::unique_ptr<Material> GltfModel::createMaterial(const tinygltf::Material& gl
         mat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
     }
 
-    mat->uboData.metallic  = static_cast<float>(gltfMat.pbrMetallicRoughness.metallicFactor);
-    mat->uboData.roughness = static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor);
+    mat->setMetallic(static_cast<float>(gltfMat.pbrMetallicRoughness.metallicFactor));
+    mat->setRoughness(static_cast<float>(gltfMat.pbrMetallicRoughness.roughnessFactor));
     mat->dirty = true;
 
     // Create the graphics pipeline
-    bool ok = mat->create("shaders/pbr_vert.spv",
-                         "shaders/pbr_frag.spv",
+    bool ok = mat->create("shaders/gbuffer_vert.spv",
+                         "shaders/gbuffer_frag.spv",
                          "", "",
                          resources);
     if (!ok) {
@@ -195,7 +195,7 @@ std::unique_ptr<Material> GltfModel::createMaterial(const tinygltf::Material& gl
 // ---------------------------------------------------------------------
 bool GltfModel::load(const std::string& filename,
                      EngineResources& resources,
-                     RenderScene& scene)
+                     RenderSceneCache& scene)
 {
     tinygltf::Model   model;
     tinygltf::TinyGLTF loader;
@@ -264,11 +264,11 @@ bool GltfModel::load(const std::string& filename,
                     defaultMat = scene.createMaterial();
                     defaultMat->albedoTexture = std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
                     defaultMat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
-                    defaultMat->uboData.metallic  = 0.0f;
-                    defaultMat->uboData.roughness = 0.5f;
+                    defaultMat->setMetallic(0.0f);
+                    defaultMat->setRoughness(0.5f);
                     defaultMat->dirty = true;
-                    defaultMat->create("shaders/pbr_vert.spv",
-                                      "shaders/pbr_frag.spv",
+                    defaultMat->create("shaders/gbuffer_vert.spv",
+                                      "shaders/gbuffer_frag.spv",
                                       "", "",
                                       resources);
                 }

@@ -182,10 +182,10 @@ namespace eng::runtime {
             coordinator.AddComponent<PointLightComponent>(duplicate, srcComp);
         }
 
-        // Copy AmbientLight
-        if (srcSignature.test(coordinator.GetComponentType<AmbientLightComponent>())) {
-            const auto& srcComp = coordinator.GetComponent<AmbientLightComponent>(source);
-            coordinator.AddComponent<AmbientLightComponent>(duplicate, srcComp);
+        // Copy SkyLight
+        if (srcSignature.test(coordinator.GetComponentType<SkyLightComponent>())) {
+            const auto& srcComp = coordinator.GetComponent<SkyLightComponent>(source);
+            coordinator.AddComponent<SkyLightComponent>(duplicate, srcComp);
         }
 
         // Copy SpotLight
@@ -221,11 +221,11 @@ namespace eng::runtime {
         return newEntity;
     }
 
-    Entity EditorEntityCommands::CreateAmbientLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
+    Entity EditorEntityCommands::CreateSkyLight(Coordinator& coordinator, EditorDirtyState& dirtyState, EditorSelection& selection) {
         Entity newEntity = coordinator.CreateEntity();
-        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Ambient Light"));
+        coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Sky Light"));
         coordinator.AddComponent<TransformComponent>(newEntity, TransformComponent());
-        coordinator.AddComponent<AmbientLightComponent>(newEntity, AmbientLightComponent());
+        coordinator.AddComponent<SkyLightComponent>(newEntity, SkyLightComponent());
         
         dirtyState.MarkSceneDirty();
         selection.Select(newEntity);

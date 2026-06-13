@@ -28,16 +28,28 @@ namespace eng::runtime {
         bool enabled;
     };
 
-    struct RuntimeAmbientLight {
+    struct RuntimeSkyLight {
         glm::vec3 color;
         float intensity;
         bool enabled;
     };
 
+    struct RuntimeSpotLight {
+        glm::vec3 position;
+        float range;
+        glm::vec3 direction;
+        float intensity;
+        glm::vec3 color;
+        float innerConeAngle;
+        float outerConeAngle;
+        bool enabled;
+    };
+
     struct SceneLightData {
         RuntimeDirectionalLight directionalLight;
-        RuntimeAmbientLight ambientLight;
+        RuntimeSkyLight skyLight;
         std::vector<RuntimePointLight> pointLights;
+        std::vector<RuntimeSpotLight> spotLights;
     };
 
     class LightCollectionSystem : public System {
@@ -51,9 +63,9 @@ namespace eng::runtime {
             data.directionalLight.intensity = 1.0f;
             data.directionalLight.direction = glm::vec3(0.0f, -1.0f, 0.0f);
             
-            data.ambientLight.enabled = false;
-            data.ambientLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
-            data.ambientLight.intensity = 0.2f;
+            data.skyLight.enabled = false;
+            data.skyLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
+            data.skyLight.intensity = 0.2f;
 
             // 1. Process directional lights
             for (Entity entity : m_Entities) {
@@ -81,23 +93,23 @@ namespace eng::runtime {
                 data.directionalLight.enabled = true;
             }
 
-            // 2. Process ambient lights
+            // 2. Process sky lights
             for (Entity entity : m_Entities) {
                 if (!coordinator.IsEntityAlive(entity)) continue;
                 auto signature = coordinator.GetSignature(entity);
-                if (signature.test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                    const auto& ambComp = coordinator.GetComponent<AmbientLightComponent>(entity);
-                    if (ambComp.enabled) {
-                        data.ambientLight.enabled = true;
-                        data.ambientLight.color = glm::vec3(ambComp.color.x, ambComp.color.y, ambComp.color.z);
-                        data.ambientLight.intensity = ambComp.intensity;
+                if (signature.test(coordinator.GetComponentType<SkyLightComponent>())) {
+                    const auto& skyComp = coordinator.GetComponent<SkyLightComponent>(entity);
+                    if (skyComp.enabled) {
+                        data.skyLight.enabled = true;
+                        data.skyLight.color = glm::vec3(skyComp.color.x, skyComp.color.y, skyComp.color.z);
+                        data.skyLight.intensity = skyComp.intensity;
                         break;
                     }
                 }
             }
 
-            if (!data.ambientLight.enabled) {
-                data.ambientLight.enabled = true;
+            if (!data.skyLight.enabled) {
+                data.skyLight.enabled = true;
             }
 
             // 3. Process point lights
@@ -121,6 +133,38 @@ namespace eng::runtime {
                         
                         data.pointLights.push_back(pt);
                         if (data.pointLights.size() >= 16) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 4. Process spot lights
+            for (Entity entity : m_Entities) {
+                if (!coordinator.IsEntityAlive(entity)) continue;
+                auto signature = coordinator.GetSignature(entity);
+                if (signature.test(coordinator.GetComponentType<SpotLightComponent>())) {
+                    const auto& spotComp = coordinator.GetComponent<SpotLightComponent>(entity);
+                    if (spotComp.enabled) {
+                        RuntimeSpotLight spot;
+                        spot.enabled = true;
+                        spot.color = glm::vec3(spotComp.color.x, spotComp.color.y, spotComp.color.z);
+                        spot.intensity = spotComp.intensity;
+                        spot.range = spotComp.range;
+                        spot.innerConeAngle = spotComp.innerConeAngle;
+                        spot.outerConeAngle = spotComp.outerConeAngle;
+                        
+                        spot.position = glm::vec3(0.0f);
+                        spot.direction = glm::vec3(0.0f, 0.0f, -1.0f);
+                        if (signature.test(coordinator.GetComponentType<TransformComponent>())) {
+                            const auto& tc = coordinator.GetComponent<TransformComponent>(entity);
+                            spot.position = glm::vec3(tc.position.x, tc.position.y, tc.position.z);
+                            glm::quat q(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
+                            spot.direction = glm::normalize(q * glm::vec3(0.0f, 0.0f, -1.0f));
+                        }
+                        
+                        data.spotLights.push_back(spot);
+                        if (data.spotLights.size() >= 16) {
                             break;
                         }
                     }

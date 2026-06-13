@@ -17,6 +17,7 @@ namespace eng::runtime {
 
     private:
         void DrawNode(::SceneObject* obj, EditorSelection& selection, EditorDirtyState& dirtyState, const std::string& searchFilter);
+        void EnsureActiveSceneAndSync();
 
         RuntimeContext* m_Context = nullptr;
         char m_SearchBuffer[128] = "";

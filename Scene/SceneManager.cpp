@@ -86,7 +86,7 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<CheckpointComponent>();
     m_Coordinator->RegisterComponent<DirectionalLightComponent>();
     m_Coordinator->RegisterComponent<PointLightComponent>();
-    m_Coordinator->RegisterComponent<AmbientLightComponent>();
+    m_Coordinator->RegisterComponent<SkyLightComponent>();
     m_Coordinator->RegisterComponent<SpotLightComponent>();
     m_Coordinator->RegisterComponent<eng::runtime::ZoneEntityComponent>();
     m_Coordinator->RegisterComponent<BoundsComponent>();
@@ -368,6 +368,44 @@ void SceneManager::CreateNewScene(const std::string& name) {
     activeScene->SetFilePath("");
     state = TransitionState::Running;
     std::cout << "[SceneManager] Created new scene: " << name << std::endl;
+
+    if (m_Coordinator) {
+        // 1. Add Sun Light (DirectionalLightComponent)
+        Entity directional = m_Coordinator->CreateEntity();
+        m_Coordinator->AddComponent<NameComponent>(directional, NameComponent("Sun Light"));
+        TransformComponent dirTransform;
+        dirTransform.dirty = true;
+        m_Coordinator->AddComponent<TransformComponent>(directional, dirTransform);
+        DirectionalLightComponent dirLight;
+        dirLight.color = {1.0f, 0.96f, 0.88f};
+        dirLight.intensity = 3.0f;
+        dirLight.enabled = true;
+        m_Coordinator->AddComponent<DirectionalLightComponent>(directional, dirLight);
+
+        // 2. Add Sky Light (SkyLightComponent)
+        Entity ambient = m_Coordinator->CreateEntity();
+        m_Coordinator->AddComponent<NameComponent>(ambient, NameComponent("Sky Light"));
+        m_Coordinator->AddComponent<TransformComponent>(ambient, TransformComponent());
+        SkyLightComponent skyLight;
+        skyLight.color = {0.35f, 0.40f, 0.48f};
+        skyLight.intensity = 0.45f;
+        skyLight.enabled = true;
+        m_Coordinator->AddComponent<SkyLightComponent>(ambient, skyLight);
+
+        // 3. Add Main Camera (CameraComponent)
+        Entity cameraEnt = m_Coordinator->CreateEntity();
+        m_Coordinator->AddComponent<NameComponent>(cameraEnt, NameComponent("Main Camera"));
+        TransformComponent camTransform;
+        camTransform.position = Vector3(0.0f, 2.0f, 10.0f);
+        camTransform.dirty = true;
+        m_Coordinator->AddComponent<TransformComponent>(cameraEnt, camTransform);
+        CameraComponent cam;
+        cam.exposure = 1.0f;
+        cam.isPrimary = true;
+        m_Coordinator->AddComponent<CameraComponent>(cameraEnt, cam);
+
+        SyncECSToScene();
+    }
 }
 
 bool SceneManager::SaveActiveScene(const std::string& filePath) {
@@ -575,11 +613,11 @@ void SceneManager::SyncECSToScene() {
                 foundObj->ClearPointLight();
             }
 
-            // Sync AmbientLightComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                foundObj->SetAmbientLight(coordinator.GetComponent<AmbientLightComponent>(entity));
+            // Sync SkyLightComponent
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SkyLightComponent>())) {
+                foundObj->SetSkyLight(coordinator.GetComponent<SkyLightComponent>(entity));
             } else {
-                foundObj->ClearAmbientLight();
+                foundObj->ClearSkyLight();
             }
 
             // Sync SpotLightComponent
@@ -679,8 +717,8 @@ void SceneManager::SyncECSToScene() {
                 newObj->SetPointLight(coordinator.GetComponent<PointLightComponent>(entity));
             }
 
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AmbientLightComponent>())) {
-                newObj->SetAmbientLight(coordinator.GetComponent<AmbientLightComponent>(entity));
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SkyLightComponent>())) {
+                newObj->SetSkyLight(coordinator.GetComponent<SkyLightComponent>(entity));
             }
 
             if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SpotLightComponent>())) {

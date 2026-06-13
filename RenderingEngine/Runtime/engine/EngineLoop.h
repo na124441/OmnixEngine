@@ -19,6 +19,7 @@
 #include <vector>
 #include <string>
 #include "runtime/frame/FrameContext.h"
+#include "Rendering/Core/Renderer.h"
 
 #define USE_SCENE_RENDERER 1
 #define CUSTOM_MODEL_PATH ""
@@ -44,9 +45,7 @@ namespace eng::rhi {
 }
 
 namespace eng::renderer {
-    class Renderer;
     class PyramidRenderer;
-    class SceneRenderer;
 }
 
 namespace eng::runtime {
@@ -88,7 +87,7 @@ namespace eng::runtime {
         eng::renderer::EngineResources& GetSharedResources() { return const_cast<eng::renderer::EngineResources&>(m_SharedResources); }
         VkRenderPass GetRenderPass() const { return m_RenderPass; }
         uint32_t GetMaxFramesInFlight() const { return m_MaxFramesInFlight; }
-        eng::renderer::SceneRenderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
+        eng::renderer::Renderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
 
         // Register a per-frame render callback.
         using RenderCallback = std::function<void(const eng::renderer::EngineResources&,
@@ -128,7 +127,7 @@ namespace eng::runtime {
         std::unique_ptr<eng::vulkan::VulkanSwapChain> m_SwapChain;
         std::unique_ptr<eng::renderer::Renderer> m_Renderer;
         std::unique_ptr<eng::renderer::PyramidRenderer> m_PyramidRenderer;
-        std::unique_ptr<eng::renderer::SceneRenderer> m_SceneRenderer;
+        std::unique_ptr<eng::renderer::Renderer> m_SceneRenderer;
         eng::renderer::EngineResources m_SharedResources;
 
         VkRenderPass m_RenderPass = VK_NULL_HANDLE;

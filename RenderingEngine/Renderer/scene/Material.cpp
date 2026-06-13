@@ -12,12 +12,41 @@ bool Material::create(const std::string& vertPath,
                      const std::string& normalPath,
                      EngineResources& res)
 {
+    MaterialAsset asset{};
+    return createPBR(vertPath, fragPath, asset, albedoPath, normalPath, "", "", "", res);
+}
+
+bool Material::createPBR(const std::string& vertPath,
+                         const std::string& fragPath,
+                         const MaterialAsset& asset,
+                         const std::string& albedoPath,
+                         const std::string& normalPath,
+                         const std::string& metallicRoughnessPath,
+                         const std::string& aoPath,
+                         const std::string& emissivePath,
+                         EngineResources& res)
+{
     resources = &res;   // store for later uniform updates
+    assetData = asset;
+
+    uboData.baseColorFactor = asset.baseColorFactor;
+    uboData.roughnessFactor = asset.roughnessFactor;
+    uboData.metallicFactor = asset.metallicFactor;
+    uboData.normalScale = asset.normalScale;
+    uboData.emissiveStrength = asset.emissiveStrength;
+    uboData.blendMode = static_cast<uint32_t>(asset.blendMode);
+    uboData.shadingModel = static_cast<uint32_t>(asset.shadingModel);
+    uboData.padding = 0;
 
     // --------------------------------------------------------------
     // Load shader modules (fail fast)
-    if (!shader.load(vertPath, fragPath, res.device)) {
-        LOG_ERROR("Material::create – shader load failed.");
+    std::string actualFragPath = fragPath;
+    if (asset.blendMode == MaterialBlendMode::Blend) {
+        actualFragPath = "shaders/transparent_frag.spv";
+    }
+
+    if (!shader.load(vertPath, actualFragPath, res.device)) {
+        LOG_ERROR("Material::createPBR – shader load failed.");
         return false;
     }
 
@@ -26,7 +55,10 @@ bool Material::create(const std::string& vertPath,
         {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          VK_SHADER_STAGE_VERTEX_BIT},
         {1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          VK_SHADER_STAGE_FRAGMENT_BIT},
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  VK_SHADER_STAGE_FRAGMENT_BIT},
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT}
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  VK_SHADER_STAGE_FRAGMENT_BIT},
+        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  VK_SHADER_STAGE_FRAGMENT_BIT},
+        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  VK_SHADER_STAGE_FRAGMENT_BIT},
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  VK_SHADER_STAGE_FRAGMENT_BIT}
     };
     shader.getDescriptorInfos() = std::move(refl);
     
@@ -36,7 +68,7 @@ bool Material::create(const std::string& vertPath,
 
     // --------------------------------------------------------------
     // 2️⃣ Create per‑material uniform buffer
-    VkDeviceSize ubSize = sizeof(MaterialUBO);
+    VkDeviceSize ubSize = sizeof(MaterialGPU);
     VkBufferCreateInfo bufInfo{};
     bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufInfo.size  = ubSize;
@@ -52,37 +84,83 @@ bool Material::create(const std::string& vertPath,
                                  &uboBuffer,
                                  &uboAllocation, nullptr);
     VK_CHECK(r);
-    LOG_INFO("Material uniform buffer created.");
+    LOG_INFO("Material PBR uniform buffer created.");
     updateUniform(res);
 
     // --------------------------------------------------------------
-    // 3️⃣ Load textures (only if not already provided)
-    if (!albedoTexture) {
+    // 3️⃣ Load textures
+    if (!albedoPath.empty()) {
         albedoTexture = std::make_shared<Texture>();
-        std::string path = albedoPath.empty() ? "textures/brick_albedo.png" : albedoPath;
-        if (!albedoTexture->loadFromFile(path, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
-            LOG_WARN("Failed to load albedo texture: " + path + " - using fallback white.");
+        if (albedoTexture->loadFromFile(albedoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+            uboData.hasAlbedoMap = 1.0f;
+        } else {
+            LOG_WARN("Failed to load albedo texture: " + albedoPath + " - using fallback white.");
             albedoTexture.reset(); 
+            uboData.hasAlbedoMap = 0.0f;
         }
+    } else {
+        uboData.hasAlbedoMap = 0.0f;
     }
 
-    if (!normalTexture && !normalPath.empty()) {
+    if (!normalPath.empty()) {
         normalTexture = std::make_shared<Texture>();
-        if (!normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
-            LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback white.");
+        if (normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+            uboData.hasNormalMap = 1.0f;
+        } else {
+            LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback flat normal.");
             normalTexture.reset();
+            uboData.hasNormalMap = 0.0f;
         }
+    } else {
+        uboData.hasNormalMap = 0.0f;
     }
 
-    uboData.hasAlbedoMap = albedoTexture ? 1.0f : 0.0f;
-    uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
+    if (!metallicRoughnessPath.empty()) {
+        metallicRoughnessTexture = std::make_shared<Texture>();
+        if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+            uboData.hasMetallicRoughnessMap = 1.0f;
+        } else {
+            LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback white.");
+            metallicRoughnessTexture.reset();
+            uboData.hasMetallicRoughnessMap = 0.0f;
+        }
+    } else {
+        uboData.hasMetallicRoughnessMap = 0.0f;
+    }
+
+    if (!aoPath.empty()) {
+        aoTexture = std::make_shared<Texture>();
+        if (aoTexture->loadFromFile(aoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+            uboData.hasAOMap = 1.0f;
+        } else {
+            LOG_WARN("Failed to load AO texture: " + aoPath + " - using fallback white.");
+            aoTexture.reset();
+            uboData.hasAOMap = 0.0f;
+        }
+    } else {
+        uboData.hasAOMap = 0.0f;
+    }
+
+    if (!emissivePath.empty()) {
+        emissiveTexture = std::make_shared<Texture>();
+        if (emissiveTexture->loadFromFile(emissivePath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue)) {
+            uboData.hasEmissiveMap = 1.0f;
+        } else {
+            LOG_WARN("Failed to load emissive texture: " + emissivePath + " - using fallback black.");
+            emissiveTexture.reset();
+            uboData.hasEmissiveMap = 0.0f;
+        }
+    } else {
+        uboData.hasEmissiveMap = 0.0f;
+    }
+
     updateUniform(res);
 
     // --------------------------------------------------------------
     // 4️⃣ Allocate descriptor set
     if (!allocateDescriptorSet(res)) return false;
 
-    LOG_INFO("Material created successfully.");
+    LOG_INFO("Material PBR created successfully.");
     return true;
 }
 
@@ -154,23 +232,43 @@ bool Material::createPipeline(const EngineResources& resources)
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthWriteEnable = (assetData.blendMode == MaterialBlendMode::Blend) ? VK_FALSE : VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    VkPipelineColorBlendAttachmentState colourBlendAttachment{};
-    colourBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                            VK_COLOR_COMPONENT_G_BIT |
-                                            VK_COLOR_COMPONENT_B_BIT |
-                                            VK_COLOR_COMPONENT_A_BIT;
-    colourBlendAttachment.blendEnable = VK_FALSE;
+    std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachments{};
+    uint32_t attachmentCount = 4;
+
+    if (assetData.blendMode == MaterialBlendMode::Blend) {
+        attachmentCount = 1;
+        blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                                             VK_COLOR_COMPONENT_G_BIT |
+                                             VK_COLOR_COMPONENT_B_BIT |
+                                             VK_COLOR_COMPONENT_A_BIT;
+        blendAttachments[0].blendEnable = VK_TRUE;
+        blendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+        blendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    } else {
+        attachmentCount = 4;
+        for (uint32_t i = 0; i < 4; ++i) {
+            blendAttachments[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+                                                 VK_COLOR_COMPONENT_G_BIT |
+                                                 VK_COLOR_COMPONENT_B_BIT |
+                                                 VK_COLOR_COMPONENT_A_BIT;
+            blendAttachments[i].blendEnable = VK_FALSE;
+        }
+    }
 
     VkPipelineColorBlendStateCreateInfo colourBlendInfo{};
     colourBlendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colourBlendInfo.logicOpEnable = VK_FALSE;
-    colourBlendInfo.attachmentCount = 1;
-    colourBlendInfo.pAttachments = &colourBlendAttachment;
+    colourBlendInfo.attachmentCount = attachmentCount;
+    colourBlendInfo.pAttachments = blendAttachments.data();
 
     VkDynamicState dynamicStates[] = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -194,7 +292,7 @@ bool Material::createPipeline(const EngineResources& resources)
     pipelineInfo.pColorBlendState    = &colourBlendInfo;
     pipelineInfo.pDynamicState       = &dynamicInfo;
     pipelineInfo.layout              = resources.pipelineLayout;   // includes set 0 + set 1
-    pipelineInfo.renderPass          = resources.renderPass;
+    pipelineInfo.renderPass          = (assetData.blendMode == MaterialBlendMode::Blend) ? resources.transparentRenderPass : resources.renderPass;
     pipelineInfo.subpass             = 0;
 
     VkResult result = vkCreateGraphicsPipelines(resources.device,
@@ -219,23 +317,20 @@ bool Material::allocateDescriptorSet(const EngineResources& resources)
                                           &descriptorSet);
     VK_CHECK(r);
 
-    std::vector<VkWriteDescriptorSet> writes;
-    writes.reserve(3);
+    std::array<VkWriteDescriptorSet, 6> writes{};
 
     VkDescriptorBufferInfo ubInfo{};
     ubInfo.buffer = uboBuffer;
     ubInfo.offset = 0;
-    ubInfo.range  = sizeof(MaterialUBO);
+    ubInfo.range  = sizeof(MaterialGPU);
 
-    VkWriteDescriptorSet ubWrite{};
-    ubWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    ubWrite.dstSet = descriptorSet;
-    ubWrite.dstBinding = 0;          // binding 0 in material layout
-    ubWrite.dstArrayElement = 0;
-    ubWrite.descriptorCount = 1;
-    ubWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    ubWrite.pBufferInfo = &ubInfo;
-    writes.push_back(ubWrite);
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = descriptorSet;
+    writes[0].dstBinding = 0;          // binding 0 in material layout
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &ubInfo;
 
     VkDescriptorImageInfo albedoInfo{};
     albedoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -248,15 +343,13 @@ bool Material::allocateDescriptorSet(const EngineResources& resources)
         albedoInfo.sampler     = white->sampler();
     }
 
-    VkWriteDescriptorSet albedoWrite{};
-    albedoWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    albedoWrite.dstSet = descriptorSet;
-    albedoWrite.dstBinding = 1;   // binding 1 in material layout
-    albedoWrite.dstArrayElement = 0;
-    albedoWrite.descriptorCount = 1;
-    albedoWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    albedoWrite.pImageInfo = &albedoInfo;
-    writes.push_back(albedoWrite);
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = descriptorSet;
+    writes[1].dstBinding = 1;   // binding 1 in material layout
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo = &albedoInfo;
 
     VkDescriptorImageInfo normalInfo{};
     normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -269,15 +362,70 @@ bool Material::allocateDescriptorSet(const EngineResources& resources)
         normalInfo.sampler     = flatNormal->sampler();
     }
 
-    VkWriteDescriptorSet normalWrite{};
-    normalWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    normalWrite.dstSet = descriptorSet;
-    normalWrite.dstBinding = 2;   // binding 2 in material layout
-    normalWrite.dstArrayElement = 0;
-    normalWrite.descriptorCount = 1;
-    normalWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    normalWrite.pImageInfo = &normalInfo;
-    writes.push_back(normalWrite);
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = descriptorSet;
+    writes[2].dstBinding = 2;   // binding 2 in material layout
+    writes[2].dstArrayElement = 0;
+    writes[2].descriptorCount = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].pImageInfo = &normalInfo;
+
+    VkDescriptorImageInfo metallicRoughnessInfo{};
+    metallicRoughnessInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (metallicRoughnessTexture) {
+        metallicRoughnessInfo.imageView   = metallicRoughnessTexture->view();
+        metallicRoughnessInfo.sampler     = metallicRoughnessTexture->sampler();
+    } else {
+        Texture* white = Texture::getWhiteTexture(resources);
+        metallicRoughnessInfo.imageView   = white->view();
+        metallicRoughnessInfo.sampler     = white->sampler();
+    }
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = descriptorSet;
+    writes[3].dstBinding = 3;   // binding 3 in material layout
+    writes[3].dstArrayElement = 0;
+    writes[3].descriptorCount = 1;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].pImageInfo = &metallicRoughnessInfo;
+
+    VkDescriptorImageInfo aoInfo{};
+    aoInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (aoTexture) {
+        aoInfo.imageView   = aoTexture->view();
+        aoInfo.sampler     = aoTexture->sampler();
+    } else {
+        Texture* white = Texture::getWhiteTexture(resources);
+        aoInfo.imageView   = white->view();
+        aoInfo.sampler     = white->sampler();
+    }
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = descriptorSet;
+    writes[4].dstBinding = 4;   // binding 4 in material layout
+    writes[4].dstArrayElement = 0;
+    writes[4].descriptorCount = 1;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].pImageInfo = &aoInfo;
+
+    VkDescriptorImageInfo emissiveInfo{};
+    emissiveInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (emissiveTexture) {
+        emissiveInfo.imageView   = emissiveTexture->view();
+        emissiveInfo.sampler     = emissiveTexture->sampler();
+    } else {
+        Texture* black = Texture::getBlackTexture(resources);
+        emissiveInfo.imageView   = black->view();
+        emissiveInfo.sampler     = black->sampler();
+    }
+
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = descriptorSet;
+    writes[5].dstBinding = 5;   // binding 5 in material layout
+    writes[5].dstArrayElement = 0;
+    writes[5].descriptorCount = 1;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].pImageInfo = &emissiveInfo;
 
     vkUpdateDescriptorSets(resources.device,
                            static_cast<uint32_t>(writes.size()),
@@ -311,6 +459,9 @@ void Material::destroy()
 
     albedoTexture.reset();
     normalTexture.reset();
+    metallicRoughnessTexture.reset();
+    aoTexture.reset();
+    emissiveTexture.reset();
 
     shader.destroy();
 }

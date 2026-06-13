@@ -324,7 +324,7 @@ SceneValidationReport SceneValidator::ValidateSceneDocument(
                         }
                     }
                 }
-                else if (compType == "DirectionalLight" || compType == "PointLight" || compType == "AmbientLight" || compType == "SpotLight") {
+                else if (compType == "DirectionalLight" || compType == "PointLight" || compType == "SkyLight" || compType == "AmbientLight" || compType == "SpotLight") {
                     if (comp.HasMember("color") && comp["color"].IsObject()) {
                         const auto& col = comp["color"];
                         if (col.HasMember("x") && col["x"].IsNumber() &&

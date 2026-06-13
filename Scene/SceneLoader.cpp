@@ -240,6 +240,7 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("nearPlane") && comp["nearPlane"].IsNumber()) cam.nearPlane = comp["nearPlane"].GetFloat();
                     if (comp.HasMember("farPlane") && comp["farPlane"].IsNumber()) cam.farPlane = comp["farPlane"].GetFloat();
                     if (comp.HasMember("isPrimary") && comp["isPrimary"].IsBool()) cam.isPrimary = comp["isPrimary"].GetBool();
+                    if (comp.HasMember("exposure") && comp["exposure"].IsNumber()) cam.exposure = comp["exposure"].GetFloat();
                     if (comp.HasMember("localOffset") && comp["localOffset"].IsObject()) {
                         const auto& lo = comp["localOffset"];
                         if (lo.HasMember("x") && lo["x"].IsNumber()) cam.localOffset.x = lo["x"].GetFloat();
@@ -387,6 +388,10 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     }
                     if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) dlc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
                     if (comp.HasMember("castShadows") && comp["castShadows"].IsBool()) dlc.castShadows = comp["castShadows"].GetBool();
+                    if (comp.HasMember("shadowBias") && comp["shadowBias"].IsNumber()) dlc.shadowBias = comp["shadowBias"].GetFloat();
+                    if (comp.HasMember("shadowNormalBias") && comp["shadowNormalBias"].IsNumber()) dlc.shadowNormalBias = comp["shadowNormalBias"].GetFloat();
+                    if (comp.HasMember("shadowStrength") && comp["shadowStrength"].IsNumber()) dlc.shadowStrength = comp["shadowStrength"].GetFloat();
+                    if (comp.HasMember("shadowResolution") && comp["shadowResolution"].IsInt()) dlc.shadowResolution = comp["shadowResolution"].GetInt();
                     sceneObject->SetDirectionalLight(dlc);
                 } else if (compType == "PointLight") {
                     PointLightComponent plc;
@@ -401,17 +406,17 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("radius") && comp["radius"].IsNumber()) plc.radius = std::max(0.01f, comp["radius"].GetFloat());
                     if (comp.HasMember("castShadows") && comp["castShadows"].IsBool()) plc.castShadows = comp["castShadows"].GetBool();
                     sceneObject->SetPointLight(plc);
-                } else if (compType == "AmbientLight") {
-                    AmbientLightComponent alc;
-                    if (comp.HasMember("enabled") && comp["enabled"].IsBool()) alc.enabled = comp["enabled"].GetBool();
+                } else if (compType == "SkyLight" || compType == "AmbientLight") {
+                    SkyLightComponent slc;
+                    if (comp.HasMember("enabled") && comp["enabled"].IsBool()) slc.enabled = comp["enabled"].GetBool();
                     if (comp.HasMember("color") && comp["color"].IsObject()) {
                         const auto& colorObj = comp["color"];
-                        if (colorObj.HasMember("x") && colorObj["x"].IsNumber()) alc.color.x = std::clamp(colorObj["x"].GetFloat(), 0.0f, 1.0f);
-                        if (colorObj.HasMember("y") && colorObj["y"].IsNumber()) alc.color.y = std::clamp(colorObj["y"].GetFloat(), 0.0f, 1.0f);
-                        if (colorObj.HasMember("z") && colorObj["z"].IsNumber()) alc.color.z = std::clamp(colorObj["z"].GetFloat(), 0.0f, 1.0f);
+                        if (colorObj.HasMember("x") && colorObj["x"].IsNumber()) slc.color.x = std::clamp(colorObj["x"].GetFloat(), 0.0f, 1.0f);
+                        if (colorObj.HasMember("y") && colorObj["y"].IsNumber()) slc.color.y = std::clamp(colorObj["y"].GetFloat(), 0.0f, 1.0f);
+                        if (colorObj.HasMember("z") && colorObj["z"].IsNumber()) slc.color.z = std::clamp(colorObj["z"].GetFloat(), 0.0f, 1.0f);
                     }
-                    if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) alc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
-                    sceneObject->SetAmbientLight(alc);
+                    if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) slc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
+                    sceneObject->SetSkyLight(slc);
                 } else if (compType == "SpotLight") {
                     SpotLightComponent slc;
                     if (comp.HasMember("enabled") && comp["enabled"].IsBool()) slc.enabled = comp["enabled"].GetBool();

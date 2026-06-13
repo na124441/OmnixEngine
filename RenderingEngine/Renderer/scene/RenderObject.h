@@ -13,6 +13,7 @@ struct RenderObject {
     Mesh*       mesh     = nullptr;   // non‑owning – stored elsewhere
     Material*   material = nullptr;   // non‑owning – stored elsewhere
     glm::mat4   transform = glm::mat4(1.0f);
+    bool        castShadows = true;
 };
 
 } // namespace eng::renderer

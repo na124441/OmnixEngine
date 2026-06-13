@@ -109,7 +109,7 @@ public:
         if constexpr (std::is_same_v<T, InteractableComponent>) return INTERACTABLE_COMPONENT;
         if constexpr (std::is_same_v<T, DirectionalLightComponent>) return DIRECTIONAL_LIGHT_COMPONENT;
         if constexpr (std::is_same_v<T, PointLightComponent>) return POINT_LIGHT_COMPONENT;
-        if constexpr (std::is_same_v<T, AmbientLightComponent>) return AMBIENT_LIGHT_COMPONENT;
+        if constexpr (std::is_same_v<T, SkyLightComponent>) return SKY_LIGHT_COMPONENT;
         if constexpr (std::is_same_v<T, SpotLightComponent>) return SPOT_LIGHT_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::PlayerStateComponent>) return PLAYER_STATE_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::PlayerTagComponent>) return PLAYER_TAG_COMPONENT;

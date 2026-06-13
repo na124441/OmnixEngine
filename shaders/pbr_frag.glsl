@@ -1,27 +1,41 @@
 #version 450
 layout(location = 0) out vec4 outColor;
 
-// Global camera UBO (set = 0, binding = 0)
-layout(set = 0, binding = 0) uniform GlobalUBO {
+// Binding 0: Camera Uniform Buffer
+layout(set = 0, binding = 0) uniform CameraBuffer {
     mat4 view;
     mat4 proj;
-    vec4 cameraPos; // xyz = world-space camera position
+    vec4 cameraPos;
+    vec4 cameraPlanes;
 } cam;
 
-// Material set (set = 1)
-layout(set = 1, binding = 0) uniform MaterialUBO {
-    vec4  albedoColor;
+struct InstanceData {
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 minBounds_materialIndex;
+    vec4 maxBounds_entityID;
+};
+
+// Binding 1: Instance Storage Buffer
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
+    InstanceData instances[];
+} inst;
+
+struct MaterialData {
+    vec4 albedoColor;
     float roughness;
     float metallic;
     float hasAlbedoMap;
     float hasNormalMap;
+};
+
+// Binding 2: Material Storage Buffer
+layout(std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
+    MaterialData materials[];
 } mat;
 
-layout(set = 1, binding = 1) uniform sampler2D albedoMap;
-layout(set = 1, binding = 2) uniform sampler2D normalMap; // optional
-
-// Lighting set (set = 2)
-layout(set = 2, binding = 0) uniform LightUBO {
+// Binding 3: Light Storage Buffer
+layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 ambientColorIntensity; // rgb = color, w = intensity
     vec4 directionalDirectionIntensity; // xyz = direction, w = intensity
     vec4 directionalColor; // rgb = color, w = unused
@@ -32,14 +46,24 @@ layout(set = 2, binding = 0) uniform LightUBO {
     uint padding[2];
 } light;
 
+// Binding 4: ObjectID Storage Buffer
+layout(std430, set = 0, binding = 4) readonly buffer ObjectIDBuffer {
+    uint entityIDs[];
+} objId;
+
+// Textures remain at Set 1
+layout(set = 1, binding = 1) uniform sampler2D albedoMap;
+layout(set = 1, binding = 2) uniform sampler2D normalMap;
+
 layout(location = 0) in vec3 vWorldPos;
 layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec2 vUV;
 layout(location = 3) in vec3 vCameraPos;
+layout(location = 4) flat in uint vMaterialIndex;
+layout(location = 5) flat in uint vEntityID;
 
 const float PI = 3.14159265359;
 
-// ---------------------------------------------------------------------
 // Helper functions
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
@@ -64,6 +88,7 @@ float geometrySchlickGGX(float NdotV, float roughness)
     float k = (r * r) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
+
 float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 {
     float NdotV = max(dot(N, V), 0.0);
@@ -73,18 +98,22 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
-// ---------------------------------------------------------------------
 void main()
 {
-    // ----- Sample material textures -----
-    vec3 albedo = mat.albedoColor.rgb;
-    if (mat.hasAlbedoMap > 0.5) {
-        albedo = texture(albedoMap, vUV).rgb * mat.albedoColor.rgb;
+    // ----- Fetch Material Parameters -----
+    vec4 albedoColor = mat.materials[vMaterialIndex].albedoColor;
+    float roughness = mat.materials[vMaterialIndex].roughness;
+    float metallic = mat.materials[vMaterialIndex].metallic;
+    float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
+    float hasNormalMap = mat.materials[vMaterialIndex].hasNormalMap;
+
+    vec3 albedo = albedoColor.rgb;
+    if (hasAlbedoMap > 0.5) {
+        albedo = texture(albedoMap, vUV).rgb * albedoColor.rgb;
     }
 
     // Unlit View Mode Check
     if (light.shadingMode == 1) {
-        // Tone-mapping (Reinhard) and gamma correction
         vec3 color = albedo;
         color = color / (color + vec3(1.0));
         color = pow(color, vec3(1.0/2.2));
@@ -92,19 +121,26 @@ void main()
         return;
     }
 
-    // Normal map – if the texture is missing, use geometry normal
+    // Depth Debug View Mode Check
+    if (light.shadingMode == 2) {
+        float z = gl_FragCoord.z;
+        float near = cam.cameraPlanes.x;
+        float far = cam.cameraPlanes.y;
+        float linear = (near * far) / (far - z * (far - near));
+        float maxDepthVis = min(far, 100.0);
+        float d = clamp((linear - near) / (maxDepthVis - near), 0.0, 1.0);
+        outColor = vec4(vec3(d), 1.0);
+        return;
+    }
+
     vec3 N = normalize(vNormal);
-    if (mat.hasNormalMap > 0.5) {
+    if (hasNormalMap > 0.5) {
         vec3 normalSample = texture(normalMap, vUV).rgb * 2.0 - 1.0;
         N = normalize(vNormal + normalSample);
     }
 
-    // Metallic & roughness
-    float metallic  = mat.metallic;
-    float roughness = clamp(mat.roughness, 0.04, 1.0);
+    roughness = clamp(roughness, 0.04, 1.0);
 
-    // FIX: Use actual camera world-space position for view direction.
-    // Previously this was normalize(-vWorldPos) which assumed camera at origin.
     vec3 V = normalize(vCameraPos - vWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
@@ -117,29 +153,19 @@ void main()
 
         float NdotL = max(dot(N, L), 0.0);
 
-        // Only compute PBR contribution if the surface faces the light
         if (NdotL > 0.0) {
-            // Fresnel (Schlick)
             vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-            // Distribution (GGX)
             float NDF = distributionGGX(N, H, roughness);
-
-            // Geometry (Smith)
             float G = geometrySmith(N, V, L, roughness);
 
-            // Specular term
             vec3 numerator = NDF * G * F;
             float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
             vec3 specular = numerator / denominator;
 
-            // kS = specular reflectance, kD = (1 - kS) * (1 - metallic)
             vec3 kS = F;
             vec3 kD = vec3(1.0) - kS;
             kD *= 1.0 - metallic;
 
-            // FIX: radiance does NOT include NdotL — it is applied in the final multiply.
-            // Previously NdotL was baked into radiance AND multiplied again in Lo +=.
             vec3 radiance = light.directionalColor.rgb * light.directionalDirectionIntensity.w;
 
             Lo += (kD * albedo / PI + specular) * radiance * NdotL;
@@ -155,33 +181,25 @@ void main()
 
         vec3 diff = lightPos - vWorldPos;
         float distance = length(diff);
-        if (distance > radius) continue; // Out of range
+        if (distance > radius) continue;
 
         vec3 L = normalize(diff);
         vec3 H = normalize(V + L);
         float NdotL = max(dot(N, L), 0.0);
 
-        // Attenuation based on distance and radius (quadratic fade)
         float attenuation = clamp(1.0 - (distance / radius), 0.0, 1.0);
         attenuation = attenuation * attenuation;
 
         vec3 radiance = lightColor * intensity * attenuation;
 
-        // Fresnel (Schlick)
         vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        // Distribution (GGX)
         float NDF = distributionGGX(N, H, roughness);
-
-        // Geometry (Smith)
         float G = geometrySmith(N, V, L, roughness);
 
-        // Specular term
         vec3 numerator = NDF * G * F;
         float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
         vec3 specular = numerator / denominator;
 
-        // kS = specular reflectance, kD = (1 - kS) * (1 - metallic)
         vec3 kS = F;
         vec3 kD = vec3(1.0) - kS;
         kD *= 1.0 - metallic;
@@ -189,12 +207,12 @@ void main()
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    // Ambient term (from light UBO)
+    // Ambient term
     vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo;
 
     vec3 color = ambient + Lo;
 
-    // Tone-mapping (Reinhard) and gamma correction
+    // Tone-mapping and gamma correction
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));
 

@@ -43,6 +43,7 @@ struct EngineResources {
 
     // Render pass & pipeline (baseline)
     VkRenderPass        renderPass       = VK_NULL_HANDLE;
+    VkRenderPass        transparentRenderPass = VK_NULL_HANDLE;
     VkPipeline          graphicsPipeline = VK_NULL_HANDLE;
     VkPipelineLayout    pipelineLayout   = VK_NULL_HANDLE;
 

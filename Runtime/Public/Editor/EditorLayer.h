@@ -3,11 +3,13 @@
 #include "Runtime/Public/RuntimeContext.h"
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorDirtyState.h"
+#include "Runtime/Public/Editor/EditorNotificationService.h"
 #include "Runtime/Private/Editor/Panels/SceneHierarchyPanel.h"
 #include "Runtime/Private/Editor/Panels/InspectorPanel.h"
 #include "Runtime/Private/Editor/Panels/ConsolePanel.h"
 #include "Runtime/Private/Editor/Panels/ViewportPanel.h"
 #include "Runtime/Private/Editor/Panels/AssetBrowserPanel.h"
+#include "Runtime/Private/Editor/Panels/ImportLogPanel.h"
 #include "Runtime/Public/Editor/EditorCamera.h"
 #include <memory>
 #include <vector>
@@ -24,6 +26,13 @@ class Scene;
 namespace eng::runtime {
 
     class GameMode;
+
+    enum class EditorInputOwner {
+        None,
+        UI,
+        ViewportEditorCamera,
+        Game
+    };
 
     class EditorLayer {
     public:
@@ -43,6 +52,7 @@ namespace eng::runtime {
         // Selection & Dirty Accessors
         EditorSelection& GetSelection() { return m_Selection; }
         EditorDirtyState& GetDirtyState() { return m_DirtyState; }
+        EditorNotificationService& GetNotifications() { return m_Notifications; }
 
         void CreateEntityFromMesh(AssetHandle meshHandle);
 
@@ -81,10 +91,12 @@ namespace eng::runtime {
         std::chrono::steady_clock::time_point m_LastResizeRequestTime;
         EditorCamera m_EditorCamera;
         bool m_CursorCaptured = false;
+        EditorInputOwner m_InputOwner = EditorInputOwner::None;
 
         // Subsystems
         EditorSelection m_Selection;
         EditorDirtyState m_DirtyState;
+        EditorNotificationService m_Notifications;
 
         // Panels
         SceneHierarchyPanel m_HierarchyPanel;
@@ -92,6 +104,7 @@ namespace eng::runtime {
         ConsolePanel m_ConsolePanel;
         ViewportPanel m_ViewportPanel;
         AssetBrowserPanel m_AssetBrowserPanel;
+        ImportLogPanel m_ImportLogPanel;
 
         // Vulkan Resources for ImGui
         VkDescriptorPool m_ImGuiDescriptorPool = VK_NULL_HANDLE;

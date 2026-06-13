@@ -467,8 +467,8 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
         if (oldObj->m_HasPointLight) {
             clonedObj->SetPointLight(oldObj->m_PointLight);
         }
-        if (oldObj->m_HasAmbientLight) {
-            clonedObj->SetAmbientLight(oldObj->m_AmbientLight);
+        if (oldObj->m_HasSkyLight) {
+            clonedObj->SetSkyLight(oldObj->m_SkyLight);
         }
         if (oldObj->m_HasSpotLight) {
             clonedObj->SetSpotLight(oldObj->m_SpotLight);
@@ -571,8 +571,8 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
             if (signature.test(srcCoordinator.GetComponentType<PointLightComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<PointLightComponent>(oldECSEntity));
             }
-            if (signature.test(srcCoordinator.GetComponentType<AmbientLightComponent>())) {
-                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<AmbientLightComponent>(oldECSEntity));
+            if (signature.test(srcCoordinator.GetComponentType<SkyLightComponent>())) {
+                destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<SkyLightComponent>(oldECSEntity));
             }
             if (signature.test(srcCoordinator.GetComponentType<SpotLightComponent>())) {
                 destCoordinator.AddComponent(newECSEntity, srcCoordinator.GetComponent<SpotLightComponent>(oldECSEntity));

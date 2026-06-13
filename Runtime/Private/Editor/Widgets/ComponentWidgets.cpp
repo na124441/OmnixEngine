@@ -2,6 +2,10 @@
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/OmnixMaterialFormat.h"
 #include "ThirdParty/imgui/imgui.h"
+#include "Runtime/Public/RuntimeContext.h"
+#include "RenderingEngine/Runtime/engine/EngineLoop.h"
+#include "Rendering/Core/Renderer.h"
+#include "RenderingEngine/Renderer/scene/Material.h"
 #include "Runtime/Public/Audio/AudioSystem.h"
 #include "PhysicsValidation.h"
 #include <algorithm>
@@ -393,7 +397,7 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState, RuntimeContext* context) {
         bool changed = false;
         ImGui::Text("Material Handle: %llu", component.materialAssetHandle.value);
         
@@ -402,39 +406,176 @@ namespace eng::runtime {
             if (meta) {
                 ImGui::Text("Source Path: %s", meta->sourcePath.c_str());
 
-                // ---- Texture path fields ----------------------------------------
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "PNG Texture Paths");
-                ImGui::TextDisabled("Drop a PNG into Assets/Textures/ then type its path below.");
-                ImGui::Separator();
-
-                // Load current paths from the .omnixmat file (once per frame the popup is open)
+                // ---- PBR Factors & Settings Buffers -----------------------------
                 static char albedoBuf[512] = {};
-                static char normalBuf[512]  = {};
-                static uint64_t lastHandle  = 0;
+                static char normalBuf[512] = {};
+                static char metallicRoughnessBuf[512] = {};
+                static char aoBuf[512] = {};
+                static char emissiveBuf[512] = {};
+                static float baseColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+                static float metallic = 1.0f;
+                static float roughness = 1.0f;
+                static float normalScale = 1.0f;
+                static float emissiveStrength = 1.0f;
+                static int blendMode = 0;
+                static int shadingModel = 0;
+                static uint64_t lastHandle = 0;
+
+                // Bind to live Material if it is currently cached in the renderer
+                eng::renderer::Material* liveMaterial = nullptr;
+                if (context && context->renderer) {
+                    auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(context->renderer);
+                    if (engineLoop) {
+                        auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                        if (sceneRenderer) {
+                            auto it = sceneRenderer->m_EcsMaterialCache.find(component.materialAssetHandle.value);
+                            if (it != sceneRenderer->m_EcsMaterialCache.end()) {
+                                liveMaterial = it->second;
+                            }
+                        }
+                    }
+                }
 
                 if (lastHandle != component.materialAssetHandle.value) {
                     lastHandle = component.materialAssetHandle.value;
                     OmnixMaterial mat;
                     if (DeserializeMaterial(mat, meta->sourcePath)) {
                         std::strncpy(albedoBuf, mat.albedoTexturePath.c_str(), sizeof(albedoBuf) - 1);
-                        std::strncpy(normalBuf,  mat.normalTexturePath.c_str(),  sizeof(normalBuf) - 1);
+                        std::strncpy(normalBuf, mat.normalTexturePath.c_str(), sizeof(normalBuf) - 1);
+                        std::strncpy(metallicRoughnessBuf, mat.metallicRoughnessTexturePath.c_str(), sizeof(metallicRoughnessBuf) - 1);
+                        std::strncpy(aoBuf, mat.aoTexturePath.c_str(), sizeof(aoBuf) - 1);
+                        std::strncpy(emissiveBuf, mat.emissiveTexturePath.c_str(), sizeof(emissiveBuf) - 1);
+                        baseColor[0] = mat.baseColorFactor.r;
+                        baseColor[1] = mat.baseColorFactor.g;
+                        baseColor[2] = mat.baseColorFactor.b;
+                        baseColor[3] = mat.baseColorFactor.a;
+                        metallic = mat.metallicFactor;
+                        roughness = mat.roughnessFactor;
+                        normalScale = mat.normalScale;
+                        emissiveStrength = mat.emissiveStrength;
+                        blendMode = static_cast<int>(mat.blendMode);
+                        shadingModel = static_cast<int>(mat.shadingModel);
                     } else {
                         albedoBuf[0] = '\0';
-                        normalBuf[0]  = '\0';
+                        normalBuf[0] = '\0';
+                        metallicRoughnessBuf[0] = '\0';
+                        aoBuf[0] = '\0';
+                        emissiveBuf[0] = '\0';
+                        baseColor[0] = 1.0f; baseColor[1] = 1.0f; baseColor[2] = 1.0f; baseColor[3] = 1.0f;
+                        metallic = 1.0f;
+                        roughness = 1.0f;
+                        normalScale = 1.0f;
+                        emissiveStrength = 1.0f;
+                        blendMode = 0;
+                        shadingModel = 0;
                     }
                 }
 
+                // ---- Mock Preview Thumbnail ----
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.0f, 1.0f), "Material Preview");
+                ImGui::BeginGroup();
+                ImVec4 previewCol(baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
+                if (emissiveStrength > 1.0f) {
+                    previewCol.x *= 1.2f;
+                    previewCol.y *= 1.2f;
+                    previewCol.z *= 1.2f;
+                }
+                ImGui::ColorButton("##MaterialPreviewColor", previewCol, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop, ImVec2(64, 64));
+                ImGui::SameLine();
+                ImGui::BeginGroup();
+                ImGui::Text("Shading: %s", (shadingModel == 0) ? "Lit PBR" : "Unlit");
+                ImGui::Text("Blend: %s", (blendMode == 0) ? "Opaque" : (blendMode == 1 ? "Mask" : "Blend"));
+                ImGui::Text("Roughness: %.2f  Metallic: %.2f", roughness, metallic);
+                ImGui::EndGroup();
+                ImGui::EndGroup();
+                ImGui::Spacing();
+                ImGui::Separator();
+
+                // ---- PBR Factors ------------------------------------------------
+                ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "Material Factors");
+                if (ImGui::ColorEdit4("Base Color Factor##MatBaseColor", baseColor)) {
+                    if (liveMaterial) {
+                        liveMaterial->setAlbedoColor(glm::vec4(baseColor[0], baseColor[1], baseColor[2], baseColor[3]));
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::SliderFloat("Metallic Factor##MatMetallic", &metallic, 0.0f, 1.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setMetallic(metallic);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::SliderFloat("Roughness Factor##MatRoughness", &roughness, 0.0f, 1.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setRoughness(roughness);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::SliderFloat("Normal Scale##MatNormalScale", &normalScale, 0.0f, 5.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setNormalScale(normalScale);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::DragFloat("Emissive Strength##MatEmissiveStr", &emissiveStrength, 0.1f, 0.0f, 100.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setEmissiveStrength(emissiveStrength);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+
+                const char* blendModes[] = { "Opaque", "Mask", "Blend" };
+                if (ImGui::Combo("Blend Mode##MatBlendMode", &blendMode, blendModes, IM_ARRAYSIZE(blendModes))) {
+                    if (liveMaterial) {
+                        liveMaterial->setBlendMode(static_cast<eng::renderer::MaterialBlendMode>(blendMode));
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+
+                const char* shadingModels[] = { "Lit", "Unlit" };
+                if (ImGui::Combo("Shading Model##MatShadingModel", &shadingModel, shadingModels, IM_ARRAYSIZE(shadingModels))) {
+                    if (liveMaterial) {
+                        liveMaterial->setShadingModel(static_cast<eng::renderer::MaterialShadingModel>(shadingModel));
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+
+                // ---- Texture path fields ----------------------------------------
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "PNG Texture Paths");
+                ImGui::TextDisabled("Drop a PNG into Assets/Textures/ then type its path below.");
+                ImGui::Separator();
+
                 ImGui::InputText("Albedo PNG##MatAlbedo", albedoBuf, sizeof(albedoBuf));
                 ImGui::InputText("Normal PNG##MatNormal", normalBuf, sizeof(normalBuf));
-                ImGui::TextDisabled("Example: Assets/Textures/brick.png");
+                ImGui::InputText("Metallic-Roughness PNG##MatMR", metallicRoughnessBuf, sizeof(metallicRoughnessBuf));
+                ImGui::InputText("AO PNG##MatAO", aoBuf, sizeof(aoBuf));
+                ImGui::InputText("Emissive PNG##MatEmissive", emissiveBuf, sizeof(emissiveBuf));
+                ImGui::TextDisabled("Example: Assets/Textures/brick_albedo.png");
 
-                if (ImGui::Button("Save Texture Paths")) {
-                    // Re-read the current mat, update paths, re-serialize
+                if (ImGui::Button("Save Material Settings")) {
                     OmnixMaterial mat;
                     DeserializeMaterial(mat, meta->sourcePath); // load existing data
                     mat.albedoTexturePath = albedoBuf;
                     mat.normalTexturePath = normalBuf;
+                    mat.metallicRoughnessTexturePath = metallicRoughnessBuf;
+                    mat.aoTexturePath = aoBuf;
+                    mat.emissiveTexturePath = emissiveBuf;
+                    mat.baseColorFactor = glm::vec4(baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
+                    mat.metallicFactor = metallic;
+                    mat.roughnessFactor = roughness;
+                    mat.normalScale = normalScale;
+                    mat.emissiveStrength = emissiveStrength;
+                    mat.blendMode = static_cast<uint32_t>(blendMode);
+                    mat.shadingModel = static_cast<uint32_t>(shadingModel);
                     if (SerializeMaterial(mat, meta->sourcePath)) {
                         dirtyState.MarkSceneDirty();
                         changed = true;
@@ -443,7 +584,7 @@ namespace eng::runtime {
                     }
                 }
                 ImGui::SameLine();
-                ImGui::TextDisabled("(restart scene or re-apply material to see changes)");
+                ImGui::TextDisabled("(hot reloads instantly on save)");
                 // -----------------------------------------------------------------
 
             } else {
@@ -550,6 +691,11 @@ namespace eng::runtime {
             changed = true;
         }
         if (ImGui::Checkbox("Is Main Camera", &component.isPrimary)) {
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+        
+        if (ImGui::DragFloat("Exposure", &component.exposure, 0.05f, 0.0f, 10.0f)) {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
@@ -849,6 +995,50 @@ namespace eng::runtime {
             changed = true;
         }
 
+        if (component.castShadows) {
+            ImGui::Indent();
+
+            float bias = component.shadowBias;
+            if (ImGui::DragFloat("Shadow Bias##DirectionalLight", &bias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
+                component.shadowBias = bias;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
+            float normalBias = component.shadowNormalBias;
+            if (ImGui::DragFloat("Normal Bias##DirectionalLight", &normalBias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
+                component.shadowNormalBias = normalBias;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
+            float strength = component.shadowStrength;
+            if (ImGui::DragFloat("Shadow Strength##DirectionalLight", &strength, 0.01f, 0.0f, 1.0f)) {
+                component.shadowStrength = strength;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
+            int resolution = component.shadowResolution;
+            const char* resOptions[] = { "512", "1024", "2048", "4096" };
+            int currentResIdx = 2; // Default 2048
+            if (resolution == 512) currentResIdx = 0;
+            else if (resolution == 1024) currentResIdx = 1;
+            else if (resolution == 2048) currentResIdx = 2;
+            else if (resolution == 4096) currentResIdx = 3;
+
+            if (ImGui::Combo("Shadow Res##DirectionalLight", &currentResIdx, resOptions, IM_ARRAYSIZE(resOptions))) {
+                if (currentResIdx == 0) component.shadowResolution = 512;
+                else if (currentResIdx == 1) component.shadowResolution = 1024;
+                else if (currentResIdx == 2) component.shadowResolution = 2048;
+                else if (currentResIdx == 3) component.shadowResolution = 4096;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
+            ImGui::Unindent();
+        }
+
         return changed;
     }
 
@@ -889,23 +1079,23 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawAmbientLight(AmbientLightComponent& component, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawSkyLight(SkyLightComponent& component, EditorDirtyState& dirtyState) {
         bool changed = false;
 
-        if (ImGui::Checkbox("Enabled##AmbientLight", &component.enabled)) {
+        if (ImGui::Checkbox("Enabled##SkyLight", &component.enabled)) {
             dirtyState.MarkSceneDirty();
             changed = true;
         }
 
         float colArr[3] = { component.color.x, component.color.y, component.color.z };
-        if (ImGui::ColorEdit3("Color##AmbientLight", colArr)) {
+        if (ImGui::ColorEdit3("Color##SkyLight", colArr)) {
             component.color = { std::clamp(colArr[0], 0.0f, 1.0f), std::clamp(colArr[1], 0.0f, 1.0f), std::clamp(colArr[2], 0.0f, 1.0f) };
             dirtyState.MarkSceneDirty();
             changed = true;
         }
 
         float intensity = component.intensity;
-        if (ImGui::DragFloat("Intensity##AmbientLight", &intensity, 0.02f, 0.0f, 5.0f)) {
+        if (ImGui::DragFloat("Intensity##SkyLight", &intensity, 0.02f, 0.0f, 5.0f)) {
             component.intensity = std::max(0.0f, intensity);
             dirtyState.MarkSceneDirty();
             changed = true;

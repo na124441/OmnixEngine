@@ -3,11 +3,11 @@
 
 namespace eng::renderer {
 
-    class Renderer {
+    class LegacyRenderer {
     public:
-        Renderer() = default;
-        ~Renderer() = default;
-
+        LegacyRenderer() = default;
+        ~LegacyRenderer() = default;
+ 
         void Render(const eng::runtime::RenderScene& scene) {}
     };
 

@@ -113,6 +113,7 @@ struct CameraComponent {
     float orthographicSize;     // Size for orthographic
     bool isPrimary;             // Is this the main camera?
     Vector3 localOffset;        // Eye offset height (e.g. 1.6m)
+    float exposure = 1.0f;
 
     CameraComponent()
         : projectionType(ProjectionType::Perspective)
@@ -123,6 +124,7 @@ struct CameraComponent {
         , orthographicSize(10.0f)
         , isPrimary(true)
         , localOffset{0.0f, 1.6f, 0.0f}
+        , exposure(1.0f)
     {}
 };
 
@@ -436,6 +438,10 @@ struct DirectionalLightComponent
     Vector3 color = {1.0f, 0.96f, 0.88f};
     float intensity = 3.0f;
     bool castShadows = false;
+    float shadowBias = 0.005f;
+    float shadowNormalBias = 0.015f;
+    float shadowStrength = 1.0f;
+    int shadowResolution = 2048;
 };
 
 struct PointLightComponent
@@ -447,7 +453,7 @@ struct PointLightComponent
     bool castShadows = false;
 };
 
-struct AmbientLightComponent
+struct SkyLightComponent
 {
     bool enabled = true;
     Vector3 color = {0.10f, 0.12f, 0.16f};

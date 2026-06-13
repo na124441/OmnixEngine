@@ -18,6 +18,7 @@ namespace eng::runtime {
          * Returns true if successful, false otherwise.
          */
         bool ImportMesh(const std::string& sourcePath, const std::string& cachePath, MeshMetadata& outMetadata, bool forceReimport = false);
+        bool ImportMesh(const std::string& sourcePath, const std::string& cachePath, MeshMetadata& outMetadata, const std::vector<AssetHandle>& materialSlots, bool forceReimport = false);
 
         /**
          * @brief Generates vertex normals by accumulating face normals of connected triangles.

@@ -55,6 +55,10 @@ namespace eng::runtime {
     }
 
     bool MeshImporter::ImportMesh(const std::string& sourcePath, const std::string& cachePath, MeshMetadata& outMetadata, bool forceReimport) {
+        return ImportMesh(sourcePath, cachePath, outMetadata, {}, forceReimport);
+    }
+
+    bool MeshImporter::ImportMesh(const std::string& sourcePath, const std::string& cachePath, MeshMetadata& outMetadata, const std::vector<AssetHandle>& materialSlots, bool forceReimport) {
         // Caching validation
         if (!forceReimport && std::filesystem::exists(cachePath) && std::filesystem::exists(cachePath + ".meta")) {
             try {
@@ -205,7 +209,11 @@ namespace eng::runtime {
         // Map material slots
         mesh.materialSlots.resize(mesh.header.materialSlotCount);
         for (uint32_t i = 0; i < mesh.header.materialSlotCount; ++i) {
-            mesh.materialSlots[i] = AssetHandle{ i }; // Default slots mapped by index
+            if (i < materialSlots.size()) {
+                mesh.materialSlots[i] = materialSlots[i];
+            } else {
+                mesh.materialSlots[i] = AssetHandle{ i }; // Default slots mapped by index
+            }
         }
 
         // Validate Mesh Integrity

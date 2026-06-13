@@ -137,9 +137,9 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
         coordinator.AddComponent(m_ECSEntity, m_PointLight);
     }
 
-    // 18. Add AmbientLightComponent if assigned
-    if (m_HasAmbientLight) {
-        coordinator.AddComponent(m_ECSEntity, m_AmbientLight);
+    // 18. Add SkyLightComponent if assigned
+    if (m_HasSkyLight) {
+        coordinator.AddComponent(m_ECSEntity, m_SkyLight);
     }
 
     // 19. Add SpotLightComponent if assigned

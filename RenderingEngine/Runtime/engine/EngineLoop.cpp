@@ -12,7 +12,8 @@
 #include "Vulkan/VulkanDevice.h"
 #include "Vulkan/VulkanSwapChain.h"
 #include "renderer/PyramidRenderer.h"
-#include "renderer/SceneRenderer.h"
+#include "Rendering/Core/Renderer.h"
+#include "ECS/ECSComponents.h"
 #include "Core/Profiling/Profiler.h"
 #include "Core/Vulkan/VkUtils.h"
 #include "Core/Engine/Log.h"
@@ -158,6 +159,11 @@ namespace eng::runtime {
 
             vkDeviceWaitIdle(vkDevice);
             
+            if (m_SceneRenderer) {
+                m_SceneRenderer->Shutdown();
+                m_SceneRenderer.reset();
+            }
+
             m_PyramidRenderer.reset();
 
             // Destroy sync objects cleanly via EngineResources
@@ -450,11 +456,11 @@ namespace eng::runtime {
         m_SharedResources.createCommandBuffers();
 
         if (USE_SCENE_RENDERER) {
-            m_SceneRenderer = std::make_unique<eng::renderer::SceneRenderer>(m_SharedResources);
+            m_SceneRenderer = std::make_unique<eng::renderer::Renderer>(m_SharedResources);
             if (m_ExternalWorld) {
                 m_SceneRenderer->SetWorld(m_ExternalWorld);
             }
-            m_SceneRenderer->init();
+            m_SceneRenderer->Initialize();
 
             m_SceneRenderer->recreateSwapChainCallback = [this]() {
                 this->RecreateSwapChain();
@@ -537,7 +543,35 @@ namespace eng::runtime {
             if (m_PyramidRenderer) {
                 m_PyramidRenderer->Update(static_cast<float>(m_FrameStats.lastFrameTime), m_CurrentFrame);
             }
-            m_SceneRenderer->drawFrame();
+            m_SceneRenderer->BeginFrame();
+
+            CameraComponent cameraComp;
+            bool foundCamera = false;
+            if (m_ExternalWorld) {
+                auto& coordinator = m_ExternalWorld->getCoordinator();
+                auto camType = coordinator.GetComponentType<CameraComponent>();
+                for (std::uint32_t ent : coordinator.GetActiveEntities()) {
+                    if (ent == 0 || !coordinator.IsEntityAlive(ent)) continue;
+                    const auto& sig = coordinator.GetSignature(ent);
+                    if (sig.test(camType)) {
+                        const auto& cc = coordinator.GetComponent<CameraComponent>(ent);
+                        if (cc.isPrimary) {
+                            cameraComp = cc;
+                            foundCamera = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!foundCamera && m_SceneRenderer) {
+                cameraComp.fov = glm::degrees(m_SceneRenderer->camera.fovY);
+                cameraComp.nearPlane = m_SceneRenderer->camera.nearPlane;
+                cameraComp.farPlane = m_SceneRenderer->camera.farPlane;
+            }
+
+            m_SceneRenderer->RenderFrame(*m_ExternalWorld, cameraComp);
+            m_SceneRenderer->EndFrame();
+            
             m_CurrentFrame = (m_CurrentFrame + 1) % m_MaxFramesInFlight;
             return;
         }
