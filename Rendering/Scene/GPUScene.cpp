@@ -4,15 +4,144 @@
 #include "Core/Engine/Log.h"
 #include "Core/Engine/VmaHelpers.h"
 #include "Core/Engine/ResourceTracker.h"
+#include "Rendering/Scene/RenderSceneExtractor.h"
 #include <cstring>
 #include <algorithm>
 
 namespace eng::renderer {
 
+void GPUSceneFrameResources::LocalLightBuffer::Upload(const void* data, size_t dataSize)
+{
+    if (!resources || dataSize == 0) return;
+
+    if (size < dataSize) {
+        if (buffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(resources->allocator, buffer, allocation);
+            ::eng::ResourceTracker::decBuffer();
+        }
+
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = dataSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        VK_CHECK(vmaCreateBuffer(resources->allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr));
+        ::eng::ResourceTracker::incBuffer();
+        size = dataSize;
+        capacity = static_cast<uint32_t>(dataSize);
+    }
+
+    resources->ensureStagingBuffer(dataSize);
+    void* stagingDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources->allocator, resources->transfer.stagingAlloc, &stagingDst));
+    std::memcpy(stagingDst, data, dataSize);
+    vmaUnmapMemory(resources->allocator, resources->transfer.stagingAlloc);
+
+    VkCommandBuffer cmd = resources->beginSingleTimeCommands();
+    resources->copyStagingToDevice(cmd, buffer, 0, dataSize);
+    resources->endSingleTimeCommands(cmd);
+}
+
 void GPUScene::Initialize(EngineResources& resources)
 {
     LOG_INFO("GPUScene: Initializing...");
     createDescriptorSetLayout(resources);
+
+    // Create Local Lights Descriptor Set Layout
+    {
+        VkDescriptorSetLayoutBinding bindings[5]{};
+        // Binding 0: Local Lights storage buffer
+        bindings[0].binding            = 0;
+        bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[0].descriptorCount    = 1;
+        bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].pImmutableSamplers = nullptr;
+
+        // Binding 1: Cluster Bounds storage buffer
+        bindings[1].binding            = 1;
+        bindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[1].descriptorCount    = 1;
+        bindings[1].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[1].pImmutableSamplers = nullptr;
+
+        // Binding 2: Cluster Ranges storage buffer
+        bindings[2].binding            = 2;
+        bindings[2].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[2].descriptorCount    = 1;
+        bindings[2].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2].pImmutableSamplers = nullptr;
+
+        // Binding 3: Cluster Light Indices storage buffer
+        bindings[3].binding            = 3;
+        bindings[3].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[3].descriptorCount    = 1;
+        bindings[3].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[3].pImmutableSamplers = nullptr;
+
+        // Binding 4: Cluster Settings uniform buffer
+        bindings[4].binding            = 4;
+        bindings[4].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[4].descriptorCount    = 1;
+        bindings[4].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[4].pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 5;
+        layoutInfo.pBindings    = bindings;
+
+        VK_CHECK(vkCreateDescriptorSetLayout(resources.device, &layoutInfo, nullptr, &m_LocalLightsDescriptorSetLayout));
+    }
+
+    // Create Light Culling Compute Descriptor Set Layout
+    {
+        VkDescriptorSetLayoutBinding bindings[5]{};
+        // Binding 0: Cluster Settings uniform buffer
+        bindings[0].binding            = 0;
+        bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount    = 1;
+        bindings[0].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[0].pImmutableSamplers = nullptr;
+
+        // Binding 1: Lights storage buffer
+        bindings[1].binding            = 1;
+        bindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[1].descriptorCount    = 1;
+        bindings[1].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[1].pImmutableSamplers = nullptr;
+
+        // Binding 2: Cluster Bounds storage buffer
+        bindings[2].binding            = 2;
+        bindings[2].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[2].descriptorCount    = 1;
+        bindings[2].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[2].pImmutableSamplers = nullptr;
+
+        // Binding 3: Cluster Ranges storage buffer
+        bindings[3].binding            = 3;
+        bindings[3].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[3].descriptorCount    = 1;
+        bindings[3].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[3].pImmutableSamplers = nullptr;
+
+        // Binding 4: Cluster Light Indices storage buffer
+        bindings[4].binding            = 4;
+        bindings[4].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[4].descriptorCount    = 1;
+        bindings[4].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+        bindings[4].pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.bindingCount = 5;
+        layoutInfo.pBindings    = bindings;
+
+        VK_CHECK(vkCreateDescriptorSetLayout(resources.device, &layoutInfo, nullptr, &m_LightCullingDescriptorSetLayout));
+    }
 
     m_Frames.resize(resources.MAX_FRAMES_IN_FLIGHT);
     for (uint32_t i = 0; i < resources.MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -33,6 +162,16 @@ void GPUScene::Shutdown(EngineResources& resources)
         vkDestroyDescriptorSetLayout(resources.device, m_DescriptorSetLayout, nullptr);
         m_DescriptorSetLayout = VK_NULL_HANDLE;
     }
+
+    if (m_LocalLightsDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(resources.device, m_LocalLightsDescriptorSetLayout, nullptr);
+        m_LocalLightsDescriptorSetLayout = VK_NULL_HANDLE;
+    }
+
+    if (m_LightCullingDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(resources.device, m_LightCullingDescriptorSetLayout, nullptr);
+        m_LightCullingDescriptorSetLayout = VK_NULL_HANDLE;
+    }
     LOG_INFO("GPUScene: Shutdown complete.");
 }
 
@@ -43,7 +182,9 @@ void GPUScene::UpdateFrame(
     const std::vector<RenderItem>& renderQueueItems,
     const std::unordered_map<uint64_t, Material*>& ecsMaterialCache,
     const Material* defaultMaterial,
-    uint32_t shadingMode
+    const Omnix::Radiance::RadianceFrameUBO& radianceUBO,
+    uint32_t shadingMode,
+    const ::Scene* activeScene
 )
 {
     GPUSceneFrameResources& frameRes = m_Frames[frameIndex];
@@ -52,17 +193,9 @@ void GPUScene::UpdateFrame(
     // -------------------------------------------------------------------------
     // 1. Camera Uniform Buffer Upload
     // -------------------------------------------------------------------------
-    float aspect = renderScene.camera.aspectRatio;
-    CameraGPUData camGPU{};
-    camGPU.view = renderScene.camera.viewMatrix;
-    camGPU.proj = glm::perspective(glm::radians(renderScene.camera.fov), aspect, renderScene.camera.nearPlane, renderScene.camera.farPlane);
-    camGPU.proj[1][1] *= -1.0f;
-    camGPU.cameraPos = glm::vec4(renderScene.camera.position, renderScene.camera.fov);
-    camGPU.cameraPlanes = glm::vec4(renderScene.camera.nearPlane, renderScene.camera.farPlane, renderScene.camera.exposure, static_cast<float>(renderScene.camera.selectedEntityID));
-
     void* cameraDst = nullptr;
     VK_CHECK(vmaMapMemory(resources.allocator, frameRes.cameraAlloc, &cameraDst));
-    std::memcpy(cameraDst, &camGPU, sizeof(camGPU));
+    std::memcpy(cameraDst, &radianceUBO, sizeof(radianceUBO));
     vmaUnmapMemory(resources.allocator, frameRes.cameraAlloc);
 
     // -------------------------------------------------------------------------
@@ -74,7 +207,7 @@ void GPUScene::UpdateFrame(
         const auto& dirLight = renderScene.directionalLights[0];
         lightUboData.directionalDirectionIntensity = glm::vec4(dirLight.direction, dirLight.intensity);
         lightUboData.directionalColor = glm::vec4(dirLight.color, 1.0f);
-        lightUboData.lightSpaceMatrix = dirLight.lightSpaceMatrix;
+        lightUboData.directionalLightProjView = dirLight.lightSpaceMatrix;
         lightUboData.shadowBias = dirLight.shadowBias;
         lightUboData.shadowNormalBias = dirLight.shadowNormalBias;
         lightUboData.shadowSlopeBias = dirLight.shadowSlopeBias;
@@ -82,10 +215,21 @@ void GPUScene::UpdateFrame(
         lightUboData.shadowLightCast = dirLight.castShadows > 0.0f ? 1 : 0;
         lightUboData.pcfKernelSize = dirLight.pcfKernelSize;
         lightUboData.shadowResolution = dirLight.shadowResolution;
+
+        // ShadowGPUSettings
+        lightUboData.shadowSettings.shadowParams.x = dirLight.shadowStrength;
+        lightUboData.shadowSettings.shadowParams.y = dirLight.shadowBias;
+        lightUboData.shadowSettings.shadowParams.z = dirLight.shadowSlopeBias;
+        lightUboData.shadowSettings.shadowParams.w = 1.0f; // softness default to 1.0f
+
+        lightUboData.shadowSettings.shadowFlags.x = static_cast<uint32_t>(dirLight.pcfKernelSize);
+        lightUboData.shadowSettings.shadowFlags.y = 0;
+        lightUboData.shadowSettings.shadowFlags.z = 0;
+        lightUboData.shadowSettings.shadowFlags.w = 0;
     } else {
         lightUboData.directionalDirectionIntensity = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
         lightUboData.directionalColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-        lightUboData.lightSpaceMatrix = glm::mat4(1.0f);
+        lightUboData.directionalLightProjView = glm::mat4(1.0f);
         lightUboData.shadowBias = 0.003f;
         lightUboData.shadowNormalBias = 0.0f;
         lightUboData.shadowSlopeBias = 0.01f;
@@ -93,6 +237,10 @@ void GPUScene::UpdateFrame(
         lightUboData.shadowLightCast = 0;
         lightUboData.pcfKernelSize = 3;
         lightUboData.shadowResolution = 2048;
+
+        // ShadowGPUSettings fallback
+        lightUboData.shadowSettings.shadowParams = glm::vec4(1.0f, 0.003f, 0.01f, 1.0f);
+        lightUboData.shadowSettings.shadowFlags = glm::uvec4(3, 0, 0, 0);
     }
     // ambient
     lightUboData.ambientColorIntensity = glm::vec4(renderScene.skyLight.color, renderScene.skyLight.intensity);
@@ -259,6 +407,172 @@ void GPUScene::UpdateFrame(
     vmaUnmapMemory(resources.allocator, frameRes.objectIdAlloc);
 
     // -------------------------------------------------------------------------
+    // 4b. Local Lights Extraction and Upload
+    // -------------------------------------------------------------------------
+    std::vector<Omnix::Radiance::LocalLightGPU> localLights;
+    if (activeScene) {
+        RenderSceneExtractor::ExtractLocalLights(*activeScene, localLights);
+    }
+    frameRes.localLightCount = static_cast<uint32_t>(localLights.size());
+
+    VkBuffer oldLocalBuffer = frameRes.localLightBuffer.buffer;
+    frameRes.localLightBuffer.Upload(
+        localLights.data(),
+        localLights.size() * sizeof(Omnix::Radiance::LocalLightGPU)
+    );
+    if (frameRes.localLightBuffer.buffer != oldLocalBuffer) {
+        needsDescriptorUpdate = true;
+    }
+    LOG_INFO("Local Lights uploaded: " + std::to_string(localLights.size()));
+
+    // -------------------------------------------------------------------------
+    // 4c. Clustered Lighting Calculations & Upload
+    // -------------------------------------------------------------------------
+    Omnix::Radiance::ClusterSettings settings{};
+    uint32_t viewportWidth = static_cast<uint32_t>(radianceUBO.viewportSize.x);
+    uint32_t viewportHeight = static_cast<uint32_t>(radianceUBO.viewportSize.y);
+    if (viewportWidth == 0) viewportWidth = 1280;
+    if (viewportHeight == 0) viewportHeight = 720;
+
+    uint32_t tileCountX = (viewportWidth + settings.tileSizeX - 1) / settings.tileSizeX;
+    uint32_t tileCountY = (viewportHeight + settings.tileSizeY - 1) / settings.tileSizeY;
+    uint32_t depthSliceCount = settings.depthSliceCount;
+    uint32_t maxLightsPerCluster = settings.maxLightsPerCluster;
+    uint32_t clusterCount = tileCountX * tileCountY * depthSliceCount;
+
+    // Resize cluster buffers if needed
+    VkBuffer oldBoundsBuffer = frameRes.clusterBoundsBuffer;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterBoundsBuffer,
+        frameRes.clusterBoundsAlloc,
+        frameRes.clusterBoundsBufferSize,
+        frameRes.clusterBoundsCapacity,
+        clusterCount,
+        sizeof(Omnix::Radiance::ClusterBoundsGPU),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterBoundsBuffer != oldBoundsBuffer) {
+        needsDescriptorUpdate = true;
+    }
+
+    VkBuffer oldRangeBuffer = frameRes.clusterRangeBuffer;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterRangeBuffer,
+        frameRes.clusterRangeAlloc,
+        frameRes.clusterRangeBufferSize,
+        frameRes.clusterRangeCapacity,
+        clusterCount,
+        sizeof(Omnix::Radiance::ClusterRangeGPU),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterRangeBuffer != oldRangeBuffer) {
+        needsDescriptorUpdate = true;
+    }
+
+    VkBuffer oldIndexBuffer = frameRes.clusterLightIndexBuffer;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterLightIndexBuffer,
+        frameRes.clusterLightIndexAlloc,
+        frameRes.clusterLightIndexBufferSize,
+        frameRes.clusterLightIndexCapacity,
+        clusterCount * maxLightsPerCluster,
+        sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterLightIndexBuffer != oldIndexBuffer) {
+        needsDescriptorUpdate = true;
+    }
+
+    // Build cluster bounds on CPU
+    float nearPlane = renderScene.camera.nearPlane;
+    float farPlane = renderScene.camera.farPlane;
+    if (nearPlane <= 0.001f) nearPlane = 0.1f;
+    if (farPlane <= nearPlane) farPlane = 1000.0f;
+
+    struct LocalBoundsBuilder {
+        static std::vector<Omnix::Radiance::ClusterBoundsGPU> Build(
+            uint32_t tileCountX,
+            uint32_t tileCountY,
+            uint32_t depthSlices,
+            float nearP,
+            float farP)
+        {
+            std::vector<Omnix::Radiance::ClusterBoundsGPU> clusters;
+            clusters.resize(tileCountX * tileCountY * depthSlices);
+
+            for (uint32_t z = 0; z < depthSlices; z++)
+            {
+                float z0 = nearP + (farP - nearP) * (float(z) / float(depthSlices));
+                float z1 = nearP + (farP - nearP) * (float(z + 1) / float(depthSlices));
+
+                for (uint32_t y = 0; y < tileCountY; y++)
+                {
+                    for (uint32_t x = 0; x < tileCountX; x++)
+                    {
+                        uint32_t index =
+                            x +
+                            y * tileCountX +
+                            z * tileCountX * tileCountY;
+
+                        clusters[index].minPoint = glm::vec4(
+                            float(x),
+                            float(y),
+                            z0,
+                            0.0f
+                        );
+
+                        clusters[index].maxPoint = glm::vec4(
+                            float(x + 1),
+                            float(y + 1),
+                            z1,
+                            0.0f
+                        );
+                    }
+                }
+            }
+
+            return clusters;
+        }
+    };
+
+    std::vector<Omnix::Radiance::ClusterBoundsGPU> clusterBounds = LocalBoundsBuilder::Build(
+        tileCountX,
+        tileCountY,
+        depthSliceCount,
+        nearPlane,
+        farPlane
+    );
+
+    // Upload Cluster Bounds
+    void* boundsDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.clusterBoundsAlloc, &boundsDst));
+    std::memcpy(boundsDst, clusterBounds.data(), clusterBounds.size() * sizeof(Omnix::Radiance::ClusterBoundsGPU));
+    vmaUnmapMemory(resources.allocator, frameRes.clusterBoundsAlloc);
+
+    // CPU light-to-cluster assignment and CPU buffer copies are removed.
+    // The light_culling.comp compute shader executes on the GPU and populates
+    // clusterRangeBuffer and clusterLightIndexBuffer dynamically per-frame.
+
+    // Upload Cluster Settings
+    Omnix::Radiance::ClusterSettingsGPU settingsGPU{};
+    settingsGPU.tileCountX = tileCountX;
+    settingsGPU.tileCountY = tileCountY;
+    settingsGPU.depthSliceCount = depthSliceCount;
+    settingsGPU.maxLightsPerCluster = maxLightsPerCluster;
+    settingsGPU.clusterCount = clusterCount;
+    settingsGPU.lightCount = static_cast<uint32_t>(localLights.size());
+    settingsGPU.nearPlane = nearPlane;
+    settingsGPU.farPlane = farPlane;
+
+    void* settingsDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.clusterSettingsAlloc, &settingsDst));
+    std::memcpy(settingsDst, &settingsGPU, sizeof(Omnix::Radiance::ClusterSettingsGPU));
+    vmaUnmapMemory(resources.allocator, frameRes.clusterSettingsAlloc);
+
+    // -------------------------------------------------------------------------
     // 5. Update Descriptor Set if any buffer was resized
     // -------------------------------------------------------------------------
     if (needsDescriptorUpdate) {
@@ -318,20 +632,20 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
     // Allocate descriptor pool
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = 1;
+    poolSizes[0].descriptorCount = 3; // cameraBuffer (set 0), clusterSettingsBuffer (set 3), compute settings (compute set 0)
     poolSizes[1].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = 4;
+    poolSizes[1].descriptorCount = 12; // set 0: 4 storage buffers. set 3: 4 storage buffers. compute set 0: 4 storage buffers.
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = 2;
     poolInfo.pPoolSizes    = poolSizes;
-    poolInfo.maxSets       = 1;
+    poolInfo.maxSets       = 3; // set 0, set 3, and compute set 0
     poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
     VK_CHECK(vkCreateDescriptorPool(resources.device, &poolInfo, nullptr, &frameRes.descriptorPool));
 
-    // Allocate descriptor set
+    // Allocate descriptor set 0
     VkDescriptorSetAllocateInfo setAlloc{};
     setAlloc.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     setAlloc.descriptorPool     = frameRes.descriptorPool;
@@ -340,10 +654,28 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
 
     VK_CHECK(vkAllocateDescriptorSets(resources.device, &setAlloc, &frameRes.descriptorSet));
 
-    // Allocate Camera Uniform Buffer (256 bytes)
+    // Allocate descriptor set 3 (local lights and clusters)
+    VkDescriptorSetAllocateInfo localSetAlloc{};
+    localSetAlloc.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    localSetAlloc.descriptorPool     = frameRes.descriptorPool;
+    localSetAlloc.descriptorSetCount = 1;
+    localSetAlloc.pSetLayouts        = &m_LocalLightsDescriptorSetLayout;
+
+    VK_CHECK(vkAllocateDescriptorSets(resources.device, &localSetAlloc, &frameRes.localLightsDescriptorSet));
+
+    // Allocate descriptor set for light culling compute shader
+    VkDescriptorSetAllocateInfo cullingSetAlloc{};
+    cullingSetAlloc.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    cullingSetAlloc.descriptorPool     = frameRes.descriptorPool;
+    cullingSetAlloc.descriptorSetCount = 1;
+    cullingSetAlloc.pSetLayouts        = &m_LightCullingDescriptorSetLayout;
+
+    VK_CHECK(vkAllocateDescriptorSets(resources.device, &cullingSetAlloc, &frameRes.lightCullingDescriptorSet));
+
+    // Allocate Camera Uniform Buffer
     VkBufferCreateInfo bufInfo{};
     bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufInfo.size  = 256;
+    bufInfo.size  = sizeof(Omnix::Radiance::RadianceFrameUBO);
     bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -385,6 +717,50 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
     VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &gpuAllocInfo, &frameRes.materialBuffer, &frameRes.materialAlloc, nullptr));
     ::eng::ResourceTracker::incBuffer();
 
+    // Initialize localLightBuffer dynamic storage buffer to a default capacity
+    frameRes.localLightBuffer.resources = &resources;
+    frameRes.localLightBuffer.size = 1 * sizeof(Omnix::Radiance::LocalLightGPU);
+    frameRes.localLightBuffer.capacity = 1;
+
+    VkBufferCreateInfo localLightBufInfo{};
+    localLightBufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    localLightBufInfo.size = frameRes.localLightBuffer.size;
+    localLightBufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    localLightBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VmaAllocationCreateInfo localLightAllocInfo{};
+    localLightAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &localLightBufInfo, &localLightAllocInfo, &frameRes.localLightBuffer.buffer, &frameRes.localLightBuffer.allocation, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    // Initialize cluster bounds, ranges, indices, settings buffers to default size 1
+    frameRes.clusterBoundsCapacity = 1;
+    frameRes.clusterBoundsBufferSize = frameRes.clusterBoundsCapacity * sizeof(Omnix::Radiance::ClusterBoundsGPU);
+    bufInfo.size = frameRes.clusterBoundsBufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.clusterBoundsBuffer, &frameRes.clusterBoundsAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    frameRes.clusterRangeCapacity = 1;
+    frameRes.clusterRangeBufferSize = frameRes.clusterRangeCapacity * sizeof(Omnix::Radiance::ClusterRangeGPU);
+    bufInfo.size = frameRes.clusterRangeBufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.clusterRangeBuffer, &frameRes.clusterRangeAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    frameRes.clusterLightIndexCapacity = 1;
+    frameRes.clusterLightIndexBufferSize = frameRes.clusterLightIndexCapacity * sizeof(uint32_t);
+    bufInfo.size = frameRes.clusterLightIndexBufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.clusterLightIndexBuffer, &frameRes.clusterLightIndexAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    bufInfo.size = sizeof(Omnix::Radiance::ClusterSettingsGPU);
+    bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.clusterSettingsBuffer, &frameRes.clusterSettingsAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
     // Write descriptor set initially
     writeDescriptorSet(resources, frameRes);
 }
@@ -415,6 +791,31 @@ void GPUScene::destroyFrameResources(EngineResources& resources, GPUSceneFrameRe
         vmaDestroyBuffer(resources.allocator, frameRes.objectIdBuffer, frameRes.objectIdAlloc);
         ::eng::ResourceTracker::decBuffer();
         frameRes.objectIdBuffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.localLightBuffer.buffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.localLightBuffer.buffer, frameRes.localLightBuffer.allocation);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.localLightBuffer.buffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.clusterBoundsBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.clusterBoundsBuffer, frameRes.clusterBoundsAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.clusterBoundsBuffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.clusterRangeBuffer, frameRes.clusterRangeAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.clusterRangeBuffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.clusterLightIndexBuffer, frameRes.clusterLightIndexAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.clusterLightIndexBuffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.clusterSettingsBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.clusterSettingsBuffer, frameRes.clusterSettingsAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.clusterSettingsBuffer = VK_NULL_HANDLE;
     }
     if (frameRes.descriptorPool != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(resources.device, frameRes.descriptorPool, nullptr);
@@ -482,7 +883,7 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     VkDescriptorBufferInfo cameraInfo{};
     cameraInfo.buffer = frameRes.cameraBuffer;
     cameraInfo.offset = 0;
-    cameraInfo.range  = sizeof(CameraGPUData);
+    cameraInfo.range  = sizeof(Omnix::Radiance::RadianceFrameUBO);
 
     VkWriteDescriptorSet cameraWrite{};
     cameraWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -557,6 +958,171 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     objectIdWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     objectIdWrite.pBufferInfo     = &objectIdInfo;
     writes.push_back(objectIdWrite);
+
+    // Write local lights descriptor set if buffer exists
+    VkDescriptorBufferInfo localLightInfo{};
+    VkDescriptorBufferInfo clusterBoundsInfo{};
+    VkDescriptorBufferInfo clusterRangeInfo{};
+    VkDescriptorBufferInfo clusterLightIndexInfo{};
+    VkDescriptorBufferInfo clusterSettingsInfo{};
+
+    std::vector<VkWriteDescriptorSet> localSetWrites;
+
+    if (frameRes.localLightBuffer.buffer != VK_NULL_HANDLE) {
+        localLightInfo.buffer = frameRes.localLightBuffer.buffer;
+        localLightInfo.offset = 0;
+        localLightInfo.range  = frameRes.localLightBuffer.size;
+
+        VkWriteDescriptorSet localLightWrite{};
+        localLightWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        localLightWrite.dstSet          = frameRes.localLightsDescriptorSet;
+        localLightWrite.dstBinding      = 0;
+        localLightWrite.dstArrayElement = 0;
+        localLightWrite.descriptorCount = 1;
+        localLightWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        localLightWrite.pBufferInfo     = &localLightInfo;
+        localSetWrites.push_back(localLightWrite);
+    }
+
+    if (frameRes.clusterBoundsBuffer != VK_NULL_HANDLE) {
+        clusterBoundsInfo.buffer = frameRes.clusterBoundsBuffer;
+        clusterBoundsInfo.offset = 0;
+        clusterBoundsInfo.range  = frameRes.clusterBoundsBufferSize;
+
+        VkWriteDescriptorSet clusterBoundsWrite{};
+        clusterBoundsWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        clusterBoundsWrite.dstSet          = frameRes.localLightsDescriptorSet;
+        clusterBoundsWrite.dstBinding      = 1;
+        clusterBoundsWrite.dstArrayElement = 0;
+        clusterBoundsWrite.descriptorCount = 1;
+        clusterBoundsWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        clusterBoundsWrite.pBufferInfo     = &clusterBoundsInfo;
+        localSetWrites.push_back(clusterBoundsWrite);
+    }
+
+    if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE) {
+        clusterRangeInfo.buffer = frameRes.clusterRangeBuffer;
+        clusterRangeInfo.offset = 0;
+        clusterRangeInfo.range  = frameRes.clusterRangeBufferSize;
+
+        VkWriteDescriptorSet clusterRangeWrite{};
+        clusterRangeWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        clusterRangeWrite.dstSet          = frameRes.localLightsDescriptorSet;
+        clusterRangeWrite.dstBinding      = 2;
+        clusterRangeWrite.dstArrayElement = 0;
+        clusterRangeWrite.descriptorCount = 1;
+        clusterRangeWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        clusterRangeWrite.pBufferInfo     = &clusterRangeInfo;
+        localSetWrites.push_back(clusterRangeWrite);
+    }
+
+    if (frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
+        clusterLightIndexInfo.buffer = frameRes.clusterLightIndexBuffer;
+        clusterLightIndexInfo.offset = 0;
+        clusterLightIndexInfo.range  = frameRes.clusterLightIndexBufferSize;
+
+        VkWriteDescriptorSet clusterLightIndexWrite{};
+        clusterLightIndexWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        clusterLightIndexWrite.dstSet          = frameRes.localLightsDescriptorSet;
+        clusterLightIndexWrite.dstBinding      = 3;
+        clusterLightIndexWrite.dstArrayElement = 0;
+        clusterLightIndexWrite.descriptorCount = 1;
+        clusterLightIndexWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        clusterLightIndexWrite.pBufferInfo     = &clusterLightIndexInfo;
+        localSetWrites.push_back(clusterLightIndexWrite);
+    }
+
+    if (frameRes.clusterSettingsBuffer != VK_NULL_HANDLE) {
+        clusterSettingsInfo.buffer = frameRes.clusterSettingsBuffer;
+        clusterSettingsInfo.offset = 0;
+        clusterSettingsInfo.range  = sizeof(Omnix::Radiance::ClusterSettingsGPU);
+
+        VkWriteDescriptorSet clusterSettingsWrite{};
+        clusterSettingsWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        clusterSettingsWrite.dstSet          = frameRes.localLightsDescriptorSet;
+        clusterSettingsWrite.dstBinding      = 4;
+        clusterSettingsWrite.dstArrayElement = 0;
+        clusterSettingsWrite.descriptorCount = 1;
+        clusterSettingsWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        clusterSettingsWrite.pBufferInfo     = &clusterSettingsInfo;
+        localSetWrites.push_back(clusterSettingsWrite);
+    }
+
+    writes.insert(writes.end(), localSetWrites.begin(), localSetWrites.end());
+
+    // Write light culling compute descriptor set if it exists
+    if (frameRes.lightCullingDescriptorSet != VK_NULL_HANDLE) {
+        static VkDescriptorBufferInfo csInfo{};
+        csInfo.buffer = frameRes.clusterSettingsBuffer;
+        csInfo.offset = 0;
+        csInfo.range  = sizeof(Omnix::Radiance::ClusterSettingsGPU);
+
+        static VkDescriptorBufferInfo lInfo{};
+        lInfo.buffer = frameRes.localLightBuffer.buffer;
+        lInfo.offset = 0;
+        lInfo.range  = frameRes.localLightBuffer.size;
+
+        static VkDescriptorBufferInfo cbInfo{};
+        cbInfo.buffer = frameRes.clusterBoundsBuffer;
+        cbInfo.offset = 0;
+        cbInfo.range  = frameRes.clusterBoundsBufferSize;
+
+        static VkDescriptorBufferInfo crInfo{};
+        crInfo.buffer = frameRes.clusterRangeBuffer;
+        crInfo.offset = 0;
+        crInfo.range  = frameRes.clusterRangeBufferSize;
+
+        static VkDescriptorBufferInfo cliInfo{};
+        cliInfo.buffer = frameRes.clusterLightIndexBuffer;
+        cliInfo.offset = 0;
+        cliInfo.range  = frameRes.clusterLightIndexBufferSize;
+
+        VkWriteDescriptorSet cullingWrites[5]{};
+
+        cullingWrites[0].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cullingWrites[0].dstSet          = frameRes.lightCullingDescriptorSet;
+        cullingWrites[0].dstBinding      = 0;
+        cullingWrites[0].dstArrayElement = 0;
+        cullingWrites[0].descriptorCount = 1;
+        cullingWrites[0].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        cullingWrites[0].pBufferInfo     = &csInfo;
+
+        cullingWrites[1].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cullingWrites[1].dstSet          = frameRes.lightCullingDescriptorSet;
+        cullingWrites[1].dstBinding      = 1;
+        cullingWrites[1].dstArrayElement = 0;
+        cullingWrites[1].descriptorCount = 1;
+        cullingWrites[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        cullingWrites[1].pBufferInfo     = &lInfo;
+
+        cullingWrites[2].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cullingWrites[2].dstSet          = frameRes.lightCullingDescriptorSet;
+        cullingWrites[2].dstBinding      = 2;
+        cullingWrites[2].dstArrayElement = 0;
+        cullingWrites[2].descriptorCount = 1;
+        cullingWrites[2].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        cullingWrites[2].pBufferInfo     = &cbInfo;
+
+        cullingWrites[3].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cullingWrites[3].dstSet          = frameRes.lightCullingDescriptorSet;
+        cullingWrites[3].dstBinding      = 3;
+        cullingWrites[3].dstArrayElement = 0;
+        cullingWrites[3].descriptorCount = 1;
+        cullingWrites[3].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        cullingWrites[3].pBufferInfo     = &crInfo;
+
+        cullingWrites[4].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        cullingWrites[4].dstSet          = frameRes.lightCullingDescriptorSet;
+        cullingWrites[4].dstBinding      = 4;
+        cullingWrites[4].dstArrayElement = 0;
+        cullingWrites[4].descriptorCount = 1;
+        cullingWrites[4].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        cullingWrites[4].pBufferInfo     = &cliInfo;
+
+        for (int i = 0; i < 5; ++i) {
+            writes.push_back(cullingWrites[i]);
+        }
+    }
 
     vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

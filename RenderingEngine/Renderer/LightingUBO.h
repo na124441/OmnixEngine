@@ -1,6 +1,18 @@
 #pragma once
 #include <glm/glm.hpp>
 
+struct alignas(16) ShadowGPUSettings
+{
+    glm::vec4 shadowParams;
+    // x = strength
+    // y = constant bias
+    // z = slope bias
+    // w = softness
+
+    glm::uvec4 shadowFlags;
+    // x = PCF kernel size
+};
+
 /* Matches the layout in the fragment shader (set = 2, binding = 0) */
 struct LightData
 {
@@ -19,7 +31,7 @@ struct LightData
     alignas(16) glm::vec4 spotAngles[16];
 
     // Shadow mapping uniform data
-    alignas(16) glm::mat4 lightSpaceMatrix;
+    alignas(16) glm::mat4 directionalLightProjView;
     alignas(16) float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -28,4 +40,6 @@ struct LightData
     int32_t pcfKernelSize;
     uint32_t shadowResolution;
     uint32_t paddingVal2;
+
+    alignas(16) ShadowGPUSettings shadowSettings;
 };

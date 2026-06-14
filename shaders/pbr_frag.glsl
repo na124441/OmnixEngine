@@ -2,12 +2,26 @@
 layout(location = 0) out vec4 outColor;
 
 // Binding 0: Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos;
-    vec4 cameraPlanes;
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 struct InstanceData {
     mat4 worldMatrix;
@@ -124,8 +138,8 @@ void main()
     // Depth Debug View Mode Check
     if (light.shadingMode == 2) {
         float z = gl_FragCoord.z;
-        float near = cam.cameraPlanes.x;
-        float far = cam.cameraPlanes.y;
+        float near = frame.projection[3][2] / frame.projection[2][2];
+        float far = frame.projection[3][2] / (1.0 + frame.projection[2][2]);
         float linear = (near * far) / (far - z * (far - near));
         float maxDepthVis = min(far, 100.0);
         float d = clamp((linear - near) / (maxDepthVis - near), 0.0, 1.0);

@@ -1,52 +1,77 @@
 #version 450
 layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 inUV;
+
 layout(set = 0, binding = 0) uniform sampler2D hdrColor;
 
-layout(push_constant) uniform PostProcessSettings {
-    float exposure;
-    float gamma;
-    float bloomThreshold;
-    float bloomIntensity;
-    uint exposureMode;
-    uint enableTonemapping;
-    uint enableGammaCorrection;
-    uint debugBeforePostProcess;
-    float autoExposure;
-} settings;
+layout(set = 1, binding = 0) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
 
-vec3 acesTonemap(vec3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
+
+vec3 ToneMapReinhard(vec3 color)
+{
+    return color / (color + vec3(1.0));
+}
+
+vec3 ToneMapACES(vec3 x)
+{
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
-void main() {
-    vec3 color = max(texture(hdrColor, inUV).rgb, vec3(0.0));
+vec3 ApplyToneMapping(vec3 hdrColorVal)
+{
+    float exposure = frame.exposureSettings.x;
+    uint mode = frame.renderFlags.x;
 
-    if (settings.debugBeforePostProcess != 0u) {
-        outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-        return;
+    vec3 color = hdrColorVal * exposure;
+
+    if (mode == 1u)
+    {
+        color = ToneMapReinhard(color);
     }
-
-    float activeExposure = settings.exposureMode == 1u ? settings.autoExposure : settings.exposure;
-    color *= max(activeExposure, 0.0);
-
-    vec3 bloomCandidate = max(color - vec3(settings.bloomThreshold), vec3(0.0));
-    color += bloomCandidate * max(settings.bloomIntensity, 0.0);
-
-    if (settings.enableTonemapping != 0u) {
-        color = acesTonemap(color);
-    } else {
+    else if (mode == 2u)
+    {
+        color = ToneMapACES(color);
+    }
+    else
+    {
         color = clamp(color, 0.0, 1.0);
     }
 
-    if (settings.enableGammaCorrection != 0u) {
-        color = pow(max(color, vec3(0.0)), vec3(1.0 / max(settings.gamma, 0.001)));
-    }
+    // Gamma correction
+    color = pow(color, vec3(1.0 / 2.2));
 
-    outColor = vec4(color, 1.0);
+    return color;
+}
+
+void main()
+{
+    vec3 hdrColorVal = max(texture(hdrColor, inUV).rgb, vec3(0.0));
+
+    vec3 ldrColor = ApplyToneMapping(hdrColorVal);
+
+    outColor = vec4(ldrColor, 1.0);
 }

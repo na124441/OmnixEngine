@@ -3,13 +3,26 @@ layout(location = 0) out vec4 outColor;
 
 layout(location = 0) in vec2 inUV;
 
-// Binding 0: Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos;
-    vec4 cameraPlanes;
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 // Binding 3: Light Storage Buffer
 layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
@@ -28,7 +41,7 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 spotAngles[16];
     
     // Shadow mapping settings
-    mat4 lightSpaceMatrix;
+    mat4 directionalLightProjView;
     float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -37,7 +50,55 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     int pcfKernelSize;
     uint shadowResolution;
     uint paddingVal2;
-} light;
+
+    vec4 shadowParams;
+    uvec4 shadowFlags;
+} lighting;
+
+#define light lighting
+
+vec3 GetWorldViewDirection(vec2 uv)
+{
+    vec4 clip = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+
+    vec4 view = frame.inverseProjection * clip;
+    view /= view.w;
+
+    vec3 viewDir = normalize(view.xyz);
+
+    vec3 worldDir = normalize((frame.inverseView * vec4(viewDir, 0.0)).xyz);
+
+    return worldDir;
+}
+
+vec3 EvaluateSky(vec3 worldDir)
+{
+    vec3 topColor = frame.skyTopColorIntensity.rgb;
+    float skyIntensity = frame.skyTopColorIntensity.a;
+
+    vec3 horizonColor = frame.skyHorizonColorBlend.rgb;
+    float horizonBlend = frame.skyHorizonColorBlend.a;
+
+    vec3 groundColor = frame.skyGroundColorIntensity.rgb;
+    float groundIntensity = frame.skyGroundColorIntensity.a;
+
+    float y = worldDir.y;
+
+    if (y >= 0.0)
+    {
+        float t = clamp(y, 0.0, 1.0);
+        t = pow(t, horizonBlend);
+
+        vec3 sky = mix(horizonColor, topColor, t);
+        return sky * skyIntensity;
+    }
+    else
+    {
+        float t = clamp(-y, 0.0, 1.0);
+        vec3 ground = mix(horizonColor, groundColor, t);
+        return ground * groundIntensity;
+    }
+}
 
 // Set 1: GBuffer samplers
 layout(set = 1, binding = 0) uniform sampler2D gbufferA; // Albedo + flags
@@ -48,7 +109,134 @@ layout(set = 1, binding = 4) uniform sampler2D gbufferD; // Emissive + Shading M
 layout(set = 1, binding = 5) uniform sampler2D shadowMap; // Shadow Depth Map
 layout(set = 1, binding = 6) uniform sampler2D ssaoMap; // SSAO Map
 
+struct LocalLightGPU
+{
+    vec4 positionRange;
+    vec4 colorIntensity;
+    vec4 directionType;
+    vec4 spotAngles;
+};
+
+struct ClusterBoundsGPU
+{
+    vec4 minPoint;
+    vec4 maxPoint;
+};
+
+struct ClusterRangeGPU
+{
+    uint offset;
+    uint count;
+    uint overflow;
+    uint pad;
+};
+
+layout(set = 3, binding = 0) readonly buffer LocalLights
+{
+    LocalLightGPU lights[];
+} localLights;
+
+layout(set = 3, binding = 1) readonly buffer ClusterBounds
+{
+    ClusterBoundsGPU bounds[];
+} clusterBounds;
+
+layout(set = 3, binding = 2) readonly buffer ClusterRanges
+{
+    ClusterRangeGPU ranges[];
+} clusterRanges;
+
+layout(set = 3, binding = 3) readonly buffer ClusterLightIndices
+{
+    uint lightIndices[];
+} clusterLightIndices;
+
+layout(set = 3, binding = 4) uniform ClusterSettings
+{
+    uint tileCountX;
+    uint tileCountY;
+    uint depthSliceCount;
+    uint maxLightsPerCluster;
+
+    uint clusterCount;
+    uint lightCount;
+    float nearPlane;
+    float farPlane;
+} settings;
+
+layout(push_constant) uniform PushConstants
+{
+    uint localLightCount;
+} pc;
+
 const float PI = 3.14159265359;
+
+float DistributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    denom = 3.14159265 * denom * denom;
+
+    return a2 / max(denom, 0.0001);
+}
+
+float GeometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+
+    return NdotV / max(NdotV * (1.0 - k) + k, 0.0001);
+}
+
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float ggxV = GeometrySchlickGGX(max(dot(N, V), 0.0), roughness);
+    float ggxL = GeometrySchlickGGX(max(dot(N, L), 0.0), roughness);
+
+    return ggxV * ggxL;
+}
+
+vec3 FresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+vec3 EvaluateDirectionalLight(
+    vec3 albedo,
+    vec3 N,
+    vec3 V,
+    float metallic,
+    float roughness)
+{
+    vec3 L = normalize(-frame.sunDirectionIntensity.xyz);
+    vec3 H = normalize(V + L);
+
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.001);
+
+    vec3 sunColor = frame.sunColorAngularSize.rgb;
+    float sunIntensity = frame.sunDirectionIntensity.w;
+
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+
+    float D = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
+    vec3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 numerator = D * G * F;
+    float denominator = max(4.0 * NdotV * NdotL, 0.001);
+    vec3 specular = numerator / denominator;
+
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+    vec3 diffuse = kD * albedo / 3.14159265;
+
+    return (diffuse + specular) * sunColor * sunIntensity * NdotL;
+}
 
 vec3 debugHeat(float value) {
     float t = clamp(value, 0.0, 1.0);
@@ -60,60 +248,67 @@ vec3 debugHeat(float value) {
 
 vec3 reconstructWorldPos(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    mat4 invVP = inverse(cam.proj * cam.view);
+    mat4 invVP = inverse(frame.projection * frame.view);
     vec4 worldPos = invVP * ndc;
     return worldPos.xyz / worldPos.w;
 }
 
-float computeShadow(vec3 worldPos, vec3 normal) {
-    if (light.shadowLightCast == 0) {
-        return 1.0;
+float CalculateShadow(vec3 worldPos, vec3 N)
+{
+    if (lighting.shadowLightCast == 0)
+    {
+        return 0.0;
     }
-    
-    // Offset along normal to avoid shadow acne
-    vec3 biasedWorldPos = worldPos + normal * light.shadowNormalBias;
-    
-    // Project to light space
-    vec4 lightSpacePos = light.lightSpaceMatrix * vec4(biasedWorldPos, 1.0);
-    vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
-    
-    // Transform to [0,1] range for UV coordinates
-    vec3 uvCoords = projCoords;
-    uvCoords.xy = projCoords.xy * 0.5 + 0.5;
-    
-    // If outside the shadow map bounds, it is unshadowed
-    if (uvCoords.x < 0.0 || uvCoords.x > 1.0 || uvCoords.y < 0.0 || uvCoords.y > 1.0 || uvCoords.z < 0.0 || uvCoords.z > 1.0) {
-        return 1.0;
+
+    vec4 lightSpace = lighting.directionalLightProjView * vec4(worldPos, 1.0);
+
+    vec3 projCoords = lightSpace.xyz / lightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z > 1.0)
+    {
+        return 0.0;
     }
-    
-    float currentDepth = uvCoords.z;
-    
-    // Slope-scaled bias
-    vec3 L = normalize(-light.directionalDirectionIntensity.xyz);
-    float bias = light.shadowBias + light.shadowSlopeBias * clamp(1.0 - dot(normal, L), 0.0, 1.0);
-    
-    // Tunable PCF Filtering
-    float shadow = 0.0;
+
+    vec3 L = normalize(-frame.sunDirectionIntensity.xyz);
+
+    float constantBias = lighting.shadowParams.y;
+    float slopeBias = lighting.shadowParams.z;
+
+    float bias = constantBias + slopeBias * (1.0 - max(dot(N, L), 0.0));
+
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    int kernelSize = int(light.pcfKernelSize);
-    
-    if (kernelSize <= 1) {
-        float closestDepth = texture(shadowMap, uvCoords.xy).r;
-        shadow = (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
-    } else {
-        int halfSize = (kernelSize - 1) / 2;
-        float total = 0.0;
-        for (int x = -halfSize; x <= halfSize; ++x) {
-            for (int y = -halfSize; y <= halfSize; ++y) {
-                float closestDepth = texture(shadowMap, uvCoords.xy + vec2(x, y) * texelSize).r;
-                shadow += (currentDepth - bias > closestDepth) ? 0.0 : 1.0;
-                total += 1.0;
-            }
+
+    float shadow = 0.0;
+
+    int kernelSize = int(lighting.shadowFlags.x);
+    if (kernelSize <= 0) kernelSize = 3;
+    int radius = (kernelSize - 1) / 2;
+    if (radius < 0) radius = 0;
+
+    float total = 0.0;
+
+    for (int x = -radius; x <= radius; x++)
+    {
+        for (int y = -radius; y <= radius; y++)
+        {
+            float closestDepth = texture(
+                shadowMap,
+                projCoords.xy + vec2(x, y) * texelSize
+            ).r;
+
+            shadow += (projCoords.z - bias) > closestDepth ? 1.0 : 0.0;
+            total += 1.0;
         }
-        shadow /= total;
     }
-    
-    return mix(1.0, shadow, light.shadowStrength);
+
+    shadow /= total;
+
+    float strength = lighting.shadowParams.x;
+
+    return shadow * strength;
 }
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
@@ -149,6 +344,110 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
+vec3 EvaluatePointLight(
+    LocalLightGPU light,
+    vec3 worldPos,
+    vec3 albedo,
+    vec3 N,
+    vec3 V,
+    float metallic,
+    float roughness)
+{
+    vec3 lightPos = light.positionRange.xyz;
+    float range = light.positionRange.w;
+
+    vec3 Lvec = lightPos - worldPos;
+    float distance = length(Lvec);
+
+    if (distance >= range)
+    {
+        return vec3(0.0);
+    }
+
+    vec3 L = normalize(Lvec);
+    vec3 H = normalize(V + L);
+
+    float x = distance / range;
+    float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
+    attenuation *= attenuation;
+
+    vec3 color = light.colorIntensity.rgb;
+    float intensity = light.colorIntensity.w;
+
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.001);
+
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+
+    float D = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
+    vec3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+    vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
+    vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
+    vec3 diffuse = kD * albedo / 3.14159265;
+
+    return (diffuse + specular) * color * intensity * attenuation * NdotL;
+}
+
+vec3 EvaluateSpotLight(
+    LocalLightGPU light,
+    vec3 worldPos,
+    vec3 albedo,
+    vec3 N,
+    vec3 V,
+    float metallic,
+    float roughness)
+{
+    vec3 lightPos = light.positionRange.xyz;
+    float range = light.positionRange.w;
+
+    vec3 Lvec = lightPos - worldPos;
+    float distance = length(Lvec);
+
+    if (distance >= range)
+    {
+        return vec3(0.0);
+    }
+
+    vec3 L = normalize(Lvec);
+
+    vec3 spotDirection = normalize(light.directionType.xyz);
+
+    float theta = dot(normalize(-L), spotDirection);
+
+    float innerAngle = light.spotAngles.x;
+    float outerAngle = light.spotAngles.y;
+
+    float inner = cos(innerAngle);
+    float outer = cos(outerAngle);
+
+    float cone = clamp((theta - outer) / max(inner - outer, 0.001), 0.0, 1.0);
+    cone *= cone;
+
+    if (cone <= 0.0)
+    {
+        return vec3(0.0);
+    }
+
+    float x = distance / range;
+    float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
+    attenuation *= attenuation;
+
+    // Reuse point light BRDF but multiply by cone.
+    vec3 result = EvaluatePointLight(
+        light,
+        worldPos,
+        albedo,
+        N,
+        V,
+        metallic,
+        roughness
+    );
+
+    return result * cone;
+}
+
 void main()
 {
     // Sample GBuffer attributes
@@ -157,10 +456,10 @@ void main()
     vec4 gbufferCSample = texture(gbufferC, inUV);
     vec4 gbufferDSample = texture(gbufferD, inUV);
     float depth = texture(depthBuffer, inUV).r;
-    float exposure = cam.cameraPlanes.z;
+    float exposure = frame.exposureSettings.x;
 
     // Selected object outline check
-    uint selectedID = uint(round(cam.cameraPlanes.w));
+    uint selectedID = frame.renderFlags.z;
     if (selectedID != 0) {
         uint centerID = uint(round(gbufferCSample.b * 255.0));
         vec2 texelSize = 1.0 / vec2(textureSize(gbufferC, 0));
@@ -192,14 +491,11 @@ void main()
         }
     }
 
-    // Discard background pixels (where depth is 1.0)
-    if (depth >= 1.0) {
-        vec3 bgColor = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w;
-        if (light.shadingMode == 0) {
-            bgColor *= exposure;
-        }
-        float bgAlpha = (light.shadingMode >= 1) ? 0.0 : 1.0;
-        outColor = vec4(bgColor, bgAlpha);
+    // Background pixel: no geometry was rendered here.
+    if (depth >= 0.9999) {
+        vec3 worldDir = GetWorldViewDirection(inUV);
+        vec3 sky = EvaluateSky(worldDir);
+        outColor = vec4(sky, 1.0);
         return;
     }
 
@@ -230,8 +526,8 @@ void main()
 
     // Mode 2: Depth Debug
     if (light.shadingMode == 2) {
-        float near = cam.cameraPlanes.x;
-        float far = cam.cameraPlanes.y;
+        float near = frame.projection[3][2] / frame.projection[2][2];
+        float far = frame.projection[3][2] / (1.0 + frame.projection[2][2]);
         float linear = (near * far) / (far - depth * (far - near));
         float maxDepthVis = min(far, 100.0);
         float d = clamp((linear - near) / (maxDepthVis - near), 0.0, 1.0);
@@ -356,119 +652,79 @@ void main()
 
     // Standard PBR lighting calculation
     roughness = clamp(roughness, 0.04, 1.0);
-    vec3 V = normalize(cam.cameraPos.xyz - vWorldPos);
+    vec3 V = normalize(frame.cameraPosition.xyz - vWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     vec3 Lo = vec3(0.0);
 
     // ----- 1. Directional Light -----
+        // Apply shadow factor
+        float shadow = CalculateShadow(vWorldPos, N);
+
+        vec3 sunLighting = EvaluateDirectionalLight(albedo, N, V, metallic, roughness);
+        sunLighting *= (1.0 - shadow);
+        Lo += sunLighting;
+
+    // ----- 2. Clustered Local Lights -----
+    vec3 localLighting = vec3(0.0);
+    
+    // View-space NDC position reconstruction for slice lookup
+    vec4 clip = vec4(inUV * 2.0 - 1.0, depth, 1.0);
+    vec4 viewPos = frame.inverseProjection * clip;
+    viewPos /= viewPos.w;
+    float linearDepth = -viewPos.z;
+
+    // Calculate tile coordinate
+    uint tileX = uint((gl_FragCoord.x / frame.viewportSize.x) * float(settings.tileCountX));
+    uint tileY = uint((gl_FragCoord.y / frame.viewportSize.y) * float(settings.tileCountY));
+
+    // Clamp tile coords
+    tileX = clamp(tileX, 0u, settings.tileCountX - 1u);
+    tileY = clamp(tileY, 0u, settings.tileCountY - 1u);
+
+    // Calculate depth slice
+    float depthT = (linearDepth - settings.nearPlane) / (settings.farPlane - settings.nearPlane);
+    uint slice = uint(clamp(depthT * float(settings.depthSliceCount), 0.0, float(settings.depthSliceCount - 1)));
+
+    // Cluster index
+    uint clusterIdx = tileX + tileY * settings.tileCountX + slice * settings.tileCountX * settings.tileCountY;
+
+    // Retrieve range for this cluster
+    ClusterRangeGPU range = clusterRanges.ranges[clusterIdx];
+    uint offset = range.offset;
+    uint count = range.count;
+
+    for (uint i = 0; i < count; i++)
     {
-        vec3 L = normalize(-light.directionalDirectionIntensity.xyz);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
+        uint lightIndex = clusterLightIndices.lightIndices[offset + i];
+        LocalLightGPU light = localLights.lights[lightIndex];
 
-        if (NdotL > 0.0) {
-            vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-            float NDF = distributionGGX(N, H, roughness);
-            float G = geometrySmith(N, V, L, roughness);
-
-            vec3 numerator = NDF * G * F;
-            float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-            vec3 specular = numerator / denominator;
-
-            vec3 kS = F;
-            vec3 kD = vec3(1.0) - kS;
-            kD *= 1.0 - metallic;
-
-            // Apply shadow factor
-            float shadowFactor = computeShadow(vWorldPos, N);
-
-            vec3 radiance = light.directionalColor.rgb * light.directionalDirectionIntensity.w * shadowFactor;
-            Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+        if (uint(light.directionType.w) == 0u)
+        {
+            localLighting += EvaluatePointLight(
+                light,
+                vWorldPos,
+                albedo,
+                N,
+                V,
+                metallic,
+                roughness
+            );
+        }
+        else if (uint(light.directionType.w) == 1u)
+        {
+            localLighting += EvaluateSpotLight(
+                light,
+                vWorldPos,
+                albedo,
+                N,
+                V,
+                metallic,
+                roughness
+            );
         }
     }
-
-    // ----- 2. Point Lights -----
-    for (uint i = 0; i < light.pointLightCount && i < 16; ++i) {
-        vec3 lightPos = light.pointPositionsRadius[i].xyz;
-        float radius = light.pointPositionsRadius[i].w;
-        vec3 lightColor = light.pointColorsIntensity[i].rgb;
-        float intensity = light.pointColorsIntensity[i].w;
-
-        vec3 diff = lightPos - vWorldPos;
-        float distance = length(diff);
-        if (distance > radius) continue;
-
-        vec3 L = normalize(diff);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
-        float x = distance / radius;
-        float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
-        attenuation = attenuation * attenuation;
-
-        vec3 radiance = lightColor * intensity * attenuation;
-
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
-    }
-
-    // ----- 3. Spot Lights -----
-    for (uint i = 0; i < light.spotLightCount && i < 16; ++i) {
-        vec3 lightPos = light.spotPositionsRange[i].xyz;
-        float range = light.spotPositionsRange[i].w;
-        vec3 lightDir = normalize(light.spotDirectionsIntensity[i].xyz);
-        float intensity = light.spotDirectionsIntensity[i].w;
-        vec3 lightColor = light.spotColors[i].rgb;
-        float cosInner = light.spotColors[i].w;
-        float cosOuter = light.spotAngles[i].x;
-
-        vec3 diff = lightPos - vWorldPos;
-        float distance = length(diff);
-        if (distance > range) continue;
-
-        vec3 L = normalize(diff);
-        
-        // Spot cone attenuation
-        float theta = dot(normalize(-diff), lightDir);
-        float cone = clamp((theta - cosOuter) / max(cosInner - cosOuter, 0.0001), 0.0, 1.0);
-        cone = cone * cone;
-        if (cone <= 0.0) continue;
-
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
-        float x = distance / range;
-        float distAttenuation = clamp(1.0 - x * x, 0.0, 1.0);
-        distAttenuation = distAttenuation * distAttenuation;
-
-        vec3 radiance = lightColor * intensity * distAttenuation * cone;
-
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
-    }
+    Lo += localLighting;
 
     // Ambient sky light (multiplied by finalAO)
     float ssao = texture(ssaoMap, inUV).r;

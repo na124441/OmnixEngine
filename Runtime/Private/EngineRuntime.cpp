@@ -382,6 +382,11 @@ namespace eng::runtime {
                     eng::physics::PhysicsDebugDraw::ClearDebugVisuals();
                 }
             }
+
+            auto* rendererLoop = dynamic_cast<EngineLoop*>(m_Renderer.get());
+            if (rendererLoop && rendererLoop->GetSceneRenderer()) {
+                rendererLoop->GetSceneRenderer()->SetActiveScene(currentActiveScene);
+            }
             
             // Limit delta time to avoid spiral of death in lag spikes
             if (dt > 0.1) {

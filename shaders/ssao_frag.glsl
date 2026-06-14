@@ -2,12 +2,26 @@
 layout(location = 0) in vec2 inUV;
 layout(location = 0) out float outColor;
 
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos;
-    vec4 cameraPlanes; // x = near, y = far, z = exposure
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 layout(set = 1, binding = 0) uniform sampler2D depthTex; // GBuffer Depth
 layout(set = 1, binding = 1) uniform sampler2D normalTex; // GBuffer Normal
@@ -46,7 +60,7 @@ void main() {
 
     // Get normal in view space
     vec3 worldNormal = texture(normalTex, inUV).xyz * 2.0 - 1.0;
-    vec3 viewNormal = normalize(mat3(cam.view) * worldNormal);
+    vec3 viewNormal = normalize(mat3(frame.view) * worldNormal);
 
     // Get noise rotation vector
     vec2 noiseScale = vec2(ssao.screenWidth / 4.0, ssao.screenHeight / 4.0);

@@ -2,12 +2,26 @@
 layout(location = 0) out vec4 outColor;
 
 // Binding 0: Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos;
-    vec4 cameraPlanes; // x = near, y = far, z = exposure
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 struct InstanceData {
     mat4 worldMatrix;
@@ -61,7 +75,7 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 spotAngles[16];
     
     // Shadow mapping settings (not used by transparent shader)
-    mat4 lightSpaceMatrix;
+    mat4 directionalLightProjView;
     float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -70,6 +84,9 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     int pcfKernelSize;
     uint shadowResolution;
     uint paddingVal2;
+
+    vec4 shadowParams;
+    uvec4 shadowFlags;
 } light;
 
 // Set 1: Material textures
@@ -186,7 +203,7 @@ void main()
     }
 
     // Default exposure (loaded from camera planes)
-    float exposure = cam.cameraPlanes.z;
+    float exposure = frame.exposureSettings.x;
 
     // Direct lighting computation (PBR Cook-Torrance)
     vec3 V = normalize(vCameraPos - vWorldPos);

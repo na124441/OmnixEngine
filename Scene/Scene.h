@@ -17,6 +17,8 @@
 #include "Vector3.h"
 #include "Quaternion.h"
 #include "../ECS/ECSconfig.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 // Forward declarations
 class SceneObject;
@@ -216,6 +218,31 @@ public:
 
     Scene* Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, std::unordered_map<Entity, Entity>& outEntityMap) const;
     bool CompareScene(const Scene& other, const std::unordered_map<Entity, Entity>& entityMap, Coordinator& coordinator) const;
+
+    // Helper types for GPU-friendly light extraction
+    struct LightTransformProxy {
+        glm::vec3 position;
+        glm::vec3 forward;
+        glm::vec3 Forward() const { return forward; }
+    };
+    struct PointLightProxy {
+        glm::vec3 color;
+        float radius;
+        float intensity;
+    };
+    struct SpotLightProxy {
+        glm::vec3 color;
+        float range;
+        float intensity;
+        float innerAngleDegrees;
+        float outerAngleDegrees;
+    };
+
+    std::vector<uint32_t> GetPointLightEntities() const;
+    std::vector<uint32_t> GetSpotLightEntities() const;
+    LightTransformProxy GetTransform(uint32_t entityID) const;
+    PointLightProxy GetPointLight(uint32_t entityID) const;
+    SpotLightProxy GetSpotLight(uint32_t entityID) const;
 
 private:
     //========================================================================

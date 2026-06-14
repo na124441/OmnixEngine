@@ -4,12 +4,26 @@ layout(location = 1) in vec3 farPoint;
 
 layout(location = 0) out vec4 outColor;
 
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos; // xyz = position, w = fov
-    vec4 cameraPlanes; // x = near, y = far
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 vec4 grid(vec3 fragPos3D, float scale) {
     vec2 coord = fragPos3D.xz * scale;
@@ -38,7 +52,7 @@ vec4 grid(vec3 fragPos3D, float scale) {
 }
 
 float computeDepth(vec3 pos) {
-    vec4 clip_space_pos = cam.proj * cam.view * vec4(pos, 1.0);
+    vec4 clip_space_pos = frame.projection * frame.view * vec4(pos, 1.0);
     return (clip_space_pos.z / clip_space_pos.w);
 }
 
@@ -53,7 +67,7 @@ void main() {
     gl_FragDepth = computeDepth(fragPos3D);
     
     // Fade out at far plane or with distance
-    float distance = length(fragPos3D.xz - cam.cameraPos.xz);
+    float distance = length(fragPos3D.xz - frame.cameraPosition.xz);
     float maxDistance = 120.0;
     float fade = 1.0 - clamp(distance / maxDistance, 0.0, 1.0);
     fade = fade * fade; // smooth quadratic falloff

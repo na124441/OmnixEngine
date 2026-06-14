@@ -818,16 +818,24 @@ namespace eng::runtime {
 
         if (renderer) {
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
-            auto& post = renderer->GetPostProcessSettings();
-            bool autoExposure = post.exposureMode == eng::renderer::ExposureMode::Auto;
-            if (ImGui::Checkbox("Auto Exposure", &autoExposure)) {
-                post.exposureMode = autoExposure ? eng::renderer::ExposureMode::Auto : eng::renderer::ExposureMode::Manual;
-            }
+            auto& settings = renderer->GetRadianceSettings();
+            
+            ImGui::Checkbox("Auto Exposure", &settings.exposure.autoExposure);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(90.0f);
-            ImGui::SliderFloat("Exposure", &post.exposure, 0.05f, 8.0f, "%.2f");
+            ImGui::SliderFloat("Exposure", &settings.exposure.manualExposure, 0.05f, 8.0f, "%.2f");
             ImGui::SameLine();
-            ImGui::Checkbox("Before", &post.debugBeforePostProcess);
+
+            int toneMode = static_cast<int>(settings.exposure.toneMappingMode);
+            const char* modes[] = { "None", "Reinhard", "ACES", "Filmic" };
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::Combo("Tone Mapping", &toneMode, modes, 4))
+            {
+                settings.exposure.toneMappingMode =
+                    static_cast<Omnix::Radiance::ToneMappingMode>(toneMode);
+            }
+            ImGui::SameLine();
+            ImGui::Checkbox("Before", &renderer->GetPostProcessSettings().debugBeforePostProcess);
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
             ImGui::Text("Queue Count: %u", renderer->m_TotalRenderCount);
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();

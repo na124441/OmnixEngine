@@ -343,6 +343,10 @@ namespace eng::runtime {
         auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
         if (engineLoop && engineLoop->GetSceneRenderer()) {
             auto* sceneRenderer = engineLoop->GetSceneRenderer();
+            auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+            if (sceneMgr) {
+                sceneRenderer->SetActiveScene(sceneMgr->GetActiveScene());
+            }
             uint32_t currentWidth = sceneRenderer->GetOffscreenWidth();
             uint32_t currentHeight = sceneRenderer->GetOffscreenHeight();
 

@@ -2,6 +2,7 @@
 #include "ECS/ECSComponents.h"
 #include "ECS/TriggerSystem.h"
 #include "ThirdParty/imgui/imgui.h"
+#include "Rendering/Debug/DebugDraw.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
@@ -521,6 +522,24 @@ namespace eng::physics {
                 }
             }
         }
+
+        // 9. Render custom DebugDraw shapes (e.g. GPU local lights debug shapes)
+        const auto& debugLines = eng::renderer::DebugDraw::GetLines();
+        for (const auto& line : debugLines) {
+            bool behind1 = false, behind2 = false;
+            glm::vec2 p1 = ProjectPoint(line.p1, glm::mat4(1.0f), view, proj, screenWidth, screenHeight, behind1);
+            glm::vec2 p2 = ProjectPoint(line.p2, glm::mat4(1.0f), view, proj, screenWidth, screenHeight, behind2);
+            if (!behind1 && !behind2) {
+                ImU32 color = IM_COL32(
+                    static_cast<int>(line.color.r * 255.0f),
+                    static_cast<int>(line.color.g * 255.0f),
+                    static_cast<int>(line.color.b * 255.0f),
+                    static_cast<int>(line.color.a * 255.0f)
+                );
+                drawList->AddLine(ImVec2(p1.x, p1.y), ImVec2(p2.x, p2.y), color, 2.0f);
+            }
+        }
+        eng::renderer::DebugDraw::ClearLines();
     }
 
     // -------------------------------------------------------------------------
@@ -604,5 +623,6 @@ namespace eng::physics {
 
     void PhysicsDebugDraw::ClearDebugVisuals() {
         s_Raycasts.clear();
+        eng::renderer::DebugDraw::ClearLines();
     }
 }

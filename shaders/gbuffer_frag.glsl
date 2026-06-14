@@ -5,12 +5,26 @@ layout(location = 2) out vec4 outGBufferC; // Metallic + Ambient Occlusion + Ent
 layout(location = 3) out vec4 outGBufferD; // Emissive + Shading Model
 
 // Binding 0: Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos;
-    vec4 cameraPlanes;
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 struct InstanceData {
     mat4 worldMatrix;

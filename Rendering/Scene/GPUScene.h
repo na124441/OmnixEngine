@@ -7,6 +7,11 @@
 #include "Rendering/Core/RenderScene.h"
 #include "RenderingEngine/Renderer/LightingUBO.h"
 #include "RenderingEngine/Renderer/scene/RenderQueue.h"
+#include "Rendering/Radiance/RadianceGPUData.h"
+#include "Rendering/Lighting/LocalLightGPU.h"
+#include "Rendering/Lighting/ClusteredLightingTypes.h"
+
+class Scene;
 
 namespace eng::renderer {
 
@@ -34,6 +39,38 @@ namespace eng::renderer {
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+        VkDescriptorSet localLightsDescriptorSet = VK_NULL_HANDLE;
+        VkDescriptorSet lightCullingDescriptorSet = VK_NULL_HANDLE;
+        uint32_t localLightCount = 0;
+
+        struct LocalLightBuffer {
+            EngineResources* resources = nullptr;
+            VkBuffer buffer = VK_NULL_HANDLE;
+            VmaAllocation allocation = VK_NULL_HANDLE;
+            VkDeviceSize size = 0;
+            uint32_t capacity = 0;
+
+            void Upload(const void* data, size_t dataSize);
+        } localLightBuffer;
+
+        // Clustered Lighting Buffers
+        VkBuffer clusterBoundsBuffer = VK_NULL_HANDLE;
+        VmaAllocation clusterBoundsAlloc = VK_NULL_HANDLE;
+        VkDeviceSize clusterBoundsBufferSize = 0;
+        uint32_t clusterBoundsCapacity = 0;
+
+        VkBuffer clusterRangeBuffer = VK_NULL_HANDLE;
+        VmaAllocation clusterRangeAlloc = VK_NULL_HANDLE;
+        VkDeviceSize clusterRangeBufferSize = 0;
+        uint32_t clusterRangeCapacity = 0;
+
+        VkBuffer clusterLightIndexBuffer = VK_NULL_HANDLE;
+        VmaAllocation clusterLightIndexAlloc = VK_NULL_HANDLE;
+        VkDeviceSize clusterLightIndexBufferSize = 0;
+        uint32_t clusterLightIndexCapacity = 0;
+
+        VkBuffer clusterSettingsBuffer = VK_NULL_HANDLE;
+        VmaAllocation clusterSettingsAlloc = VK_NULL_HANDLE;
     };
 
     class GPUScene {
@@ -56,11 +93,18 @@ namespace eng::renderer {
             const std::vector<RenderItem>& renderQueueItems,
             const std::unordered_map<uint64_t, Material*>& ecsMaterialCache,
             const Material* defaultMaterial,
-            uint32_t shadingMode = 0
+            const Omnix::Radiance::RadianceFrameUBO& radianceUBO,
+            uint32_t shadingMode = 0,
+            const ::Scene* activeScene = nullptr
         );
 
         VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
+        VkDescriptorSetLayout GetLocalLightsDescriptorSetLayout() const { return m_LocalLightsDescriptorSetLayout; }
+        VkDescriptorSetLayout GetLightCullingDescriptorSetLayout() const { return m_LightCullingDescriptorSetLayout; }
         VkDescriptorSet GetDescriptorSet(uint32_t frameIndex) const { return m_Frames[frameIndex].descriptorSet; }
+        VkDescriptorSet GetLocalLightsDescriptorSet(uint32_t frameIndex) const { return m_Frames[frameIndex].localLightsDescriptorSet; }
+        VkDescriptorSet GetLightCullingDescriptorSet(uint32_t frameIndex) const { return m_Frames[frameIndex].lightCullingDescriptorSet; }
+        uint32_t GetLocalLightCount(uint32_t frameIndex) const { return m_Frames[frameIndex].localLightCount; }
         const GPUSceneFrameResources& GetFrameResources(uint32_t frameIndex) const { return m_Frames[frameIndex]; }
 
     private:
@@ -82,6 +126,8 @@ namespace eng::renderer {
         void writeDescriptorSet(EngineResources& resources, GPUSceneFrameResources& frameRes);
 
         VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_LocalLightsDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_LightCullingDescriptorSetLayout = VK_NULL_HANDLE;
         std::vector<GPUSceneFrameResources> m_Frames;
     };
 

@@ -229,6 +229,7 @@ if(GLSLC)
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/transparent_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/transparent_frag.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/grid_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_vert.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/grid_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/light_culling.comp -o ${CMAKE_SOURCE_DIR}/shaders/light_culling.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
     add_dependencies(RenderingEngine CompileShaders)

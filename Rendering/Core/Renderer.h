@@ -28,6 +28,8 @@
 #include "RenderingEngine/Renderer/LightingUBO.h"
 #include "Rendering/Graph/RenderGraph.h"
 #include "RenderingEngine/Renderer/gltf/GltfModel.h"
+#include "Rendering/Radiance/RadianceSettings.h"
+#include "Rendering/Radiance/RadianceGPUData.h"
 
 struct CameraComponent;
 
@@ -98,6 +100,13 @@ namespace eng::renderer {
         void buildPyramidMesh();
         void updateGlobalUBO();
         void updateLightingUBO();
+        void UpdateRadianceFrameUBO(
+            Omnix::Radiance::RadianceFrameUBO& ubo,
+            const CameraData& camera,
+            uint32_t viewportWidth,
+            uint32_t viewportHeight,
+            float timeSeconds
+        );
 
         void setDirectionalLight(const glm::vec3& dir, const glm::vec3& col, float intensity = 1.0f)
         {
@@ -121,6 +130,7 @@ namespace eng::renderer {
         uint32_t PickEntity(uint32_t x, uint32_t y);
 
         void SetWorld(eng::runtime::World* world) { m_World = world; }
+        void SetActiveScene(const ::Scene* scene) { m_ActiveScene = scene; }
         void SetAssetRegistry(eng::runtime::AssetRegistry* registry) { m_AssetRegistry = registry; }
 
         LightData getLastLightData() const { return m_LastLightData; }
@@ -132,6 +142,8 @@ namespace eng::renderer {
         VkDescriptorSet GetSSAOBlurredTexture(uint32_t frameIdx) const;
         const RenderStats& GetRenderStats() const { return m_RenderStats; }
         void RequestRenderDocCapture() { m_RenderDocCaptureRequested = true; }
+        Omnix::Radiance::RadianceSettings& GetRadianceSettings() { return m_RadianceSettings; }
+        const Omnix::Radiance::RadianceSettings& GetRadianceSettings() const { return m_RadianceSettings; }
 
         // Member variables
         EngineResources& resources;
@@ -194,6 +206,7 @@ namespace eng::renderer {
 
     public:
         eng::runtime::World* m_World = nullptr;
+        const ::Scene* m_ActiveScene = nullptr;
         eng::runtime::AssetRegistry* m_AssetRegistry = nullptr;
 
     private:
@@ -247,6 +260,10 @@ namespace eng::renderer {
         VkPipelineLayout            m_DeferredPipelineLayout     = VK_NULL_HANDLE;
         VkPipeline                  m_DeferredLightingPipeline   = VK_NULL_HANDLE;
         VkPipeline                  m_OffscreenDeferredLightingPipeline = VK_NULL_HANDLE;
+
+        // Light culling compute pipeline
+        VkPipelineLayout            m_LightCullingPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline                  m_LightCullingPipeline       = VK_NULL_HANDLE;
 
         // HDR Color target resources
         std::vector<VkImage>        m_HDRColorImages;
@@ -353,6 +370,9 @@ namespace eng::renderer {
         void ValidateRenderGraph();
 
         std::chrono::steady_clock::time_point m_CpuFrameStart{};
+        std::chrono::steady_clock::time_point m_StartTime = std::chrono::steady_clock::now();
+
+        Omnix::Radiance::RadianceSettings m_RadianceSettings;
     };
 
 } // namespace eng::renderer

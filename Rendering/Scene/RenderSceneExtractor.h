@@ -7,6 +7,9 @@
 #include "Rendering/Core/RenderScene.h"
 #include "RenderingEngine/Renderer/LightingUBO.h"
 #include "RenderingEngine/Renderer/scene/Scene.h"
+#include "Rendering/Lighting/LocalLightGPU.h"
+
+class Scene;
 
 struct CameraComponent;
 
@@ -40,6 +43,11 @@ namespace eng::renderer {
             uint32_t shadingMode,
             LightData& uboData,
             bool& lastFallbackActive
+        );
+
+        static void ExtractLocalLights(
+            const ::Scene& scene,
+            std::vector<Omnix::Radiance::LocalLightGPU>& outLights
         );
     };
 

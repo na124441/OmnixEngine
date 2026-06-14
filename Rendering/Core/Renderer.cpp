@@ -457,10 +457,14 @@ void Renderer::Initialize()
     VK_CHECK(vkAllocateDescriptorSets(resources.device, &postProcessAllocInfo, m_PostProcessDescriptorSets.data()));
 
     // Create m_PostProcessPipelineLayout
+    VkDescriptorSetLayout setLayouts[2] = {
+        m_PostProcessDescriptorSetLayout,
+        gpuScene.GetDescriptorSetLayout()
+    };
     VkPipelineLayoutCreateInfo postProcessPipelineLayoutInfo{};
     postProcessPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    postProcessPipelineLayoutInfo.setLayoutCount = 1;
-    postProcessPipelineLayoutInfo.pSetLayouts = &m_PostProcessDescriptorSetLayout;
+    postProcessPipelineLayoutInfo.setLayoutCount = 2;
+    postProcessPipelineLayoutInfo.pSetLayouts = setLayouts;
     VkPushConstantRange postPushRange{};
     postPushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     postPushRange.offset = 0;
@@ -490,15 +494,23 @@ void Renderer::Initialize()
 
     // Create Deferred Pipeline Layout
     std::vector<VkDescriptorSetLayout> deferredSetLayouts = {
-        resources.globalSetLayout,         // Set 0: camera/lights
-        m_GBufferDescriptorSetLayout       // Set 1: GBuffer textures
+        resources.globalSetLayout,                         // Set 0: camera/lights
+        m_GBufferDescriptorSetLayout,                       // Set 1: GBuffer textures
+        resources.globalSetLayout,                         // Set 2: Placeholder
+        gpuScene.GetLocalLightsDescriptorSetLayout()       // Set 3: Local lights
     };
+
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(uint32_t); // localLightCount
+
     VkPipelineLayoutCreateInfo deferredLayoutInfo{};
     deferredLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     deferredLayoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
     deferredLayoutInfo.pSetLayouts = deferredSetLayouts.data();
-    deferredLayoutInfo.pushConstantRangeCount = 0;
-    deferredLayoutInfo.pPushConstantRanges = nullptr;
+    deferredLayoutInfo.pushConstantRangeCount = 1;
+    deferredLayoutInfo.pPushConstantRanges = &pushConstantRange;
     VK_CHECK(vkCreatePipelineLayout(resources.device, &deferredLayoutInfo, nullptr, &m_DeferredPipelineLayout));
 
     resources.createPipelineLayout();
@@ -593,6 +605,15 @@ void Renderer::Shutdown()
     if (m_OffscreenDeferredLightingPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(resources.device, m_OffscreenDeferredLightingPipeline, nullptr);
         m_OffscreenDeferredLightingPipeline = VK_NULL_HANDLE;
+    }
+
+    if (m_LightCullingPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(resources.device, m_LightCullingPipeline, nullptr);
+        m_LightCullingPipeline = VK_NULL_HANDLE;
+    }
+    if (m_LightCullingPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(resources.device, m_LightCullingPipelineLayout, nullptr);
+        m_LightCullingPipelineLayout = VK_NULL_HANDLE;
     }
 
     if (m_HDRRenderPass != VK_NULL_HANDLE) {
@@ -898,6 +919,16 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
     std::vector<RenderItem> combinedItems = renderQueue.getItems();
     combinedItems.insert(combinedItems.end(), transparentRenderQueue.getItems().begin(), transparentRenderQueue.getItems().end());
 
+    float timeSeconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_StartTime).count();
+    Omnix::Radiance::RadianceFrameUBO radianceUBO{};
+    UpdateRadianceFrameUBO(
+        radianceUBO,
+        activeRenderScene.camera,
+        targetWidth,
+        targetHeight,
+        timeSeconds
+    );
+
     gpuScene.UpdateFrame(
         resources,
         frameIndex,
@@ -905,7 +936,9 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
         combinedItems,
         m_EcsMaterialCache,
         m_DefaultMaterial,
-        m_ShadingMode
+        radianceUBO,
+        m_ShadingMode,
+        m_ActiveScene
     );
 
     // Populate FrameContext with GPUScene handles
@@ -1680,6 +1713,48 @@ void Renderer::initPipelines()
             if (postprocessFrag != VK_NULL_HANDLE) vkDestroyShaderModule(resources.device, postprocessFrag, nullptr);
         }
     }
+
+    // Create light culling compute pipeline
+    if (m_LightCullingPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(resources.device, m_LightCullingPipeline, nullptr);
+        m_LightCullingPipeline = VK_NULL_HANDLE;
+    }
+    if (m_LightCullingPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(resources.device, m_LightCullingPipelineLayout, nullptr);
+        m_LightCullingPipelineLayout = VK_NULL_HANDLE;
+    }
+
+    VkDescriptorSetLayout cullingSetLayout = gpuScene.GetLightCullingDescriptorSetLayout();
+    if (cullingSetLayout != VK_NULL_HANDLE) {
+        VkPipelineLayoutCreateInfo cullingLayoutInfo{};
+        cullingLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        cullingLayoutInfo.setLayoutCount = 1;
+        cullingLayoutInfo.pSetLayouts = &cullingSetLayout;
+        cullingLayoutInfo.pushConstantRangeCount = 0;
+        cullingLayoutInfo.pPushConstantRanges = nullptr;
+
+        VK_CHECK(vkCreatePipelineLayout(resources.device, &cullingLayoutInfo, nullptr, &m_LightCullingPipelineLayout));
+
+        VkShaderModule cullingComputeShader = resources.loadShaderModule("shaders/light_culling.spv");
+        if (cullingComputeShader != VK_NULL_HANDLE) {
+            VkComputePipelineCreateInfo computePipelineInfo{};
+            computePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+            computePipelineInfo.layout = m_LightCullingPipelineLayout;
+            computePipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            computePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+            computePipelineInfo.stage.module = cullingComputeShader;
+            computePipelineInfo.stage.pName = "main";
+
+            VK_CHECK(vkCreateComputePipelines(resources.device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_LightCullingPipeline));
+
+            vkDestroyShaderModule(resources.device, cullingComputeShader, nullptr);
+            LOG_INFO("Light culling compute pipeline created successfully.");
+        } else {
+            LOG_ERROR("Failed to load compute shader: shaders/light_culling.spv");
+        }
+    } else {
+        LOG_ERROR("Light culling descriptor set layout is NULL!");
+    }
 }
 
 void Renderer::recreateOffscreenPostProcessPipeline()
@@ -2204,7 +2279,86 @@ void Renderer::setupRenderGraph()
         { m_SSAOHandles[frameIndex] },
         { m_SSAOBlurredHandles[frameIndex] }
     );
- 
+
+    // 5.5 Light Culling Compute Pass
+    renderGraph.RegisterPass(
+        "LightCullingPass",
+        {},
+        {},
+        PassID::Lighting,
+        [this](VkCommandBuffer cmd) {
+            if (m_LightCullingPipeline == VK_NULL_HANDLE) {
+                return;
+            }
+
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_LightCullingPipeline);
+
+            VkDescriptorSet cullingSet = gpuScene.GetLightCullingDescriptorSet(frameIndex);
+            if (cullingSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(
+                    cmd,
+                    VK_PIPELINE_BIND_POINT_COMPUTE,
+                    m_LightCullingPipelineLayout,
+                    0, 1, &cullingSet,
+                    0, nullptr
+                );
+            }
+
+            Omnix::Radiance::ClusterSettings settings{};
+            uint32_t viewportWidth = m_DepthWidth;
+            uint32_t viewportHeight = m_DepthHeight;
+            if (viewportWidth == 0) viewportWidth = 1280;
+            if (viewportHeight == 0) viewportHeight = 720;
+            uint32_t tileCountX = (viewportWidth + settings.tileSizeX - 1) / settings.tileSizeX;
+            uint32_t tileCountY = (viewportHeight + settings.tileSizeY - 1) / settings.tileSizeY;
+            uint32_t depthSliceCount = settings.depthSliceCount;
+            uint32_t clusterCount = tileCountX * tileCountY * depthSliceCount;
+            uint32_t groupCount = (clusterCount + 63) / 64;
+
+            vkCmdDispatch(cmd, groupCount, 1, 1);
+
+            // Add pipeline barrier to transition cluster range/index buffer writes to fragment shader reads
+            const auto& frameRes = gpuScene.GetFrameResources(frameIndex);
+            if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE && frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
+                std::array<VkBufferMemoryBarrier, 2> barriers{};
+
+                barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barriers[0].buffer = frameRes.clusterRangeBuffer;
+                barriers[0].offset = 0;
+                barriers[0].size = VK_WHOLE_SIZE;
+
+                barriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                barriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barriers[1].buffer = frameRes.clusterLightIndexBuffer;
+                barriers[1].offset = 0;
+                barriers[1].size = VK_WHOLE_SIZE;
+
+                vkCmdPipelineBarrier(
+                    cmd,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    0,
+                    0, nullptr,
+                    static_cast<uint32_t>(barriers.size()), barriers.data(),
+                    0, nullptr
+                );
+            }
+        },
+        false,            // isRasterPass
+        VK_NULL_HANDLE,   // fb
+        true,             // bindsPipeline
+        m_LightCullingPipeline,
+        {},               // readTargets
+        {}                // writeTargets
+    );
+
     // 6. Deferred Lighting Pass
     renderGraph.RegisterPass(
         "DeferredLightingPass",
@@ -2259,6 +2413,16 @@ void Renderer::setupRenderGraph()
             if (gbufferSet != VK_NULL_HANDLE) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 1, 1, &gbufferSet, 0, nullptr);
             }
+
+            // Bind Set 3: Local Lights
+            VkDescriptorSet localLightsSet = gpuScene.GetLocalLightsDescriptorSet(frameIndex);
+            if (localLightsSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 3, 1, &localLightsSet, 0, nullptr);
+            }
+
+            // Push Constants: Local Light Count
+            uint32_t localLightCount = gpuScene.GetLocalLightCount(frameIndex);
+            vkCmdPushConstants(cmd, m_DeferredPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &localLightCount);
 
             // Draw fullscreen triangle
             vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -2455,6 +2619,12 @@ void Renderer::setupRenderGraph()
             VkDescriptorSet postProcessSet = frameIndex < m_PostProcessDescriptorSets.size() ? m_PostProcessDescriptorSets[frameIndex] : VK_NULL_HANDLE;
             if (postProcessSet != VK_NULL_HANDLE) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 0, 1, &postProcessSet, 0, nullptr);
+            }
+
+            // Bind Set 1: Camera/Radiance descriptor set
+            VkDescriptorSet cameraSet = gpuScene.GetDescriptorSet(frameIndex);
+            if (cameraSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 1, 1, &cameraSet, 0, nullptr);
             }
 
             // Auto exposure foundation: keep a stable fallback until luminance reduction is added.
@@ -2853,6 +3023,71 @@ void Renderer::updateGlobalUBO()
 {
 }
 
+void Renderer::UpdateRadianceFrameUBO(
+    Omnix::Radiance::RadianceFrameUBO& ubo,
+    const CameraData& camera,
+    uint32_t viewportWidth,
+    uint32_t viewportHeight,
+    float timeSeconds)
+{
+    const auto& settings = m_RadianceSettings;
+
+    ubo.view = camera.viewMatrix;
+    float aspect = viewportHeight > 0 ? static_cast<float>(viewportWidth) / static_cast<float>(viewportHeight) : 16.0f / 9.0f;
+    ubo.projection = glm::perspective(glm::radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
+    ubo.projection[1][1] *= -1.0f;
+    ubo.inverseView = glm::inverse(ubo.view);
+    ubo.inverseProjection = glm::inverse(ubo.projection);
+
+    ubo.cameraPosition = glm::vec4(camera.position, timeSeconds);
+
+    ubo.viewportSize = glm::vec4(
+        static_cast<float>(viewportWidth),
+        static_cast<float>(viewportHeight),
+        1.0f / static_cast<float>(viewportWidth),
+        1.0f / static_cast<float>(viewportHeight)
+    );
+
+    ubo.skyTopColorIntensity = glm::vec4(
+        settings.sky.skyTopColor,
+        settings.sky.skyIntensity
+    );
+
+    ubo.skyHorizonColorBlend = glm::vec4(
+        settings.sky.horizonColor,
+        settings.sky.horizonBlend
+    );
+
+    ubo.skyGroundColorIntensity = glm::vec4(
+        settings.sky.groundColor,
+        settings.sky.groundIntensity
+    );
+
+    ubo.sunDirectionIntensity = glm::vec4(
+        glm::normalize(settings.sun.direction),
+        settings.sun.intensity
+    );
+
+    ubo.sunColorAngularSize = glm::vec4(
+        settings.sun.color,
+        settings.sun.angularSize
+    );
+
+    ubo.exposureSettings = glm::vec4(
+        settings.exposure.manualExposure,
+        settings.exposure.minExposure,
+        settings.exposure.maxExposure,
+        settings.exposure.autoExposure ? 1.0f : 0.0f
+    );
+
+    ubo.renderFlags = glm::uvec4(
+        static_cast<uint32_t>(settings.exposure.toneMappingMode),
+        settings.cinematicPreview ? 1u : 0u,
+        camera.selectedEntityID,
+        0u
+    );
+}
+
 void Renderer::updateLightingUBO()
 {
     LightData uboData{};
@@ -2862,7 +3097,7 @@ void Renderer::updateLightingUBO()
         const auto& dirLight = activeRenderScene.directionalLights[0];
         uboData.directionalDirectionIntensity = glm::vec4(dirLight.direction, dirLight.intensity);
         uboData.directionalColor = glm::vec4(dirLight.color, 1.0f);
-        uboData.lightSpaceMatrix = dirLight.lightSpaceMatrix;
+        uboData.directionalLightProjView = dirLight.lightSpaceMatrix;
         uboData.shadowBias = dirLight.shadowBias;
         uboData.shadowSlopeBias = dirLight.shadowSlopeBias;
         uboData.shadowNormalBias = dirLight.shadowNormalBias;
@@ -2870,10 +3105,21 @@ void Renderer::updateLightingUBO()
         uboData.shadowLightCast = dirLight.castShadows > 0.0f ? 1 : 0;
         uboData.pcfKernelSize = dirLight.pcfKernelSize;
         uboData.shadowResolution = dirLight.shadowResolution;
+
+        // ShadowGPUSettings
+        uboData.shadowSettings.shadowParams.x = dirLight.shadowStrength;
+        uboData.shadowSettings.shadowParams.y = dirLight.shadowBias;
+        uboData.shadowSettings.shadowParams.z = dirLight.shadowSlopeBias;
+        uboData.shadowSettings.shadowParams.w = 1.0f; // softness default to 1.0f
+
+        uboData.shadowSettings.shadowFlags.x = static_cast<uint32_t>(dirLight.pcfKernelSize);
+        uboData.shadowSettings.shadowFlags.y = 0;
+        uboData.shadowSettings.shadowFlags.z = 0;
+        uboData.shadowSettings.shadowFlags.w = 0;
     } else {
         uboData.directionalDirectionIntensity = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
         uboData.directionalColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-        uboData.lightSpaceMatrix = glm::mat4(1.0f);
+        uboData.directionalLightProjView = glm::mat4(1.0f);
         uboData.shadowBias = 0.003f;
         uboData.shadowNormalBias = 0.0f;
         uboData.shadowSlopeBias = 0.01f;
@@ -2881,6 +3127,10 @@ void Renderer::updateLightingUBO()
         uboData.shadowLightCast = 0;
         uboData.pcfKernelSize = 3;
         uboData.shadowResolution = 2048;
+
+        // ShadowGPUSettings fallback
+        uboData.shadowSettings.shadowParams = glm::vec4(1.0f, 0.003f, 0.01f, 1.0f);
+        uboData.shadowSettings.shadowFlags = glm::uvec4(3, 0, 0, 0);
     }
 
     uboData.ambientColorIntensity = glm::vec4(activeRenderScene.skyLight.color, activeRenderScene.skyLight.intensity);
@@ -4796,6 +5046,14 @@ void Renderer::ValidateRenderGraph()
             info.fbStatus = (m_GBufferFramebuffers.empty() || m_GBufferFramebuffers[0] == VK_NULL_HANDLE) ? "Invalid (NULL)" : "Valid";
             info.pipelineStatus = (geometryPipeline == VK_NULL_HANDLE) ? "Invalid (NULL)" : "Valid";
         }
+        else if (name == "LightCullingPass") {
+            info.inputs = "None (Compute buffers)";
+            info.outputs = "None (Compute buffers)";
+            info.layoutBefore = "N/A";
+            info.layoutAfter = "N/A";
+            info.fbStatus = "N/A (Compute)";
+            info.pipelineStatus = (m_LightCullingPipeline == VK_NULL_HANDLE) ? "Invalid (NULL)" : "Valid";
+        }
         else if (name == "DeferredLightingPass") {
             info.inputs = "GBufferA, GBufferB, GBufferC, GBufferD, DepthBuffer";
             info.outputs = "HDRColor";
@@ -4869,6 +5127,7 @@ void Renderer::ValidateRenderGraph()
         "ShadowPass",
         "DepthPass",
         "GBufferPass",
+        "LightCullingPass",
         "DeferredLightingPass",
         "TransparentPass",
         "PostProcessPass",

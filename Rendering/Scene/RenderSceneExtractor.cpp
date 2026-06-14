@@ -1,7 +1,9 @@
 #include "Core/pch.h"
 #include "RenderSceneExtractor.h"
+#include "Scene/Scene.h"
 #include "RenderingEngine/Renderer/scene/RenderQueue.h"
 #include "RenderingEngine/Core/Engine/EngineResources.h"
+#include "Rendering/Debug/DebugDraw.h"
 #include "RenderingEngine/Renderer/LightingUBO.h"
 #include <glm/gtc/type_ptr.hpp>
 
@@ -313,6 +315,18 @@ void RenderSceneExtractor::ExtractLighting(
     uboData.pointLightCount = 0;
     uboData.shadingMode = shadingMode;
 
+    uboData.directionalLightProjView = glm::mat4(1.0f);
+    uboData.shadowBias = 0.003f;
+    uboData.shadowNormalBias = 0.0f;
+    uboData.shadowSlopeBias = 0.01f;
+    uboData.shadowStrength = 1.0f;
+    uboData.shadowLightCast = 0;
+    uboData.pcfKernelSize = 3;
+    uboData.shadowResolution = 2048;
+
+    uboData.shadowSettings.shadowParams = glm::vec4(1.0f, 0.003f, 0.01f, 1.0f);
+    uboData.shadowSettings.shadowFlags = glm::uvec4(3, 0, 0, 0);
+
     bool sceneHasLights = false;
     if (world) {
         auto& coordinator = world->getCoordinator();
@@ -368,6 +382,64 @@ void RenderSceneExtractor::ExtractLighting(
         if (!coordinator.GetSystem<eng::runtime::LightCollectionSystem>()) {
             lastFallbackActive = true;
         }
+    }
+}
+
+void RenderSceneExtractor::ExtractLocalLights(
+    const ::Scene& scene,
+    std::vector<Omnix::Radiance::LocalLightGPU>& outLights)
+{
+    outLights.clear();
+
+    for (auto entity : scene.GetPointLightEntities())
+    {
+        const auto& transform = scene.GetTransform(entity);
+        const auto& light = scene.GetPointLight(entity);
+
+        Omnix::Radiance::LocalLightGPU gpu{};
+
+        gpu.positionRange = glm::vec4(transform.position, light.radius);
+        gpu.colorIntensity = glm::vec4(light.color, light.intensity);
+        gpu.directionType = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        gpu.spotAngles = glm::vec4(0.0f);
+
+        outLights.push_back(gpu);
+
+        // Add Light Debug Shapes
+        DebugDraw::DrawSphere(
+            transform.position,
+            light.radius,
+            glm::vec4(light.color, 1.0f)
+        );
+    }
+
+    for (auto entity : scene.GetSpotLightEntities())
+    {
+        const auto& transform = scene.GetTransform(entity);
+        const auto& light = scene.GetSpotLight(entity);
+
+        Omnix::Radiance::LocalLightGPU gpu{};
+
+        gpu.positionRange = glm::vec4(transform.position, light.range);
+        gpu.colorIntensity = glm::vec4(light.color, light.intensity);
+        gpu.directionType = glm::vec4(transform.Forward(), 1.0f);
+        gpu.spotAngles = glm::vec4(
+            glm::radians(light.innerAngleDegrees),
+            glm::radians(light.outerAngleDegrees),
+            0.0f,
+            0.0f
+        );
+
+        outLights.push_back(gpu);
+
+        // Add Light Debug Shapes
+        DebugDraw::DrawCone(
+            transform.position,
+            transform.Forward(),
+            light.range,
+            glm::radians(light.outerAngleDegrees),
+            glm::vec4(light.color, 1.0f)
+        );
     }
 }
 

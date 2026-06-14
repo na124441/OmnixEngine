@@ -1,0 +1,114 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+struct LocalLightGPU
+{
+    vec4 positionRange;
+    vec4 colorIntensity;
+    vec4 directionType;
+    vec4 spotAngles;
+};
+
+struct ClusterBoundsGPU
+{
+    vec4 minPoint;
+    vec4 maxPoint;
+};
+
+struct ClusterRangeGPU
+{
+    uint offset;
+    uint count;
+    uint overflow;
+    uint pad;
+};
+
+layout(set = 0, binding = 0) uniform ClusterSettings
+{
+    uint tileCountX;
+    uint tileCountY;
+    uint depthSliceCount;
+    uint maxLightsPerCluster;
+
+    uint clusterCount;
+    uint lightCount;
+    float nearPlane;
+    float farPlane;
+} settings;
+
+layout(set = 0, binding = 1) readonly buffer LightsBuffer
+{
+    LocalLightGPU lights[];
+};
+
+layout(set = 0, binding = 2) readonly buffer ClusterBoundsBuffer
+{
+    ClusterBoundsGPU clusters[];
+};
+
+layout(set = 0, binding = 3) buffer ClusterRangesBuffer
+{
+    ClusterRangeGPU ranges[];
+};
+
+layout(set = 0, binding = 4) buffer ClusterLightIndicesBuffer
+{
+    uint lightIndices[];
+};
+
+bool SphereIntersectsCluster(vec3 lightPos, float radius, ClusterBoundsGPU cluster)
+{
+    // Beginner placeholder:
+    // This assumes cluster min/max are in a simple comparable space.
+    // Later replace with true view-space AABB test.
+    vec3 minP = cluster.minPoint.xyz;
+    vec3 maxP = cluster.maxPoint.xyz;
+
+    vec3 closest = clamp(lightPos, minP, maxP);
+    float distSq = dot(closest - lightPos, closest - lightPos);
+
+    return distSq <= radius * radius;
+}
+
+void main()
+{
+    uint clusterIndex = gl_GlobalInvocationID.x;
+
+    if (clusterIndex >= settings.clusterCount)
+    {
+        return;
+    }
+
+    ClusterBoundsGPU cluster = clusters[clusterIndex];
+
+    uint baseOffset = clusterIndex * settings.maxLightsPerCluster;
+    uint count = 0;
+    uint overflow = 0;
+
+    for (uint lightIndex = 0; lightIndex < settings.lightCount; lightIndex++)
+    {
+        LocalLightGPU light = lights[lightIndex];
+
+        vec3 lightPos = light.positionRange.xyz;
+        float range = light.positionRange.w;
+
+        if (SphereIntersectsCluster(lightPos, range, cluster))
+        {
+            if (count < settings.maxLightsPerCluster)
+            {
+                lightIndices[baseOffset + count] = lightIndex;
+                count++;
+            }
+            else
+            {
+                overflow = 1;
+            }
+        }
+    }
+
+    ranges[clusterIndex].offset = baseOffset;
+    ranges[clusterIndex].count = count;
+    ranges[clusterIndex].overflow = overflow;
+    ranges[clusterIndex].pad = 0;
+}

@@ -701,6 +701,69 @@ bool Scene::CompareScene(const Scene& other, const std::unordered_map<Entity, En
     return true;
 }
 
+std::vector<uint32_t> Scene::GetPointLightEntities() const
+{
+    std::vector<uint32_t> entities;
+    for (const auto& obj : allObjects_) {
+        if (obj && obj->m_HasPointLight) {
+            entities.push_back(obj->GetID());
+        }
+    }
+    return entities;
+}
+
+std::vector<uint32_t> Scene::GetSpotLightEntities() const
+{
+    std::vector<uint32_t> entities;
+    for (const auto& obj : allObjects_) {
+        if (obj && obj->m_HasSpotLight) {
+            entities.push_back(obj->GetID());
+        }
+    }
+    return entities;
+}
+
+Scene::LightTransformProxy Scene::GetTransform(uint32_t entityID) const
+{
+    LightTransformProxy proxy{};
+    auto obj = FindObjectByID(entityID);
+    if (obj) {
+        auto worldPos = obj->transform.GetWorldPosition();
+        proxy.position = glm::vec3(worldPos.x, worldPos.y, worldPos.z);
+        
+        auto worldRot = obj->transform.GetWorldRotation();
+        glm::quat q(worldRot.w, worldRot.x, worldRot.y, worldRot.z);
+        proxy.forward = glm::normalize(q * glm::vec3(0.0f, 0.0f, -1.0f));
+    }
+    return proxy;
+}
+
+Scene::PointLightProxy Scene::GetPointLight(uint32_t entityID) const
+{
+    PointLightProxy proxy{};
+    auto obj = FindObjectByID(entityID);
+    if (obj && obj->m_HasPointLight) {
+        proxy.color = glm::vec3(obj->m_PointLight.color.x, obj->m_PointLight.color.y, obj->m_PointLight.color.z);
+        proxy.radius = obj->m_PointLight.radius;
+        proxy.intensity = obj->m_PointLight.intensity;
+    }
+    return proxy;
+}
+
+Scene::SpotLightProxy Scene::GetSpotLight(uint32_t entityID) const
+{
+    SpotLightProxy proxy{};
+    auto obj = FindObjectByID(entityID);
+    if (obj && obj->m_HasSpotLight) {
+        proxy.color = glm::vec3(obj->m_SpotLight.color.x, obj->m_SpotLight.color.y, obj->m_SpotLight.color.z);
+        proxy.range = obj->m_SpotLight.range;
+        proxy.intensity = obj->m_SpotLight.intensity;
+        proxy.innerAngleDegrees = obj->m_SpotLight.innerConeAngle;
+        proxy.outerAngleDegrees = obj->m_SpotLight.outerConeAngle;
+    }
+    return proxy;
+}
+
 //============================================================================
 // END OF FILE
 //===============================================================//

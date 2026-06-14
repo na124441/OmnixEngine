@@ -2,12 +2,26 @@
 layout(location = 0) out vec3 nearPoint;
 layout(location = 1) out vec3 farPoint;
 
-layout(set = 0, binding = 0) uniform CameraBuffer {
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
     mat4 view;
-    mat4 proj;
-    vec4 cameraPos; // xyz = position, w = fov
-    vec4 cameraPlanes; // x = near, y = far
-} cam;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
 
 // Fullscreen quad vertices in NDC space
 vec3 gridPlane[6] = vec3[](
@@ -23,7 +37,7 @@ vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 proj) {
 
 void main() {
     vec3 p = gridPlane[gl_VertexIndex];
-    nearPoint = UnprojectPoint(p.x, p.y, 0.0, cam.view, cam.proj); // Near plane point
-    farPoint = UnprojectPoint(p.x, p.y, 1.0, cam.view, cam.proj);   // Far plane point
+    nearPoint = UnprojectPoint(p.x, p.y, 0.0, frame.view, frame.projection); // Near plane point
+    farPoint = UnprojectPoint(p.x, p.y, 1.0, frame.view, frame.projection);   // Far plane point
     gl_Position = vec4(p, 1.0); // Fullscreen quad
 }
