@@ -88,9 +88,9 @@ struct OmnixMaterial
     std::string aoTexturePath;
     std::string emissiveTexturePath;
 
-    glm::vec4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
-    float metallicFactor = 1.0f;
-    float roughnessFactor = 1.0f;
+    glm::vec4 baseColorFactor{0.65f, 0.65f, 0.65f, 1.0f};
+    float metallicFactor = 0.0f;
+    float roughnessFactor = 0.6f;
     float normalScale = 1.0f;
     float emissiveStrength = 1.0f;
     uint32_t blendMode = 0; // 0=Opaque, 1=Mask, 2=Blend
@@ -211,20 +211,25 @@ inline bool DeserializeMaterial(OmnixMaterial& mat, const std::string& filepath)
             mat.baseColorFactor.z = reader.ReadFloat();
             mat.baseColorFactor.w = reader.ReadFloat();
         } else {
-            mat.baseColorFactor = glm::vec4(1.0f);
+            mat.baseColorFactor = glm::vec4(0.65f, 0.65f, 0.65f, 1.0f);
         }
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.metallicFactor = reader.ReadFloat();
         } else {
-            mat.metallicFactor = 1.0f;
+            mat.metallicFactor = 0.0f;
         }
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.roughnessFactor = reader.ReadFloat();
         } else {
-            mat.roughnessFactor = 1.0f;
+            mat.roughnessFactor = 0.6f;
         }
+
+        // Sanitization and clamping (Task 2.2)
+        mat.metallicFactor = glm::clamp(mat.metallicFactor, 0.0f, 1.0f);
+        mat.roughnessFactor = glm::clamp(mat.roughnessFactor, 0.04f, 1.0f);
+        mat.baseColorFactor.w = glm::clamp(mat.baseColorFactor.w, 0.0f, 1.0f);
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.normalScale = reader.ReadFloat();
@@ -325,20 +330,25 @@ inline bool DeserializeMaterialFromMemory(OmnixMaterial& mat, const uint8_t* dat
             mat.baseColorFactor.z = reader.ReadFloat();
             mat.baseColorFactor.w = reader.ReadFloat();
         } else {
-            mat.baseColorFactor = glm::vec4(1.0f);
+            mat.baseColorFactor = glm::vec4(0.65f, 0.65f, 0.65f, 1.0f);
         }
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.metallicFactor = reader.ReadFloat();
         } else {
-            mat.metallicFactor = 1.0f;
+            mat.metallicFactor = 0.0f;
         }
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.roughnessFactor = reader.ReadFloat();
         } else {
-            mat.roughnessFactor = 1.0f;
+            mat.roughnessFactor = 0.6f;
         }
+
+        // Sanitization and clamping (Task 2.2)
+        mat.metallicFactor = glm::clamp(mat.metallicFactor, 0.0f, 1.0f);
+        mat.roughnessFactor = glm::clamp(mat.roughnessFactor, 0.04f, 1.0f);
+        mat.baseColorFactor.w = glm::clamp(mat.baseColorFactor.w, 0.0f, 1.0f);
 
         if (reader.GetOffset() < reader.GetBufferSize()) {
             mat.normalScale = reader.ReadFloat();

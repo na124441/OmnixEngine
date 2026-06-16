@@ -13,7 +13,7 @@
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/backends/imgui_impl_vulkan.h"
 #include "Rendering/Scene/RenderSceneExtractor.h"
-#include "Rendering/Scene/GPUScene.h"
+#include "Rendering/GPUScene/GPUScene.h"
 #include "Rendering/Geometry/MeshRenderer.h"
 #include "Rendering/Geometry/VisibilitySystem.h"
 #include <random>
@@ -757,6 +757,22 @@ void Renderer::BeginFrame()
 
 void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
 {
+    static eng::renderer::Renderer::VisibilityMode s_PrevMode = (eng::renderer::Renderer::VisibilityMode)-1;
+    if (m_VisibilityMode != s_PrevMode) {
+        std::string modeName = "Unknown";
+        switch (m_VisibilityMode) {
+            case VisibilityMode::CPUDriven: modeName = "CPU Driven"; break;
+            case VisibilityMode::GPUFrustumOnly: modeName = "GPU Frustum Only"; break;
+            case VisibilityMode::GPUFrustumIndirect: modeName = "GPU Frustum + Indirect (Experimental)"; break;
+            case VisibilityMode::GPUFrustumOcclusion: modeName = "GPU Frustum + Occlusion (Experimental)"; break;
+        }
+        LOG_INFO("Visibility Mode changed to: " + modeName);
+        if (m_VisibilityMode == VisibilityMode::GPUFrustumIndirect || m_VisibilityMode == VisibilityMode::GPUFrustumOcclusion) {
+            LOG_WARN("Experimental visibility mode '" + modeName + "' active. This mode is experimental and may be unstable.");
+        }
+        s_PrevMode = m_VisibilityMode;
+    }
+
     uint32_t targetWidth = 0;
     uint32_t targetHeight = 0;
     if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
@@ -5163,6 +5179,14 @@ VkDescriptorSet Renderer::GetShadowTexture(uint32_t frameIdx) const {
         );
     }
     return m_ShadowImGuiTextures[frameIdx];
+}
+
+void Renderer::SetOffscreenRenderingEnabled(bool enabled) {
+    m_ViewportRenderer.setOffscreenRenderingEnabled(enabled);
+}
+
+void Renderer::CreateOffscreenResources(uint32_t width, uint32_t height) {
+    m_ViewportRenderer.createOffscreenResources(width, height);
 }
 
 } // namespace eng::renderer

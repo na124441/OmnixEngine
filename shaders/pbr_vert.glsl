@@ -23,9 +23,6 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
-    vec4 sunDirectionIntensity;
-    vec4 sunColorAngularSize;
-
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
@@ -33,8 +30,11 @@ layout(set = 0, binding = 0) uniform RadianceFrame
 struct InstanceData {
     mat4 worldMatrix;
     mat4 previousWorldMatrix;
-    vec4 minBounds_materialIndex; // xyz = min bounds, w = materialIndex
-    vec4 maxBounds_entityID;      // xyz = max bounds, w = entityID
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
 };
 
 // Binding 1: Instance Storage Buffer
@@ -62,8 +62,8 @@ void main()
 
     vUV = inUV;
     vCameraPos = frame.cameraPosition.xyz;
-    vMaterialIndex = uint(inst.instances[idx].minBounds_materialIndex.w);
-    vEntityID = uint(inst.instances[idx].maxBounds_entityID.w);
+    vMaterialIndex = inst.instances[idx].materialIndex;
+    vEntityID = inst.instances[idx].objectID;
 
     gl_Position = frame.projection * frame.view * worldPos;
 }

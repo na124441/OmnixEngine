@@ -22,9 +22,9 @@ namespace eng::renderer {
         AssetHandle aoTexture;
         AssetHandle emissiveTexture;
 
-        glm::vec4 baseColorFactor{1.0f, 1.0f, 1.0f, 1.0f};
-        float metallicFactor = 1.0f;
-        float roughnessFactor = 1.0f;
+        glm::vec4 baseColorFactor{0.65f, 0.65f, 0.65f, 1.0f};
+        float metallicFactor = 0.0f;
+        float roughnessFactor = 0.6f;
         float normalScale = 1.0f;
         float emissiveStrength = 1.0f;
         MaterialBlendMode blendMode = MaterialBlendMode::Opaque;
@@ -32,14 +32,14 @@ namespace eng::renderer {
     };
 
     struct MaterialGPU {
-        glm::vec4 baseColorFactor{1.0f};
-        float roughnessFactor = 1.0f;
-        float metallicFactor = 1.0f;
+        glm::vec4 baseColorFactor{0.65f, 0.65f, 0.65f, 1.0f};
+        float roughnessFactor = 0.6f;
+        float metallicFactor = 0.0f;
         float normalScale = 1.0f;
         float emissiveStrength = 1.0f;
 
         float hasAlbedoMap = 0.0f;
-        float hasNormalMap = 0.0f;
+        float useNormalMap = 0.0f;
         float hasMetallicRoughnessMap = 0.0f;
         float hasAOMap = 0.0f;
 

@@ -12,8 +12,11 @@ layout(push_constant) uniform PushConstants {
 struct InstanceData {
     mat4 worldMatrix;
     mat4 previousWorldMatrix;
-    vec4 minBounds_materialIndex;
-    vec4 maxBounds_entityID;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
 };
 
 layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {

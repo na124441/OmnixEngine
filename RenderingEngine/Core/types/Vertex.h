@@ -13,6 +13,7 @@ namespace eng::renderer {
         glm::vec3 pos;
         glm::vec3 normal;
         glm::vec2 uv;
+        glm::vec4 tangent;
     };
 
 } // namespace eng::renderer

@@ -412,9 +412,9 @@ namespace eng::runtime {
                 static char metallicRoughnessBuf[512] = {};
                 static char aoBuf[512] = {};
                 static char emissiveBuf[512] = {};
-                static float baseColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-                static float metallic = 1.0f;
-                static float roughness = 1.0f;
+                static float baseColor[4] = {0.65f, 0.65f, 0.65f, 1.0f};
+                static float metallic = 0.0f;
+                static float roughness = 0.6f;
                 static float normalScale = 1.0f;
                 static float emissiveStrength = 1.0f;
                 static int blendMode = 0;
@@ -461,9 +461,9 @@ namespace eng::runtime {
                         metallicRoughnessBuf[0] = '\0';
                         aoBuf[0] = '\0';
                         emissiveBuf[0] = '\0';
-                        baseColor[0] = 1.0f; baseColor[1] = 1.0f; baseColor[2] = 1.0f; baseColor[3] = 1.0f;
-                        metallic = 1.0f;
-                        roughness = 1.0f;
+                        baseColor[0] = 0.65f; baseColor[1] = 0.65f; baseColor[2] = 0.65f; baseColor[3] = 1.0f;
+                        metallic = 0.0f;
+                        roughness = 0.6f;
                         normalScale = 1.0f;
                         emissiveStrength = 1.0f;
                         blendMode = 0;
@@ -998,15 +998,22 @@ namespace eng::runtime {
         if (component.castShadows) {
             ImGui::Indent();
 
+            float distance = component.shadowDistance;
+            if (ImGui::SliderFloat("Shadow Distance##DirectionalLight", &distance, 10.0f, 200.0f, "%.1f")) {
+                component.shadowDistance = distance;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+
             float bias = component.shadowBias;
-            if (ImGui::DragFloat("Shadow Bias##DirectionalLight", &bias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
+            if (ImGui::SliderFloat("Shadow Bias##DirectionalLight", &bias, 0.0001f, 0.01f, "%.4f")) {
                 component.shadowBias = bias;
                 dirtyState.MarkSceneDirty();
                 changed = true;
             }
 
             float slopeBias = component.shadowSlopeBias;
-            if (ImGui::DragFloat("Shadow Slope Bias##DirectionalLight", &slopeBias, 0.0001f, 0.0f, 0.1f, "%.4f")) {
+            if (ImGui::SliderFloat("Shadow Slope Bias##DirectionalLight", &slopeBias, 0.0001f, 0.02f, "%.4f")) {
                 component.shadowSlopeBias = slopeBias;
                 dirtyState.MarkSceneDirty();
                 changed = true;
@@ -1020,7 +1027,7 @@ namespace eng::runtime {
             }
 
             float strength = component.shadowStrength;
-            if (ImGui::DragFloat("Shadow Strength##DirectionalLight", &strength, 0.01f, 0.0f, 1.0f)) {
+            if (ImGui::SliderFloat("Shadow Strength##DirectionalLight", &strength, 0.0f, 1.0f, "%.2f")) {
                 component.shadowStrength = strength;
                 dirtyState.MarkSceneDirty();
                 changed = true;

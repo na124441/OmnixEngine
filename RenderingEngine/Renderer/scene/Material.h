@@ -12,6 +12,8 @@
 
 namespace eng::renderer {
 
+class Mesh;
+
 class Material
 {
 public:
@@ -54,6 +56,19 @@ public:
                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout,
                                     1, // set index = 1 (global UBO is set 0)
+                                    1, &descriptorSet,
+                                    0, nullptr);
+        }
+    }
+
+    /** Bind only the material descriptor set (set = 1 by default). */
+    void bindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, uint32_t setIndex = 1) const
+    {
+        if (descriptorSet != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout,
+                                    setIndex,
                                     1, &descriptorSet,
                                     0, nullptr);
         }
@@ -119,9 +134,11 @@ public:
     }
     void setNormalTexture(std::shared_ptr<Texture> tex) { 
         normalTexture = std::move(tex); 
-        uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
+        uboData.useNormalMap = normalTexture ? 1.0f : 0.0f;
         if(resources) updateUniform(*resources);
     }
+
+    void updateNormalMapCompatibility(const Mesh& mesh);
     void setMetallicRoughnessTexture(std::shared_ptr<Texture> tex) { 
         metallicRoughnessTexture = std::move(tex); 
         uboData.hasMetallicRoughnessMap = metallicRoughnessTexture ? 1.0f : 0.0f;

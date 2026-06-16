@@ -79,6 +79,7 @@ namespace eng::runtime {
         std::unique_ptr<GameMode> m_GameMode;
         bool m_ShowColliders = true;
         bool m_ShowBounds = false;
+        bool m_ShowGPUBounds = false;
         bool m_ShowDiagnostics = false;
         bool m_ResetLayout = false;
         bool m_ShowInteractPrompt = false;

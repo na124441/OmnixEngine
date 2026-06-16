@@ -65,6 +65,39 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Textures/wood_albedo.png",
             "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 16528957509826817816,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/sphere.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 13066004440532172793,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/matte_grey.omnixmat",
+            "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 8916714004595725170,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/metal_test.omnixmat",
+            "type": "Material"
         }
     ]
 }

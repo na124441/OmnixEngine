@@ -16,9 +16,6 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
-    vec4 sunDirectionIntensity;
-    vec4 sunColorAngularSize;
-
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
@@ -26,8 +23,11 @@ layout(set = 0, binding = 0) uniform RadianceFrame
 struct InstanceData {
     mat4 worldMatrix;
     mat4 previousWorldMatrix;
-    vec4 minBounds_materialIndex;
-    vec4 maxBounds_entityID;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
 };
 
 // Binding 1: Instance Storage Buffer
@@ -43,7 +43,7 @@ struct MaterialData {
     float emissiveStrength;
 
     float hasAlbedoMap;
-    float hasNormalMap;
+    float useNormalMap;
     float hasMetallicRoughnessMap;
     float hasAOMap;
 
@@ -168,7 +168,7 @@ void main()
     float emissiveStrength = mat.materials[vMaterialIndex].emissiveStrength;
 
     float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
-    float hasNormalMap = mat.materials[vMaterialIndex].hasNormalMap;
+    float useNormalMap = mat.materials[vMaterialIndex].useNormalMap;
     float hasMetallicRoughnessMap = mat.materials[vMaterialIndex].hasMetallicRoughnessMap;
     float hasAOMap = mat.materials[vMaterialIndex].hasAOMap;
     float hasEmissiveMap = mat.materials[vMaterialIndex].hasEmissiveMap;
@@ -180,7 +180,7 @@ void main()
     }
 
     vec3 N = normalize(vNormal);
-    if (hasNormalMap > 0.5) {
+    if (useNormalMap > 0.5) {
         N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
     }
 

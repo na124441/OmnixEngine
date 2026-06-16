@@ -19,6 +19,15 @@ namespace eng::runtime {
         bool ShowGridEnabled() const { return m_ShowGrid; }
         void SetShowGrid(bool show) { m_ShowGrid = show; }
 
+        bool ShowGizmosEnabled() const { return m_ShowGizmos; }
+        void SetShowGizmos(bool show) { m_ShowGizmos = show; }
+
+        bool ShowLightVolumesEnabled() const { return m_ShowLightVolumes; }
+        void SetShowLightVolumes(bool show) { m_ShowLightVolumes = show; }
+
+        bool ShowLabelsEnabled() const { return m_ShowLabels; }
+        void SetShowLabels(bool show) { m_ShowLabels = show; }
+
         bool ShowDiagnosticsEnabled() const { return m_ShowDiagnostics; }
         void SetShowDiagnostics(bool show) { m_ShowDiagnostics = show; }
 
@@ -42,6 +51,9 @@ namespace eng::runtime {
         bool m_ShowColliders = true;
         bool m_ShowBounds = false;
         bool m_ShowGrid = true;
+        bool m_ShowGizmos = true;
+        bool m_ShowLightVolumes = false;
+        bool m_ShowLabels = true;
         bool m_ShowDiagnostics = false;
         float m_GridScale = 1.0f;
         bool m_IsFocused = false;

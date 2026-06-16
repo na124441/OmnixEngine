@@ -14,6 +14,7 @@ namespace eng::renderer {
         uint32_t drawCallCount = 0;
         uint32_t triangleCount = 0;
         uint32_t visibleMeshCount = 0;
+        uint32_t gpuVisibleMeshCount = 0;
         uint32_t staticMeshCount = 0;
         uint32_t ecsMeshCount = 0;
         uint32_t transparentObjectCount = 0;

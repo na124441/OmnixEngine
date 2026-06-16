@@ -176,10 +176,10 @@ std::unique_ptr<Material> GltfModel::createMaterial(const tinygltf::Material& gl
     if (gltfMat.normalTexture.index >= 0) {
         int imgIdx = model.textures[gltfMat.normalTexture.index].source;
         mat->normalTexture = loadTexture(imgIdx, model, resources, TextureUsage::Normal);
-        mat->uboData.hasNormalMap = 1.0f;
+        mat->uboData.useNormalMap = 1.0f;
     } else {
         mat->normalTexture = std::shared_ptr<Texture>(Texture::getFlatNormalTexture(resources), [](Texture*){});
-        mat->uboData.hasNormalMap = 0.0f;
+        mat->uboData.useNormalMap = 0.0f;
     }
 
     // MetallicRoughness
@@ -288,6 +288,12 @@ bool GltfModel::load(const std::string& filename,
             }
 
             Mesh* mesh = scene.createMesh();
+            mesh->hasNormals = prim.attributes.find("NORMAL") != prim.attributes.end();
+            mesh->hasUVs = prim.attributes.find("TEXCOORD_0") != prim.attributes.end();
+            mesh->hasTangents = prim.attributes.find("TANGENT") != prim.attributes.end();
+            mesh->normalsGenerated = false;
+            mesh->tangentsGenerated = false;
+
             bool meshOk = mesh->init(vertices.data(), vertices.size(),
                                     indices.data(),  indices.size(),
                                     resources);

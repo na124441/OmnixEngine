@@ -288,6 +288,9 @@ void SceneRenderer::setupRenderGraph()
 
             for (const RenderItem& item : renderQueue.getItems())
             {
+                if (item.material && item.mesh) {
+                    item.material->updateNormalMapCompatibility(*item.mesh);
+                }
                 if (resources.pipelineLayout != VK_NULL_HANDLE) {
                     vkCmdPushConstants(cmd, resources.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), glm::value_ptr(item.transform));
                 }

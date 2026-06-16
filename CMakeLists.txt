@@ -178,7 +178,12 @@ add_library(RenderingEngine
     Rendering/Core/FramebufferManager.cpp
     Rendering/Graph/RenderGraph.cpp
     Rendering/Scene/RenderSceneExtractor.cpp
-    Rendering/Scene/GPUScene.cpp
+    Rendering/GPUScene/GPUScene.cpp
+    Rendering/Visibility/Frustum.cpp
+    Rendering/Visibility/FrustumCullPass.cpp
+    Rendering/Visibility/IndirectCommandBuildPass.cpp
+    Rendering/Visibility/HZBPass.cpp
+    Rendering/Visibility/OcclusionCullPass.cpp
     Rendering/Geometry/MeshRenderer.cpp
     Rendering/Geometry/VisibilitySystem.cpp
     Rendering/Materials/MaterialSystem.cpp
@@ -191,6 +196,7 @@ add_library(RenderingEngine
     Rendering/Editor/EditorViewportRenderer.cpp
     Rendering/Editor/GridRenderer.cpp
     Rendering/Editor/SelectionOutlinePass.cpp
+    Rendering/Editor/EditorOverlayPass.cpp
     Rendering/Editor/DebugViewRenderer.cpp
     Rendering/Debug/GPUProfiler.cpp
     Rendering/Debug/DebugDraw.cpp
@@ -230,6 +236,7 @@ if(GLSLC)
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/grid_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_vert.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/grid_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_frag.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/light_culling.comp -o ${CMAKE_SOURCE_DIR}/shaders/light_culling.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/frustum_cull.comp -o ${CMAKE_SOURCE_DIR}/shaders/frustum_cull.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
     add_dependencies(RenderingEngine CompileShaders)

@@ -27,13 +27,15 @@ void RenderSceneExtractor::ExtractScene(
     const CameraComponent& activeCamera,
     const glm::mat4& cameraWorldMatrix,
     RenderScene& outRenderScene,
-    bool useEditorDefaultLighting
+    bool usePreviewLighting
 )
 {
     outRenderScene.meshInstances.clear();
     outRenderScene.directionalLights.clear();
     outRenderScene.pointLights.clear();
     outRenderScene.spotLights.clear();
+    outRenderScene.sceneHasValidLights = false;
+    outRenderScene.previewLightingActive = false;
 
     auto& coordinator = world.getCoordinator();
     const auto& entities = coordinator.GetActiveEntities();
@@ -160,20 +162,50 @@ void RenderSceneExtractor::ExtractScene(
     for (Entity ent : coordinator.GetActiveEntities()) {
         if (!coordinator.IsEntityAlive(ent)) continue;
         auto sig = coordinator.GetSignature(ent);
-        if (sig.test(directionalLightType) ||
-            sig.test(pointLightType) ||
-            sig.test(skyLightType) ||
-            sig.test(spotLightType)) {
-            sceneHasLights = true;
-            break;
+
+        if (sig.test(directionalLightType)) {
+            const auto& light = coordinator.GetComponent<DirectionalLightComponent>(ent);
+            if (light.enabled && light.intensity > 0.0f) {
+                sceneHasLights = true;
+                break;
+            }
+        }
+        if (sig.test(pointLightType)) {
+            const auto& light = coordinator.GetComponent<PointLightComponent>(ent);
+            if (light.enabled && light.intensity > 0.0f && light.radius > 0.0f) {
+                sceneHasLights = true;
+                break;
+            }
+        }
+        if (sig.test(spotLightType)) {
+            const auto& light = coordinator.GetComponent<SpotLightComponent>(ent);
+            if (light.enabled && light.intensity > 0.0f && light.range > 0.0f) {
+                sceneHasLights = true;
+                break;
+            }
         }
     }
 
-    if (useEditorDefaultLighting || !sceneHasLights) {
+    const bool previewLightingActive = usePreviewLighting || !sceneHasLights;
+    outRenderScene.sceneHasValidLights = sceneHasLights;
+    outRenderScene.previewLightingActive = previewLightingActive;
+
+    if (usePreviewLighting && sceneHasLights) {
+        static bool s_LoggedPreviewLightingOverride = false;
+        if (!s_LoggedPreviewLightingOverride) {
+            CORE_LOG_WARN("Use Preview Lighting is enabled; authored scene lights are being overridden for the editor viewport.");
+            s_LoggedPreviewLightingOverride = true;
+        }
+    }
+
+    if (previewLightingActive) {
         DirectionalLightGPU dirLight{};
         dirLight.direction = glm::normalize(glm::vec3(-0.35f, -0.85f, -0.35f));
         dirLight.color = glm::vec3(1.0f, 0.96f, 0.86f);
         dirLight.intensity = 3.5f;
+        dirLight.shadowBias = 0.0015f;
+        dirLight.shadowSlopeBias = 0.003f;
+        dirLight.shadowDistance = 75.0f;
         outRenderScene.directionalLights.push_back(dirLight);
 
         outRenderScene.skyLight.color = glm::vec3(0.45f, 0.50f, 0.58f);
@@ -202,6 +234,7 @@ void RenderSceneExtractor::ExtractScene(
                     dirLight.shadowStrength = dirComp.shadowStrength;
                     dirLight.shadowResolution = dirComp.shadowResolution;
                     dirLight.pcfKernelSize = dirComp.pcfKernelSize;
+                    dirLight.shadowDistance = dirComp.shadowDistance;
                     outRenderScene.directionalLights.push_back(dirLight);
                 }
             }
@@ -296,7 +329,7 @@ void RenderSceneExtractor::DebugPrint(const RenderScene& scene)
 
 void RenderSceneExtractor::ExtractLighting(
     eng::runtime::World* world,
-    bool useEditorDefaultLighting,
+    bool usePreviewLighting,
     uint32_t shadingMode,
     LightData& uboData,
     bool& lastFallbackActive
@@ -330,20 +363,39 @@ void RenderSceneExtractor::ExtractLighting(
     bool sceneHasLights = false;
     if (world) {
         auto& coordinator = world->getCoordinator();
+        auto directionalLightType = coordinator.GetComponentType<DirectionalLightComponent>();
+        auto pointLightType = coordinator.GetComponentType<PointLightComponent>();
+        auto spotLightType = coordinator.GetComponentType<SpotLightComponent>();
         for (Entity ent : coordinator.GetActiveEntities()) {
             if (!coordinator.IsEntityAlive(ent)) continue;
             auto sig = coordinator.GetSignature(ent);
-            if (sig.test(coordinator.GetComponentType<DirectionalLightComponent>()) ||
-                sig.test(coordinator.GetComponentType<PointLightComponent>()) ||
-                sig.test(coordinator.GetComponentType<SkyLightComponent>()) ||
-                sig.test(coordinator.GetComponentType<SpotLightComponent>())) {
-                sceneHasLights = true;
-                break;
+            if (sig.test(directionalLightType)) {
+                const auto& light = coordinator.GetComponent<DirectionalLightComponent>(ent);
+                if (light.enabled && light.intensity > 0.0f) {
+                    sceneHasLights = true;
+                    break;
+                }
+            }
+            if (sig.test(pointLightType)) {
+                const auto& light = coordinator.GetComponent<PointLightComponent>(ent);
+                if (light.enabled && light.intensity > 0.0f && light.radius > 0.0f) {
+                    sceneHasLights = true;
+                    break;
+                }
+            }
+            if (sig.test(spotLightType)) {
+                const auto& light = coordinator.GetComponent<SpotLightComponent>(ent);
+                if (light.enabled && light.intensity > 0.0f && light.range > 0.0f) {
+                    sceneHasLights = true;
+                    break;
+                }
             }
         }
     }
 
-    if (!useEditorDefaultLighting && world && sceneHasLights) {
+    const bool previewLightingActive = usePreviewLighting || !world || !sceneHasLights;
+
+    if (!previewLightingActive && world && sceneHasLights) {
         auto& coordinator = world->getCoordinator();
         auto lightCollectionSys = coordinator.GetSystem<eng::runtime::LightCollectionSystem>();
         if (lightCollectionSys) {
@@ -376,7 +428,7 @@ void RenderSceneExtractor::ExtractLighting(
         }
     }
 
-    lastFallbackActive = useEditorDefaultLighting || !world || !sceneHasLights;
+    lastFallbackActive = previewLightingActive;
     if (!lastFallbackActive && world) {
         auto& coordinator = world->getCoordinator();
         if (!coordinator.GetSystem<eng::runtime::LightCollectionSystem>()) {

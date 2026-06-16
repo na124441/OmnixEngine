@@ -33,7 +33,8 @@ namespace eng::renderer {
             VkPipeline pipeline = VK_NULL_HANDLE,
             const std::vector<RenderTargetHandle>& inputHandles = {},
             const std::vector<RenderTargetHandle>& outputHandles = {},
-            std::function<PassResult(VkCommandBuffer)> executeWithResult = nullptr
+            std::function<PassResult(VkCommandBuffer)> executeWithResult = nullptr,
+            const std::vector<RenderResourceUsage>& resourceUsages = {}
         );
 
         void DeclareTexture(const std::string& name, const TextureResourceDesc& desc, bool transient = true);

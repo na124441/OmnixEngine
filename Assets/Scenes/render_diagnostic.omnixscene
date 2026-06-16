@@ -1,0 +1,136 @@
+{
+  "name": "render_diagnostic",
+  "version": 1,
+  "objects": [
+    {
+      "name": "Main Camera",
+      "transform": {
+        "position": { "x": 0.0, "y": 3.0, "z": 8.0 },
+        "rotation": { "x": -0.1784, "y": 0.0, "z": 0.0, "w": 0.9840 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "Camera",
+          "fov": 60.0,
+          "nearPlane": 0.1,
+          "farPlane": 100.0,
+          "isPrimary": true,
+          "exposure": 1.0
+        }
+      ]
+    },
+    {
+      "name": "Neutral Floor",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 12.0, "y": 0.12, "z": 12.0 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 13066004440532172793
+        }
+      ]
+    },
+    {
+      "name": "Matte Grey Cube",
+      "transform": {
+        "position": { "x": -1.4, "y": 0.75, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.5, "y": 1.5, "z": 1.5 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 7444686803171224376
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 13066004440532172793
+        }
+      ]
+    },
+    {
+      "name": "Matte Grey Sphere",
+      "transform": {
+        "position": { "x": 1.4, "y": 2.5, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.2, "y": 1.2, "z": 1.2 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 16528957509826817816
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 13066004440532172793
+        }
+      ]
+    },
+    {
+      "name": "Metal Test Sphere",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.6, "z": -2.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.2, "y": 1.2, "z": 1.2 }
+      },
+      "components": [
+        {
+          "type": "RenderableMesh",
+          "meshAssetHandle": 16528957509826817816
+        },
+        {
+          "type": "Material",
+          "materialAssetHandle": 8916714004595725170
+        }
+      ]
+    },
+    {
+      "name": "Directional Sun Light",
+      "transform": {
+        "position": { "x": 0.0, "y": 8.0, "z": 0.0 },
+        "rotation": { "x": -0.5773, "y": 0.2309, "z": 0.0, "w": 0.7832 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "DirectionalLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "intensity": 3.0,
+          "castShadows": true,
+          "shadowBias": 0.003,
+          "shadowSlopeBias": 0.01,
+          "shadowNormalBias": 0.03,
+          "shadowStrength": 0.85,
+          "shadowResolution": 2048,
+          "pcfKernelSize": 3
+        }
+      ]
+    },
+    {
+      "name": "Sky Light",
+      "transform": {
+        "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "components": [
+        {
+          "type": "SkyLight",
+          "enabled": true,
+          "color": { "x": 1.0, "y": 1.0, "z": 1.0 },
+          "intensity": 0.2
+        }
+      ]
+    }
+  ],
+  "hierarchy": []
+}

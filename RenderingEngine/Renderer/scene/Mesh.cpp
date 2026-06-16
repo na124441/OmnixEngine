@@ -93,6 +93,9 @@ bool Mesh::init(const VertexT* vertices, size_t vertexCount,
     VK_CHECK(res);
     indexSize = iSize;
     this->indexCount = static_cast<uint32_t>(indexCount);
+    this->firstIndex = 0;
+    this->vertexOffset = 0;
+    this->materialSlotOffset = 0;
 
     // -----------------------------------------------------------------
     // 6️⃣ Copy data from staging → GPU buffers using a single‑time command buffer
@@ -116,8 +119,20 @@ bool Mesh::init(const VertexT* vertices, size_t vertexCount,
 
     eng.endSingleTimeCommands(copyCmd);   // blocks until copy finishes
 
-    LOG_INFO(("Mesh created – vertices: " + std::to_string(vertexCount) +
-             ", indices: " + std::to_string(indexCount)).c_str());
+    if (std::is_same_v<VertexT, PbrVertex>) {
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload] Uploading mesh using PbrVertex layout:");
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload]   - Vertex Count: " + std::to_string(vertexCount));
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload]   - Index Count: " + std::to_string(indexCount));
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload]   - Stride: " + std::to_string(sizeof(PbrVertex)) + " bytes");
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload]   - Offsets: pos=" + std::to_string(offsetof(PbrVertex, pos)) +
+                                       ", normal=" + std::to_string(offsetof(PbrVertex, normal)) +
+                                       ", uv=" + std::to_string(offsetof(PbrVertex, uv)) +
+                                       ", tangent=" + std::to_string(offsetof(PbrVertex, tangent)));
+        ::Logger::Log(::LogLevel::Info, "[MeshUpload]   - Capabilities: Normal data present, Tangents mapped (48-byte layout)");
+    } else {
+        ::Logger::Log(::LogLevel::Info, ("[MeshUpload] Uploading mesh – vertices: " + std::to_string(vertexCount) +
+                 ", indices: " + std::to_string(indexCount) + ", stride: " + std::to_string(sizeof(VertexT))).c_str());
+    }
     return true;
 }
 
@@ -144,6 +159,9 @@ void Mesh::destroy()
         indexAlloc = VK_NULL_HANDLE;
     }
     indexCount = 0;
+    firstIndex = 0;
+    vertexOffset = 0;
+    materialSlotOffset = 0;
     vertexSize = indexSize = 0;
 }
 
@@ -158,12 +176,18 @@ void Mesh::moveFrom(Mesh&& rhs)
     indexSize    = rhs.indexSize;
 
     indexCount   = rhs.indexCount;
+    firstIndex   = rhs.firstIndex;
+    vertexOffset = rhs.vertexOffset;
+    materialSlotOffset = rhs.materialSlotOffset;
 
     rhs.vertexBuffer = VK_NULL_HANDLE;
     rhs.indexBuffer   = VK_NULL_HANDLE;
     rhs.vertexAlloc   = VK_NULL_HANDLE;
     rhs.indexAlloc    = VK_NULL_HANDLE;
     rhs.indexCount   = 0;
+    rhs.firstIndex   = 0;
+    rhs.vertexOffset = 0;
+    rhs.materialSlotOffset = 0;
 }
 
 // Explicit template instantiation

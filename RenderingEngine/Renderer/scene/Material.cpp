@@ -1,5 +1,6 @@
 #include "Core/pch.h"
 #include "Material.h"
+#include "Mesh.h"
 #include "Core/types/Vertex.h"
 #include <cstddef>
 #include <cstring>
@@ -88,7 +89,13 @@ bool Material::createPBR(const std::string& vertPath,
     updateUniform(res);
 
     // --------------------------------------------------------------
-    // 3️⃣ Load textures
+    // 3️⃣ Load textures with color space rules (Task 2.5):
+    // - Albedo: sRGB (TextureUsage::Albedo maps to VK_FORMAT_R8G8B8A8_SRGB internally)
+    // - Emissive: sRGB (TextureUsage::Emissive maps to VK_FORMAT_R8G8B8A8_SRGB internally)
+    // - Normal: linear UNORM (TextureUsage::Normal maps to VK_FORMAT_R8G8B8A8_UNORM internally)
+    // - Metallic-Roughness: linear UNORM (TextureUsage::MetallicRoughness maps to VK_FORMAT_R8G8B8A8_UNORM internally)
+    // - AO: linear UNORM (TextureUsage::AO maps to VK_FORMAT_R8G8B8A8_UNORM internally)
+    
     if (!albedoPath.empty()) {
         albedoTexture = std::make_shared<Texture>();
         if (albedoTexture->loadFromFile(albedoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Albedo)) {
@@ -105,14 +112,14 @@ bool Material::createPBR(const std::string& vertPath,
     if (!normalPath.empty()) {
         normalTexture = std::make_shared<Texture>();
         if (normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Normal)) {
-            uboData.hasNormalMap = 1.0f;
+            uboData.useNormalMap = 1.0f;
         } else {
             LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback flat normal.");
             normalTexture.reset();
-            uboData.hasNormalMap = 0.0f;
+            uboData.useNormalMap = 0.0f;
         }
     } else {
-        uboData.hasNormalMap = normalTexture ? 1.0f : 0.0f;
+        uboData.useNormalMap = normalTexture ? 1.0f : 0.0f;
     }
 
     if (!metallicRoughnessPath.empty()) {
@@ -120,7 +127,7 @@ bool Material::createPBR(const std::string& vertPath,
         if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::MetallicRoughness)) {
             uboData.hasMetallicRoughnessMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback white.");
+            LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback metallic=0, roughness=0.6.");
             metallicRoughnessTexture.reset();
             uboData.hasMetallicRoughnessMap = 0.0f;
         }
@@ -160,7 +167,42 @@ bool Material::createPBR(const std::string& vertPath,
     // 4️⃣ Allocate descriptor set
     if (!allocateDescriptorSet(res)) return false;
 
-    LOG_INFO("Material PBR created successfully.");
+    // Task 2.3 — Add material validation logs
+    {
+        std::string nameString = albedoPath;
+        if (nameString.empty()) nameString = "unnamed_or_embedded";
+        ::Logger::Log(::LogLevel::Info, "[MaterialUpload] Material upload validation details:");
+        ::Logger::Log(::LogLevel::Info, "[MaterialUpload]   - Name/Path: " + nameString);
+        ::Logger::Log(::LogLevel::Info, "[MaterialUpload]   - Base Color Factor: (" +
+            std::to_string(uboData.baseColorFactor.r) + ", " +
+            std::to_string(uboData.baseColorFactor.g) + ", " +
+            std::to_string(uboData.baseColorFactor.b) + ", " +
+            std::to_string(uboData.baseColorFactor.a) + ")");
+        ::Logger::Log(::LogLevel::Info, "[MaterialUpload]   - Metallic Factor: " + std::to_string(uboData.metallicFactor));
+        ::Logger::Log(::LogLevel::Info, "[MaterialUpload]   - Roughness Factor: " + std::to_string(uboData.roughnessFactor));
+        ::Logger::Log(::LogLevel::Info, std::string("[MaterialUpload]   - Albedo map valid: ") + (uboData.hasAlbedoMap > 0.0f ? "YES" : "NO (using fallback white)"));
+        ::Logger::Log(::LogLevel::Info, std::string("[MaterialUpload]   - Normal map valid: ") + (uboData.useNormalMap > 0.0f ? "YES" : "NO (using fallback flat normal)"));
+        ::Logger::Log(::LogLevel::Info, std::string("[MaterialUpload]   - Metallic-Roughness map valid: ") + (uboData.hasMetallicRoughnessMap > 0.0f ? "YES" : "NO (using fallback metallic=0, roughness=0.6)"));
+        ::Logger::Log(::LogLevel::Info, std::string("[MaterialUpload]   - AO map valid: ") + (uboData.hasAOMap > 0.0f ? "YES" : "NO (using fallback white)"));
+        ::Logger::Log(::LogLevel::Info, std::string("[MaterialUpload]   - Emissive map valid: ") + (uboData.hasEmissiveMap > 0.0f ? "YES" : "NO (using fallback black)"));
+
+        // Suspicious check: e.g. wood, plastic, fabric, brick, stone should generally not be metallic
+        std::string lowerPath = nameString;
+        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+        if (uboData.metallicFactor > 0.8f) {
+            if (lowerPath.find("wood") != std::string::npos ||
+                lowerPath.find("plastic") != std::string::npos ||
+                lowerPath.find("fabric") != std::string::npos ||
+                lowerPath.find("brick") != std::string::npos ||
+                lowerPath.find("stone") != std::string::npos ||
+                lowerPath.find("floor") != std::string::npos ||
+                lowerPath.find("ground") != std::string::npos ||
+                lowerPath.find("matte") != std::string::npos) {
+                ::Logger::Log(::LogLevel::Warn, "Warning: Material \"" + nameString + "\" has metallicFactor > 0.8. Non-metallic-like assets should usually be non-metallic.");
+            }
+        }
+    }
+
     return true;
 }
 
@@ -376,9 +418,9 @@ bool Material::allocateDescriptorSet(const EngineResources& resources)
         metallicRoughnessInfo.imageView   = metallicRoughnessTexture->view();
         metallicRoughnessInfo.sampler     = metallicRoughnessTexture->sampler();
     } else {
-        Texture* white = Texture::getWhiteTexture(resources);
-        metallicRoughnessInfo.imageView   = white->view();
-        metallicRoughnessInfo.sampler     = white->sampler();
+        Texture* mrFallback = Texture::getMetallicRoughnessFallbackTexture(resources);
+        metallicRoughnessInfo.imageView   = mrFallback->view();
+        metallicRoughnessInfo.sampler     = mrFallback->sampler();
     }
 
     writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -464,6 +506,23 @@ void Material::destroy()
     emissiveTexture.reset();
 
     shader.destroy();
+}
+
+void Material::updateNormalMapCompatibility(const Mesh& mesh) {
+    bool normalTextureValid = (normalTexture != nullptr);
+    bool canUseNormalMap =
+        mesh.hasNormals &&
+        mesh.hasUVs &&
+        mesh.hasTangents &&
+        normalTextureValid;
+
+    float expectedVal = canUseNormalMap ? 1.0f : 0.0f;
+    if (uboData.useNormalMap != expectedVal) {
+        uboData.useNormalMap = expectedVal;
+        if (resources) {
+            updateUniform(*resources);
+        }
+    }
 }
 
 } // namespace eng::renderer

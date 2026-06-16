@@ -1268,6 +1268,11 @@ namespace eng::runtime {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("View")) {
+                bool showGrid = m_ViewportPanel.ShowGridEnabled();
+                if (ImGui::MenuItem("Show Grid", nullptr, &showGrid)) {
+                    m_ViewportPanel.SetShowGrid(showGrid);
+                }
+
                 bool show = m_ShowColliders;
                 if (ImGui::MenuItem("Show Colliders", nullptr, &show)) {
                     m_ShowColliders = show;
@@ -1278,6 +1283,34 @@ namespace eng::runtime {
                 if (ImGui::MenuItem("Show Bounds", nullptr, &showBounds)) {
                     m_ShowBounds = showBounds;
                     m_ViewportPanel.SetShowBounds(showBounds);
+                }
+
+                bool showGizmos = m_ViewportPanel.ShowGizmosEnabled();
+                if (ImGui::MenuItem("Show Gizmos", nullptr, &showGizmos)) {
+                    m_ViewportPanel.SetShowGizmos(showGizmos);
+                }
+
+                bool showLightVolumes = m_ViewportPanel.ShowLightVolumesEnabled();
+                if (ImGui::MenuItem("Show Light Volumes", nullptr, &showLightVolumes)) {
+                    m_ViewportPanel.SetShowLightVolumes(showLightVolumes);
+                }
+
+                bool showLabels = m_ViewportPanel.ShowLabelsEnabled();
+                if (ImGui::MenuItem("Show Labels", nullptr, &showLabels)) {
+                    m_ViewportPanel.SetShowLabels(showLabels);
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Clean Viewport Mode")) {
+                    m_ViewportPanel.SetShowGrid(false);
+                    m_ViewportPanel.SetShowColliders(false);
+                    m_ViewportPanel.SetShowBounds(false);
+                    m_ShowColliders = false;
+                    m_ShowBounds = false;
+                    m_ViewportPanel.SetShowGizmos(false);
+                    m_ViewportPanel.SetShowLightVolumes(false);
+                    m_ViewportPanel.SetShowLabels(false);
+                    m_Selection.Clear();
                 }
 
                 bool showDiag = m_ShowDiagnostics;
@@ -1297,6 +1330,28 @@ namespace eng::runtime {
                     bool useDefaultLighting = sceneRenderer->m_UseEditorDefaultLighting;
                     if (ImGui::MenuItem("Use Editor Default Lighting", nullptr, &useDefaultLighting)) {
                         sceneRenderer->m_UseEditorDefaultLighting = useDefaultLighting;
+                    }
+                    int mode = static_cast<int>(sceneRenderer->m_VisibilityMode);
+                    const char* modes[] =
+                    {
+                        "Stable: CPU Driven",
+                        "Stable: GPU Frustum Only",
+                        "Experimental: GPU Frustum + Indirect",
+                        "Experimental: GPU Frustum + Occlusion"
+                    };
+                    if (ImGui::Combo("Visibility Mode", &mode, modes, 4)) {
+                        sceneRenderer->m_VisibilityMode = static_cast<eng::renderer::Renderer::VisibilityMode>(mode);
+                        sceneRenderer->m_CPUFrustumCulling = (sceneRenderer->m_VisibilityMode == eng::renderer::Renderer::VisibilityMode::CPUDriven);
+                        if (sceneRenderer->m_VisibilityMode == eng::renderer::Renderer::VisibilityMode::GPUFrustumIndirect ||
+                            sceneRenderer->m_VisibilityMode == eng::renderer::Renderer::VisibilityMode::GPUFrustumOcclusion) {
+                            CORE_LOG_WARN("[Renderer] Selected experimental visibility mode: %s. This mode may be unstable or cause crashes.", modes[mode]);
+                        }
+                    }
+                    if (sceneRenderer->m_VisibilityMode == eng::renderer::Renderer::VisibilityMode::GPUFrustumIndirect ||
+                        sceneRenderer->m_VisibilityMode == eng::renderer::Renderer::VisibilityMode::GPUFrustumOcclusion) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.0f, 1.0f));
+                        ImGui::TextWrapped("WARNING: Experimental indirect mode active!");
+                        ImGui::PopStyleColor();
                     }
                 }
                 ImGui::EndMenu();
@@ -1348,6 +1403,15 @@ namespace eng::runtime {
             uint32_t currentFrame = sceneRenderer->frameIndex;
             viewportTexture = sceneRenderer->GetOffscreenTexture(currentFrame);
             sceneRenderer->m_SelectedEntityID = m_Selection.HasSelection() ? static_cast<uint32_t>(m_Selection.GetSelectedEntity()) : 0;
+            sceneRenderer->m_OverlaySettings.showGrid = m_ViewportPanel.ShowGridEnabled();
+            sceneRenderer->m_OverlaySettings.showSelectionOutline = m_Selection.HasSelection();
+            sceneRenderer->m_OverlaySettings.showColliders = m_ViewportPanel.ShowCollidersEnabled();
+            sceneRenderer->m_OverlaySettings.showBounds = m_ViewportPanel.ShowBoundsEnabled();
+            sceneRenderer->m_OverlaySettings.showGizmos = m_ViewportPanel.ShowGizmosEnabled();
+            sceneRenderer->m_OverlaySettings.showLightVolumes = m_ViewportPanel.ShowLightVolumesEnabled();
+            sceneRenderer->m_OverlaySettings.showLabels = m_ViewportPanel.ShowLabelsEnabled();
+            sceneRenderer->m_OverlaySettings.showLightGizmos = m_ViewportPanel.ShowLightVolumesEnabled();
+            sceneRenderer->m_OverlaySettings.showPhysicsDebug = false;
         }
 
         float panelWidth = 0.0f;

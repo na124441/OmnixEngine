@@ -16,13 +16,19 @@
 #include "Core/Engine/EngineResources.h"
 
 #include "Rendering/Core/RenderScene.h"
-#include "Rendering/Scene/GPUScene.h"
+#include "Rendering/GPUScene/GPUScene.h"
+#include "Rendering/Visibility/FrustumCullPass.h"
+#include "Rendering/Visibility/IndirectCommandBuildPass.h"
+#include "Rendering/Visibility/HZBPass.h"
+#include "Rendering/Visibility/OcclusionCullPass.h"
 #include "Rendering/Core/RenderTargetManager.h"
 #include "Rendering/Core/FramebufferManager.h"
 #include "Rendering/Core/FrameContext.h"
 #include "Rendering/Core/RenderTypes.h"
 #include "Rendering/Core/RenderStats.h"
 #include "Rendering/Editor/EditorViewportRenderer.h"
+#include "Rendering/Editor/SelectionOutlinePass.h"
+#include "Rendering/Editor/EditorOverlayPass.h"
 #include "RenderingEngine/Renderer/scene/RenderQueue.h"
 #include "RenderingEngine/Renderer/scene/Camera.h"
 #include "RenderingEngine/Renderer/LightingUBO.h"
@@ -116,9 +122,9 @@ namespace eng::renderer {
         }
 
         // Viewport Offscreen Rendering API
-        void SetOffscreenRenderingEnabled(bool enabled) { m_ViewportRenderer.setOffscreenRenderingEnabled(enabled); }
+        void SetOffscreenRenderingEnabled(bool enabled);
         bool IsOffscreenRenderingEnabled() const { return m_ViewportRenderer.isOffscreenRenderingEnabled(); }
-        void CreateOffscreenResources(uint32_t width, uint32_t height) { m_ViewportRenderer.createOffscreenResources(width, height); }
+        void CreateOffscreenResources(uint32_t width, uint32_t height);
         void DestroyOffscreenResources() { m_ViewportRenderer.destroyOffscreenResources(); }
         VkDescriptorSet GetOffscreenTexture(uint32_t frameIdx) const { return m_ViewportRenderer.getOffscreenTexture(frameIdx); }
         VkDescriptorSet GetShadowTexture(uint32_t frameIdx) const;
@@ -126,7 +132,7 @@ namespace eng::renderer {
 
         uint32_t GetOffscreenWidth() const { return m_ViewportRenderer.getOffscreenWidth(); }
         uint32_t GetOffscreenHeight() const { return m_ViewportRenderer.getOffscreenHeight(); }
-        VkRenderPass GetOffscreenRenderPass() const { return m_ViewportRenderer.getOffscreenRenderPass(); }
+        VkRenderPass GetOffscreenRenderPass() const { return m_OffscreenViewportRenderPass; }
         uint32_t PickEntity(uint32_t x, uint32_t y);
 
         void SetWorld(eng::runtime::World* world) { m_World = world; }
@@ -140,10 +146,22 @@ namespace eng::renderer {
         SSAOSettings& GetSSAOSettings() { return m_SSAOSettings; }
         const SSAOSettings& GetSSAOSettings() const { return m_SSAOSettings; }
         VkDescriptorSet GetSSAOBlurredTexture(uint32_t frameIdx) const;
+        VkDescriptorSet GetHZBTexture(uint32_t frameIdx) const;
+        uint32_t GetHZBMipCount(uint32_t frameIdx) const;
         const RenderStats& GetRenderStats() const { return m_RenderStats; }
         void RequestRenderDocCapture() { m_RenderDocCaptureRequested = true; }
         Omnix::Radiance::RadianceSettings& GetRadianceSettings() { return m_RadianceSettings; }
         const Omnix::Radiance::RadianceSettings& GetRadianceSettings() const { return m_RadianceSettings; }
+
+        const std::vector<uint32_t>& GetGpuVisibleInstances() const { return m_GpuVisibleInstances; }
+        const std::vector<uint32_t>& GetGpuFinalVisibleInstances() const { return m_GpuFinalVisibleInstances; }
+        uint32_t GetGpuFinalVisibleCount() const { return m_GpuFinalVisibleCount; }
+        uint32_t GetGpuOcclusionCulledCount() const { return m_GpuOcclusionCulledCount; }
+        uint32_t GetCpuRefVisibleCount() const { return m_CpuRefVisibleCount; }
+        uint32_t GetGpuIndirectDrawCount() const { return m_GpuIndirectDrawCount; }
+        uint32_t GetTotalInstanceCount() const { return m_TotalInstanceCount; }
+        const GPUFrustum& GetCpuFrustum() const { return m_CpuFrustum; }
+        void populateVisibilityDebugDraw(uint32_t selectedEntityId);
 
         // Member variables
         EngineResources& resources;
@@ -160,7 +178,46 @@ namespace eng::renderer {
         glm::vec3    lightDirection = glm::vec3(-0.5f, -1.0f, -0.3f);
         glm::vec3    lightColor     = glm::vec3(1.0f, 1.0f, 1.0f);
         float        lightIntensity = 1.0f;
+        bool         m_UsePreviewLighting = false;
         bool         m_UseEditorDefaultLighting = true;
+        enum class VisibilityMode
+        {
+            CPUDriven,
+            GPUFrustumOnly,
+            GPUFrustumIndirect,
+            GPUFrustumOcclusion
+        };
+        VisibilityMode m_VisibilityMode = VisibilityMode::CPUDriven;
+        bool         m_CPUFrustumCulling = true;
+
+        struct VisibilityDebugSettings {
+            bool showBounds = false;
+            bool showFrustumVisible = false;
+            bool showFrustumCulled = false;
+            bool showOcclusionCulled = false;
+            bool showFinalVisible = false;
+            bool showDrawCount = true;
+            bool showCullingStats = true;
+        } m_VisibilityDebugSettings;
+
+        FrustumCullPass m_FrustumCullPass;
+        IndirectCommandBuildPass m_IndirectCommandBuildPass;
+        HZBPass m_HZBPass;
+        OcclusionCullPass m_OcclusionCullPass;
+        SelectionOutlinePass m_SelectionOutlinePass;
+        EditorOverlayPass m_EditorOverlayPass;
+        ViewportOverlaySettings m_OverlaySettings;
+        mutable std::vector<VkDescriptorSet> m_HZBImGuiTextures;
+        mutable std::vector<VkImageView> m_HZBLastViews;
+        uint32_t     m_GpuVisibleMeshCount = 0;
+        uint32_t     m_GpuFinalVisibleCount = 0;
+        uint32_t     m_GpuOcclusionCulledCount = 0;
+        uint32_t     m_GpuIndirectDrawCount = 0;
+        std::vector<uint32_t> m_GpuVisibleInstances;
+        std::vector<uint32_t> m_GpuFinalVisibleInstances;
+        uint32_t     m_CpuRefVisibleCount = 0;
+        uint32_t     m_TotalInstanceCount = 0;
+        GPUFrustum   m_CpuFrustum = {};
         uint32_t     m_ShadingMode = 0;
         glm::vec3    ambientColor = glm::vec3(0.10f, 0.12f, 0.16f);
         float        ambientIntensity = 0.35f;
@@ -251,6 +308,23 @@ namespace eng::renderer {
         std::vector<VkImage>        m_GBufferDImages;
         std::vector<VmaAllocation>  m_GBufferDAllocations;
         std::vector<VkImageView>    m_GBufferDImageViews;
+
+        // ObjectID rendering resources
+        std::vector<RenderTargetHandle> m_ObjectIDHandles;
+        std::vector<VkImage>            m_ObjectIDImages;
+        std::vector<VmaAllocation>      m_ObjectIDAllocations;
+        std::vector<VkImageView>        m_ObjectIDImageViews;
+
+        // Offscreen viewport rendering resources
+        VkRenderPass                    m_OffscreenViewportRenderPass = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>      m_OffscreenViewportFramebuffers;
+        std::vector<FramebufferHandle>  m_OffscreenViewportFbHandles;
+
+        // Indirect pipeline resources
+        VkPipeline                      m_DepthIndirectPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout                m_DepthIndirectPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline                      m_GBufferIndirectPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout                m_GBufferIndirectPipelineLayout = VK_NULL_HANDLE;
 
         VkDescriptorSetLayout       m_GBufferDescriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorPool            m_GBufferDescriptorPool      = VK_NULL_HANDLE;

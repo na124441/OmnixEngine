@@ -19,6 +19,34 @@
 
 namespace eng::renderer {
 
+MeshBounds ComputeMeshBounds(const std::vector<Vertex>& vertices)
+{
+    MeshBounds bounds{};
+    if (vertices.empty())
+    {
+        bounds.localCenter = glm::vec3(0.0f);
+        bounds.localRadius = 1.0f;
+        return bounds;
+    }
+    glm::vec3 minP = vertices[0].pos;
+    glm::vec3 maxP = vertices[0].pos;
+    for (const auto& v : vertices)
+    {
+        minP = glm::min(minP, v.pos);
+        maxP = glm::max(maxP, v.pos);
+    }
+    bounds.localMin = minP;
+    bounds.localMax = maxP;
+    bounds.localCenter = (minP + maxP) * 0.5f;
+    float radius = 0.0f;
+    for (const auto& v : vertices)
+    {
+        radius = glm::max(radius, glm::length(v.pos - bounds.localCenter));
+    }
+    bounds.localRadius = radius;
+    return bounds;
+}
+
 bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResources& resources) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -75,17 +103,12 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
         return false;
     }
 
-    glm::vec3 min(1e10f), max(-1e10f);
-    for (const auto& v : vertices) {
-        min = glm::min(min, v.pos);
-        max = glm::max(max, v.pos);
-    }
+    outMesh.bounds = ComputeMeshBounds(vertices);
+    outMesh.minBounds = outMesh.bounds.localMin;
+    outMesh.maxBounds = outMesh.bounds.localMax;
 
     ::Logger::Log(::LogLevel::Info, "Loaded OBJ: " + path + " (" + std::to_string(vertices.size()) + " vertices)");
-    ::Logger::Log(::LogLevel::Info, "Model Bounds: Min(" + std::to_string(min.x) + "," + std::to_string(min.y) + "," + std::to_string(min.z) + ") Max(" + std::to_string(max.x) + "," + std::to_string(max.y) + "," + std::to_string(max.z) + ")");
-
-    outMesh.minBounds = min;
-    outMesh.maxBounds = max;
+    ::Logger::Log(::LogLevel::Info, "Model Bounds: Min(" + std::to_string(outMesh.minBounds.x) + "," + std::to_string(outMesh.minBounds.y) + "," + std::to_string(outMesh.minBounds.z) + ") Max(" + std::to_string(outMesh.maxBounds.x) + "," + std::to_string(outMesh.maxBounds.y) + "," + std::to_string(outMesh.maxBounds.z) + ")");
 
     return outMesh.init(vertices.data(), vertices.size(), indices.data(), indices.size(), resources);
 }

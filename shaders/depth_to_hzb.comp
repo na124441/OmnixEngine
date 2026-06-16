@@ -1,0 +1,22 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0) uniform sampler2D depthTexture;
+layout(set = 0, binding = 1, r32f) uniform image2D hzbMip0;
+
+layout(push_constant) uniform PushConstants
+{
+    ivec2 size;
+} pc;
+
+void main()
+{
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= pc.size.x || coord.y >= pc.size.y)
+    {
+        return;
+    }
+    
+    float depth = texelFetch(depthTexture, coord, 0).r;
+    imageStore(hzbMip0, coord, vec4(depth));
+}

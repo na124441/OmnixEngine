@@ -128,6 +128,13 @@ namespace eng::renderer {
                 for (auto targetHandle : entry.resource.desc.attachments) {
                     const RenderTarget* target = m_TargetManager->Get(targetHandle);
                     if (target && target->IsValid()) {
+                        if (target->extent.width != entry.resource.desc.width || target->extent.height != entry.resource.desc.height) {
+                            LOG_ERROR("[FramebufferError]\nFramebuffer: " + entry.resource.desc.debugName +
+                                      "\nExpected: " + std::to_string(entry.resource.desc.width) + "x" + std::to_string(entry.resource.desc.height) +
+                                      "\nAttachment " + target->debugName + ": " + std::to_string(target->extent.width) + "x" + std::to_string(target->extent.height));
+                            attachmentsValid = false;
+                            break;
+                        }
                         vkAttachments.push_back(target->view);
                     } else {
                         LOG_WARN("FramebufferManager: Rebuild skipped due to invalid target attachment for '" + entry.resource.desc.debugName + "'");

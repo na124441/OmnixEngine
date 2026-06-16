@@ -374,21 +374,56 @@ namespace eng::runtime {
             if (m_ShowGrid) {
                 DrawGrid(drawList, view, proj, imageStartPos, size, cam.position, m_GridScale);
             }
-            DrawAxisGizmo(drawList, view, imageStartPos, size);
-
-            // Render 3D Gizmo for selected entity (suppressed while capturing editor camera view)
             Entity selectedEntity = selection.GetSelectedEntity();
             bool disableGizmo = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-            if (selectedEntity != 0 && m_Context->ecs && !disableGizmo) {
+
+            if (m_ShowGizmos) {
+                DrawAxisGizmo(drawList, view, imageStartPos, size);
+
+                // Render 3D Gizmo for selected entity (suppressed while capturing editor camera view)
+                if (selectedEntity != 0 && m_Context->ecs && !disableGizmo) {
+                    auto& coordinator = m_Context->ecs->getCoordinator();
+                    if (coordinator.IsEntityAlive(selectedEntity) && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<TransformComponent>())) {
+                        auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
+
+                        ImGuizmo::SetOrthographic(false);
+                        ImGuizmo::SetDrawlist();
+                        ImGuizmo::SetRect(imageStartPos.x, imageStartPos.y, size.x, size.y);
+
+                        // Build GLM matrix from custom ECS transform components
+                        glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
+                        glm::quat glmRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
+                        glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
+
+                        glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), glmPos) *
+                                                glm::mat4_cast(glmRot) *
+                                                glm::scale(glm::mat4(1.0f), glmScale);
+
+                        // Manipulate matrix using ImGuizmo
+                        if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
+                                                 (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL,
+                                                 glm::value_ptr(modelMatrix))) {
+                            float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+                            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(modelMatrix),
+                                                                  matrixTranslation,
+                                                                  matrixRotation,
+                                                                  matrixScale);
+
+                            tc.position = Vector3(matrixTranslation[0], matrixTranslation[1], matrixTranslation[2]);
+                            tc.rotation = EulerToQuaternion(matrixRotation[0], matrixRotation[1], matrixRotation[2]);
+                            tc.scale = Vector3(matrixScale[0], matrixScale[1], matrixScale[2]);
+                            tc.dirty = true;
+
+                            dirtyState.MarkSceneDirty();
+                        }
+                    }
+                }
+            }
+
+            if (selectedEntity != 0 && m_Context->ecs) {
                 auto& coordinator = m_Context->ecs->getCoordinator();
                 if (coordinator.IsEntityAlive(selectedEntity) && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<TransformComponent>())) {
                     auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
-
-                    ImGuizmo::SetOrthographic(false);
-                    ImGuizmo::SetDrawlist();
-                    ImGuizmo::SetRect(imageStartPos.x, imageStartPos.y, size.x, size.y);
-
-                    // Build GLM matrix from custom ECS transform components
                     glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
                     glm::quat glmRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
                     glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
@@ -396,24 +431,6 @@ namespace eng::runtime {
                     glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), glmPos) *
                                             glm::mat4_cast(glmRot) *
                                             glm::scale(glm::mat4(1.0f), glmScale);
-
-                    // Manipulate matrix using ImGuizmo
-                    if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
-                                             (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL,
-                                             glm::value_ptr(modelMatrix))) {
-                        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
-                        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(modelMatrix),
-                                                              matrixTranslation,
-                                                              matrixRotation,
-                                                              matrixScale);
-
-                        tc.position = Vector3(matrixTranslation[0], matrixTranslation[1], matrixTranslation[2]);
-                        tc.rotation = EulerToQuaternion(matrixRotation[0], matrixRotation[1], matrixRotation[2]);
-                        tc.scale = Vector3(matrixScale[0], matrixScale[1], matrixScale[2]);
-                        tc.dirty = true;
-
-                        dirtyState.MarkSceneDirty();
-                    }
 
                     // --- Render 12-edge Selection Bounding Box Outline ---
                     glm::vec3 localMin(-0.5f);
@@ -592,42 +609,44 @@ namespace eng::runtime {
                 }
 
                 // 3. Draw 2D Icon overlays
-                for (const auto& icon : iconOverlays) {
-                    ImU32 iconColor = IM_COL32(200, 200, 200, 255);
-                    ImU32 iconBg = IM_COL32(40, 45, 55, 220);
-                    const char* label = "I";
-                    if (icon.typeName == "Camera") {
-                        iconColor = IM_COL32(80, 160, 240, 255);
-                        label = "C";
-                    } else if (icon.typeName == "DirectionalLight") {
-                        iconColor = IM_COL32(255, 220, 60, 255);
-                        label = "D";
-                    } else if (icon.typeName == "PointLight") {
-                        iconColor = IM_COL32(255, 170, 40, 255);
-                        label = "P";
-                    } else if (icon.typeName == "SpotLight") {
-                        iconColor = IM_COL32(255, 110, 30, 255);
-                        label = "S";
-                    } else if (icon.typeName == "SkyLight") {
-                        iconColor = IM_COL32(100, 200, 255, 255);
-                        label = "K";
+                if (m_ShowLabels) {
+                    for (const auto& icon : iconOverlays) {
+                        ImU32 iconColor = IM_COL32(200, 200, 200, 255);
+                        ImU32 iconBg = IM_COL32(40, 45, 55, 220);
+                        const char* label = "I";
+                        if (icon.typeName == "Camera") {
+                            iconColor = IM_COL32(80, 160, 240, 255);
+                            label = "C";
+                        } else if (icon.typeName == "DirectionalLight") {
+                            iconColor = IM_COL32(255, 220, 60, 255);
+                            label = "D";
+                        } else if (icon.typeName == "PointLight") {
+                            iconColor = IM_COL32(255, 170, 40, 255);
+                            label = "P";
+                        } else if (icon.typeName == "SpotLight") {
+                            iconColor = IM_COL32(255, 110, 30, 255);
+                            label = "S";
+                        } else if (icon.typeName == "SkyLight") {
+                            iconColor = IM_COL32(100, 200, 255, 255);
+                            label = "K";
+                        }
+
+                        if (icon.entity == selectedEntity) {
+                            drawList->AddCircleFilled(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 100));
+                            drawList->AddCircle(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 255), 0, 2.0f);
+                        }
+
+                        drawList->AddCircleFilled(icon.screenPos, 10.0f, iconBg);
+                        drawList->AddCircle(icon.screenPos, 10.0f, iconColor, 0, 1.5f);
+
+                        ImVec2 labelSize = ImGui::CalcTextSize(label);
+                        ImVec2 labelPos(icon.screenPos.x - labelSize.x * 0.5f, icon.screenPos.y - labelSize.y * 0.5f);
+                        drawList->AddText(labelPos, iconColor, label);
                     }
-
-                    if (icon.entity == selectedEntity) {
-                        drawList->AddCircleFilled(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 100));
-                        drawList->AddCircle(icon.screenPos, 14.0f, IM_COL32(255, 140, 0, 255), 0, 2.0f);
-                    }
-
-                    drawList->AddCircleFilled(icon.screenPos, 10.0f, iconBg);
-                    drawList->AddCircle(icon.screenPos, 10.0f, iconColor, 0, 1.5f);
-
-                    ImVec2 labelSize = ImGui::CalcTextSize(label);
-                    ImVec2 labelPos(icon.screenPos.x - labelSize.x * 0.5f, icon.screenPos.y - labelSize.y * 0.5f);
-                    drawList->AddText(labelPos, iconColor, label);
                 }
 
                 // 4. Draw selected light debug guides (radius/cone)
-                if (selectedEntity != 0 && coordinator.IsEntityAlive(selectedEntity)) {
+                if (m_ShowLightVolumes && selectedEntity != 0 && coordinator.IsEntityAlive(selectedEntity)) {
                     const auto& sig = coordinator.GetSignature(selectedEntity);
                     const auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
                     glm::vec3 worldPos(tc.position.x, tc.position.y, tc.position.z);
@@ -696,38 +715,52 @@ namespace eng::runtime {
             "Preview Lit",
             "Unlit",
             "Wireframe",
-            "Albedo",
+            "AlbedoOnly",
             "Normal",
             "Depth",
             "Roughness",
             "Metallic",
             "AO",
-            "Shadow Map",
+            "ShadowMap",
             "Object ID",
             "Light Complexity",
-            "Tangent"
+            "Tangent",
+            "LightingOnly",
+            "LitNoOverlays"
         };
         auto applyRenderMode = [&](int mode) {
             m_RenderMode = mode;
             if (!renderer) {
                 return;
             }
-            renderer->m_UseEditorDefaultLighting = (mode == 1);
+            renderer->m_UsePreviewLighting = (mode == 1);
             switch (mode) {
                 case 0: renderer->m_ShadingMode = 0; break;  // Lit
                 case 1: renderer->m_ShadingMode = 0; break;  // Preview Lit
                 case 2: renderer->m_ShadingMode = 1; break;  // Unlit
                 case 3: renderer->m_ShadingMode = 11; break; // Wireframe-style edges
-                case 4: renderer->m_ShadingMode = 10; break; // Albedo
+                case 4: renderer->m_ShadingMode = 10; break; // AlbedoOnly
                 case 5: renderer->m_ShadingMode = 3; break;  // Normal
                 case 6: renderer->m_ShadingMode = 2; break;  // Depth
                 case 7: renderer->m_ShadingMode = 4; break;  // Roughness
                 case 8: renderer->m_ShadingMode = 5; break;  // Metallic
                 case 9: renderer->m_ShadingMode = 6; break;  // AO
-                case 10: renderer->m_ShadingMode = 9; break; // Shadow Map
+                case 10: renderer->m_ShadingMode = 9; break; // ShadowMap
                 case 11: renderer->m_ShadingMode = 7; break; // Object ID
                 case 12: renderer->m_ShadingMode = 12; break; // Light Complexity
                 case 13: renderer->m_ShadingMode = 13; break; // Tangent
+                case 14: renderer->m_ShadingMode = 14; break; // LightingOnly
+                case 15: {
+                    renderer->m_ShadingMode = 0;  // Lit
+                    m_ShowGrid = false;
+                    m_ShowColliders = false;
+                    m_ShowBounds = false;
+                    m_ShowGizmos = false;
+                    m_ShowLightVolumes = false;
+                    m_ShowLabels = false;
+                    selection.Clear();
+                    break;
+                }
                 default: renderer->m_ShadingMode = 0; break;
             }
         };
@@ -799,6 +832,15 @@ namespace eng::runtime {
 
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         ImGui::Checkbox("Bounds", &m_ShowBounds);
+
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        ImGui::Checkbox("Gizmos", &m_ShowGizmos);
+
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        ImGui::Checkbox("Light volumes", &m_ShowLightVolumes);
+
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        ImGui::Checkbox("Labels", &m_ShowLabels);
         
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         

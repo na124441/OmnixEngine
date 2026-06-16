@@ -137,19 +137,45 @@ namespace eng::runtime {
             return false;
         }
 
-        // Generate normals if missing
-        if (!hasNormals) {
+        // Validate and normalise normals
+        bool generatedNormals = false;
+        if (hasNormals && normals.size() == positions.size()) {
+            // Check if normals are mostly zero or invalid
+            float totalLength = 0.0f;
+            for (const auto& n : normals) {
+                totalLength += Length(n);
+            }
+            if (totalLength < 0.001f * normals.size()) {
+                LOG_WARN("[MeshImporter] Loaded normals appear to be zero-length/invalid. Force regenerating normals...");
+                GenerateNormals(positions, indices, normals);
+                generatedNormals = true;
+            } else {
+                // Ensure all normals are normalized
+                for (size_t i = 0; i < normals.size(); ++i) {
+                    float len = Length(normals[i]);
+                    if (len > 0.0001f) {
+                        normals[i] = { normals[i].x / len, normals[i].y / len, normals[i].z / len };
+                    } else {
+                        normals[i] = { 0.0f, 1.0f, 0.0f }; // Fallback normal
+                    }
+                }
+            }
+        } else {
             LOG_INFO("[MeshImporter] Missing normals. Generating normals...");
             GenerateNormals(positions, indices, normals);
             hasNormals = true;
+            generatedNormals = true;
         }
+        LOG_INFO("[MeshImporter] Normals validated. generatedNormals = %s", generatedNormals ? "true" : "false");
 
         // Generate tangents if missing (requires UVs)
+        bool tangentsGenerated = false;
         if (!hasTangents) {
             if (hasUVs) {
                 LOG_INFO("[MeshImporter] Missing tangents. Generating tangents...");
                 GenerateTangents(positions, normals, uvs, indices, tangents);
                 hasTangents = true;
+                tangentsGenerated = true;
             } else {
                 // If no UVs, fill tangents with default basis
                 tangents.resize(positions.size(), { 1.0f, 0.0f, 0.0f, 1.0f });
@@ -237,9 +263,12 @@ namespace eng::runtime {
         outMetadata.bounds = bounds;
         outMetadata.sphere = sphere;
         outMetadata.hasNormals = hasNormals;
+        outMetadata.hasUVs = hasUVs;
         outMetadata.hasTangents = hasTangents;
         outMetadata.hasUV0 = hasUVs;
         outMetadata.hasSkeleton = false;
+        outMetadata.normalsGenerated = generatedNormals;
+        outMetadata.tangentsGenerated = tangentsGenerated;
         outMetadata.sourceTimestamp = GetFileLastWriteTime(sourcePath);
         outMetadata.importTimestamp = GetFileLastWriteTime(cachePath);
 

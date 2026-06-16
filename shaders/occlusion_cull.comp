@@ -1,0 +1,139 @@
+#version 450
+layout(local_size_x = 64) in;
+
+struct GPUInstance
+{
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer InstanceBuffer
+{
+    GPUInstance instances[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer FrustumVisibleInstanceBuffer
+{
+    uint frustumVisibleInstances[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer FrustumVisibleCountBuffer
+{
+    uint frustumVisibleCount;
+};
+
+layout(set = 0, binding = 3) uniform CameraUBO
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    vec4 cameraPosition;
+    vec4 viewportSize; // xy = size, zw = 1.0/size
+} camera;
+
+layout(set = 0, binding = 4) uniform sampler2D hzbTexture;
+
+layout(std430, set = 0, binding = 5) writeonly buffer FinalVisibleInstanceBuffer
+{
+    uint finalVisibleInstances[];
+};
+
+layout(std430, set = 0, binding = 6) buffer FinalVisibleCountBuffer
+{
+    uint finalVisibleCount;
+};
+
+layout(std430, set = 0, binding = 7) buffer OcclusionCullStatsBuffer
+{
+    uint occlusionCulledCount;
+};
+
+layout(push_constant) uniform OcclusionCullPushConstants
+{
+    uint maxInstanceCount;
+    uint frustumOnlyMode; // 1 if we should skip occlusion check and just copy
+} pc;
+
+void main()
+{
+    uint gId = gl_GlobalInvocationID.x;
+    if (gId >= frustumVisibleCount)
+    {
+        return;
+    }
+
+    uint instanceIndex = frustumVisibleInstances[gId];
+    GPUInstance instance = instances[instanceIndex];
+
+    vec3 center = instance.boundsCenterRadius.xyz;
+    float radius = instance.boundsCenterRadius.w;
+
+    if (pc.frustumOnlyMode != 0)
+    {
+        // Just bypass occlusion culling
+        uint outIndex = atomicAdd(finalVisibleCount, 1);
+        finalVisibleInstances[outIndex] = instanceIndex;
+        return;
+    }
+
+    // Transform center to view space
+    vec4 viewCenter = camera.view * instance.worldMatrix * vec4(center, 1.0);
+
+    // If sphere intersects or is behind the near plane, project conservatively or mark visible
+    if (viewCenter.z + radius > 0.0)
+    {
+        uint outIndex = atomicAdd(finalVisibleCount, 1);
+        finalVisibleInstances[outIndex] = instanceIndex;
+        return;
+    }
+
+    // Project sphere center and bounds
+    vec4 clipCenter = camera.projection * viewCenter;
+    if (clipCenter.w <= 0.0)
+    {
+        uint outIndex = atomicAdd(finalVisibleCount, 1);
+        finalVisibleInstances[outIndex] = instanceIndex;
+        return;
+    }
+
+    vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
+    vec2 uv = ndcCenter.xy * 0.5 + 0.5;
+    uv.y = 1.0 - uv.y; // Flip Y for Vulkan texture coords
+
+    // Determine HZB mip level based on screen-space footprint
+    float projRadius = (radius * camera.projection[0][0]) / (-viewCenter.z);
+    float screenDiameter = projRadius * 2.0 * max(camera.viewportSize.x, camera.viewportSize.y);
+    float mip = max(0.0, ceil(log2(screenDiameter)));
+
+    // Clamp mip level to maximum mips of HZB
+    float maxMip = float(textureQueryLevels(hzbTexture) - 1);
+    mip = min(mip, maxMip);
+
+    // Sample HZB at the projected sphere center
+    float hzbDepth = textureLod(hzbTexture, uv, mip).r;
+
+    // Nearest point of sphere depth in NDC (standard Vulkan: 0 = near, 1 = far)
+    vec4 closestView = viewCenter;
+    closestView.z += radius; // Z is negative in camera space, so moving closer means adding radius
+    vec4 closestClip = camera.projection * closestView;
+    float sphereDepth = closestClip.z / closestClip.w;
+
+    // Occlusion check
+    if (sphereDepth > hzbDepth)
+    {
+        // Occluded!
+        atomicAdd(occlusionCulledCount, 1);
+    }
+    else
+    {
+        // Visible!
+        uint outIndex = atomicAdd(finalVisibleCount, 1);
+        finalVisibleInstances[outIndex] = instanceIndex;
+    }
+}

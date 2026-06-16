@@ -50,6 +50,9 @@ public:
     /** Returns a fallback 1x1 black texture (cached, survives until shutdown). */
     static Texture* getBlackTexture(const struct EngineResources& res);
 
+    /** Returns a fallback 1x1 metallic-roughness texture (metallic=0, roughness=0.6: G=153, B=0) */
+    static Texture* getMetallicRoughnessFallbackTexture(const struct EngineResources& res);
+
     void destroy();
 
 private:
@@ -59,6 +62,7 @@ private:
     VmaAllocation    allocation = VK_NULL_HANDLE;
     VkImageView       imageView = VK_NULL_HANDLE;
     VkSampler         samplerHandle = VK_NULL_HANDLE;
+    uint32_t          mipLevels = 1;
 };
 
 } // namespace eng::renderer

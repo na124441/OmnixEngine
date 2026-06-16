@@ -1,14 +1,40 @@
 #include "Core/pch.h"
 #include "GPUScene.h"
+#include "GPUInstance.h"
+#include "Rendering/Visibility/Frustum.h"
 #include "Core/Vulkan/VkUtils.h"
 #include "Core/Engine/Log.h"
 #include "Core/Engine/VmaHelpers.h"
 #include "Core/Engine/ResourceTracker.h"
 #include "Rendering/Scene/RenderSceneExtractor.h"
+#include "RenderingEngine/Renderer/scene/Mesh.h"
 #include <cstring>
 #include <algorithm>
 
 namespace eng::renderer {
+
+static glm::vec3 TransformPoint(const glm::mat4& m, const glm::vec3& p)
+{
+    return glm::vec3(m * glm::vec4(p, 1.0f));
+}
+
+static float GetMaxScaleFromMatrix(const glm::mat4& m)
+{
+    float sx = glm::length(glm::vec3(m[0]));
+    float sy = glm::length(glm::vec3(m[1]));
+    float sz = glm::length(glm::vec3(m[2]));
+    return glm::max(sx, glm::max(sy, sz));
+}
+
+static glm::vec4 ComputeWorldBoundsSphere(
+    const glm::mat4& world,
+    const MeshBounds& bounds)
+{
+    glm::vec3 worldCenter = TransformPoint(world, bounds.localCenter);
+    float maxScale = GetMaxScaleFromMatrix(world);
+    float worldRadius = bounds.localRadius * maxScale;
+    return glm::vec4(worldCenter, glm::max(worldRadius, 0.0001f));
+}
 
 void GPUSceneFrameResources::LocalLightBuffer::Upload(const void* data, size_t dataSize)
 {
@@ -199,6 +225,41 @@ void GPUScene::UpdateFrame(
     vmaUnmapMemory(resources.allocator, frameRes.cameraAlloc);
 
     // -------------------------------------------------------------------------
+    // 1b. Frustum Uniform Buffer Upload
+    // -------------------------------------------------------------------------
+    float aspect = renderScene.camera.aspectRatio;
+    if (aspect <= 0.001f) {
+        if (resources.swapChainExtent.height > 0) {
+            aspect = static_cast<float>(resources.swapChainExtent.width) / static_cast<float>(resources.swapChainExtent.height);
+        } else {
+            aspect = 1.777f;
+        }
+    }
+    glm::mat4 proj = glm::perspective(glm::radians(renderScene.camera.fov), aspect, renderScene.camera.nearPlane, renderScene.camera.farPlane);
+    glm::mat4 view = renderScene.camera.viewMatrix;
+    glm::mat4 vp = proj * view;
+    GPUFrustum frustum = ExtractFrustumPlanes(vp);
+
+    void* frustumDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.frustumAlloc, &frustumDst));
+    std::memcpy(frustumDst, &frustum, sizeof(GPUFrustum));
+    vmaUnmapMemory(resources.allocator, frameRes.frustumAlloc);
+
+    static bool loggedPlanes = false;
+    if (!loggedPlanes) {
+        loggedPlanes = true;
+        LOG_INFO("GPUScene: Initial Frustum Planes Extracted:");
+        const char* planeNames[] = { "Left", "Right", "Bottom", "Top", "Near", "Far" };
+        for (int i = 0; i < 6; ++i) {
+            LOG_INFO("  Plane " + std::string(planeNames[i]) + ": " +
+                     "x=" + std::to_string(frustum.planes[i].x) + ", " +
+                     "y=" + std::to_string(frustum.planes[i].y) + ", " +
+                     "z=" + std::to_string(frustum.planes[i].z) + ", " +
+                     "w=" + std::to_string(frustum.planes[i].w));
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // 2. Light Storage Buffer Upload
     // -------------------------------------------------------------------------
     LightData lightUboData{};
@@ -286,14 +347,15 @@ void GPUScene::UpdateFrame(
     // Scan render queue to register used materials
     for (const auto& item : renderQueueItems) {
         const Material* mat = item.material;
-        if (mat && materialToIndex.find(mat) == materialToIndex.end()) {
-            MaterialGPUData matData{};
-            if (mat) {
-                matData = mat->uboData;
+        if (mat) {
+            if (item.mesh) {
+                const_cast<Material*>(mat)->updateNormalMapCompatibility(*item.mesh);
             }
-
-            materialToIndex[mat] = static_cast<uint32_t>(materialsData.size());
-            materialsData.push_back(matData);
+            if (materialToIndex.find(mat) == materialToIndex.end()) {
+                MaterialGPUData matData = mat->uboData;
+                materialToIndex[mat] = static_cast<uint32_t>(materialsData.size());
+                materialsData.push_back(matData);
+            }
         }
     }
 
@@ -326,10 +388,20 @@ void GPUScene::UpdateFrame(
     resources.copyStagingToDevice(cmd, frameRes.materialBuffer, 0, matDataSize);
     resources.endSingleTimeCommands(cmd);
 
+    // Register unique meshes to assign meshIndex
+    std::unordered_map<const Mesh*, uint32_t> meshToIndex;
+    std::vector<const Mesh*> uniqueMeshes;
+    for (const auto& item : renderQueueItems) {
+        if (item.mesh && meshToIndex.find(item.mesh) == meshToIndex.end()) {
+            meshToIndex[item.mesh] = static_cast<uint32_t>(uniqueMeshes.size());
+            uniqueMeshes.push_back(item.mesh);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // 4. Build Instance & ObjectID Arrays
     // -------------------------------------------------------------------------
-    std::vector<InstanceGPUData> instancesData;
+    std::vector<GPUInstance> instancesData;
     std::vector<uint32_t> objectIDsData;
 
     instancesData.reserve(renderQueueItems.size());
@@ -344,11 +416,22 @@ void GPUScene::UpdateFrame(
             }
         }
 
-        InstanceGPUData inst{};
+        uint32_t meshIdx = 0;
+        if (item.mesh) {
+            auto it = meshToIndex.find(item.mesh);
+            if (it != meshToIndex.end()) {
+                meshIdx = it->second;
+            }
+        }
+
+        GPUInstance inst{};
         inst.worldMatrix = item.transform;
         inst.previousWorldMatrix = item.previousTransform;
-        inst.minBounds_materialIndex = glm::vec4(item.minBounds, static_cast<float>(matIdx));
-        inst.maxBounds_entityID = glm::vec4(item.maxBounds, static_cast<float>(item.entityID));
+        inst.boundsCenterRadius = ComputeWorldBoundsSphere(item.transform, item.mesh ? item.mesh->bounds : MeshBounds{});
+        inst.meshIndex = meshIdx;
+        inst.materialIndex = matIdx;
+        inst.objectID = item.entityID;
+        inst.flags = RenderFlags_Opaque;
 
         instancesData.push_back(inst);
         objectIDsData.push_back(item.entityID);
@@ -356,7 +439,7 @@ void GPUScene::UpdateFrame(
 
     // Default to at least 1 element to avoid 0-sized allocation if queue is empty
     if (instancesData.empty()) {
-        instancesData.push_back(InstanceGPUData{});
+        instancesData.push_back(GPUInstance{});
         objectIDsData.push_back(0);
     }
 
@@ -371,7 +454,7 @@ void GPUScene::UpdateFrame(
         frameRes.instanceBufferSize,
         frameRes.instanceCapacity,
         instanceCount,
-        sizeof(InstanceGPUData),
+        sizeof(GPUInstance),
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
     );
     if (frameRes.instanceCapacity != prevInstanceCapacity) {
@@ -381,8 +464,10 @@ void GPUScene::UpdateFrame(
     // Persistently mapped path for Instance Buffer
     void* instanceDst = nullptr;
     VK_CHECK(vmaMapMemory(resources.allocator, frameRes.instanceAlloc, &instanceDst));
-    std::memcpy(instanceDst, instancesData.data(), instanceCount * sizeof(InstanceGPUData));
+    std::memcpy(instanceDst, instancesData.data(), instanceCount * sizeof(GPUInstance));
     vmaUnmapMemory(resources.allocator, frameRes.instanceAlloc);
+
+    m_GPUInstances = instancesData;
 
     // Resize ObjectID buffer if needed
     uint32_t prevObjectIdCapacity = frameRes.objectIdCapacity;
@@ -405,6 +490,46 @@ void GPUScene::UpdateFrame(
     VK_CHECK(vmaMapMemory(resources.allocator, frameRes.objectIdAlloc, &objectIdDst));
     std::memcpy(objectIdDst, objectIDsData.data(), instanceCount * sizeof(uint32_t));
     vmaUnmapMemory(resources.allocator, frameRes.objectIdAlloc);
+
+    // -------------------------------------------------------------------------
+    // 4a. Populate and Upload Mesh Draw Metadata
+    // -------------------------------------------------------------------------
+    std::vector<GPUMeshDrawData> meshDrawData;
+    meshDrawData.reserve(uniqueMeshes.size());
+    for (const Mesh* mesh : uniqueMeshes) {
+        GPUMeshDrawData draw{};
+        draw.indexCount = mesh->indexCount;
+        draw.firstIndex = mesh->firstIndex;
+        draw.vertexOffset = mesh->vertexOffset;
+        draw.materialSlotOffset = mesh->materialSlotOffset;
+        meshDrawData.push_back(draw);
+    }
+    if (meshDrawData.empty()) {
+        meshDrawData.push_back(GPUMeshDrawData{});
+    }
+
+    uint32_t meshCount = static_cast<uint32_t>(meshDrawData.size());
+    uint32_t prevMeshDrawDataCapacity = frameRes.meshDrawDataCapacity;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.meshDrawDataBuffer,
+        frameRes.meshDrawDataAlloc,
+        frameRes.meshDrawDataBufferSize,
+        frameRes.meshDrawDataCapacity,
+        meshCount,
+        sizeof(GPUMeshDrawData),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.meshDrawDataCapacity != prevMeshDrawDataCapacity) {
+        needsDescriptorUpdate = true;
+    }
+
+    void* meshDrawDataDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.meshDrawDataAlloc, &meshDrawDataDst));
+    std::memcpy(meshDrawDataDst, meshDrawData.data(), meshCount * sizeof(GPUMeshDrawData));
+    vmaUnmapMemory(resources.allocator, frameRes.meshDrawDataAlloc);
+
+    m_GPUMeshDrawData = meshDrawData;
 
     // -------------------------------------------------------------------------
     // 4b. Local Lights Extraction and Upload
@@ -582,7 +707,7 @@ void GPUScene::UpdateFrame(
 
 void GPUScene::createDescriptorSetLayout(EngineResources& resources)
 {
-    VkDescriptorSetLayoutBinding bindings[5]{};
+    VkDescriptorSetLayoutBinding bindings[7]{};
 
     // Binding 0: Camera Uniform Buffer
     bindings[0].binding            = 0;
@@ -619,9 +744,23 @@ void GPUScene::createDescriptorSetLayout(EngineResources& resources)
     bindings[4].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[4].pImmutableSamplers = nullptr;
 
+    // Binding 5: Frustum Uniform Buffer
+    bindings[5].binding            = 5;
+    bindings[5].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[5].descriptorCount    = 1;
+    bindings[5].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings[5].pImmutableSamplers = nullptr;
+
+    // Binding 6: MeshDrawData Storage Buffer
+    bindings[6].binding            = 6;
+    bindings[6].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[6].descriptorCount    = 1;
+    bindings[6].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[6].pImmutableSamplers = nullptr;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 5;
+    layoutInfo.bindingCount = 7;
     layoutInfo.pBindings    = bindings;
 
     VK_CHECK(vkCreateDescriptorSetLayout(resources.device, &layoutInfo, nullptr, &m_DescriptorSetLayout));
@@ -632,9 +771,9 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
     // Allocate descriptor pool
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = 3; // cameraBuffer (set 0), clusterSettingsBuffer (set 3), compute settings (compute set 0)
+    poolSizes[0].descriptorCount = 4; // cameraBuffer (set 0), clusterSettingsBuffer (set 3), compute settings (compute set 0), frustumBuffer (set 0)
     poolSizes[1].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[1].descriptorCount = 12; // set 0: 4 storage buffers. set 3: 4 storage buffers. compute set 0: 4 storage buffers.
+    poolSizes[1].descriptorCount = 20; // set 0: 5 storage buffers. set 3: 4 storage buffers. compute set 0: 4 storage buffers.
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -685,6 +824,12 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
     VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.cameraBuffer, &frameRes.cameraAlloc, nullptr));
     ::eng::ResourceTracker::incBuffer();
 
+    // Allocate Frustum Uniform Buffer
+    bufInfo.size  = sizeof(GPUFrustum);
+    bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.frustumBuffer, &frameRes.frustumAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
     // Allocate Light Storage Buffer
     bufInfo.size  = sizeof(LightData);
     bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -693,7 +838,7 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
 
     // Initialize dynamic buffers to a default capacity
     frameRes.instanceCapacity = 128;
-    frameRes.instanceBufferSize = frameRes.instanceCapacity * sizeof(InstanceGPUData);
+    frameRes.instanceBufferSize = frameRes.instanceCapacity * sizeof(GPUInstance);
     bufInfo.size = frameRes.instanceBufferSize;
     bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.instanceBuffer, &frameRes.instanceAlloc, nullptr));
@@ -704,6 +849,13 @@ void GPUScene::createFrameResources(EngineResources& resources, GPUSceneFrameRes
     bufInfo.size = frameRes.objectIdBufferSize;
     bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.objectIdBuffer, &frameRes.objectIdAlloc, nullptr));
+    ::eng::ResourceTracker::incBuffer();
+
+    frameRes.meshDrawDataCapacity = 128;
+    frameRes.meshDrawDataBufferSize = frameRes.meshDrawDataCapacity * sizeof(GPUMeshDrawData);
+    bufInfo.size = frameRes.meshDrawDataBufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &vmaAllocInfo, &frameRes.meshDrawDataBuffer, &frameRes.meshDrawDataAlloc, nullptr));
     ::eng::ResourceTracker::incBuffer();
 
     // Material buffer (Device-local staging upload)
@@ -772,6 +924,11 @@ void GPUScene::destroyFrameResources(EngineResources& resources, GPUSceneFrameRe
         ::eng::ResourceTracker::decBuffer();
         frameRes.cameraBuffer = VK_NULL_HANDLE;
     }
+    if (frameRes.frustumBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.frustumBuffer, frameRes.frustumAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.frustumBuffer = VK_NULL_HANDLE;
+    }
     if (frameRes.lightBuffer != VK_NULL_HANDLE) {
         vmaDestroyBuffer(resources.allocator, frameRes.lightBuffer, frameRes.lightAlloc);
         ::eng::ResourceTracker::decBuffer();
@@ -791,6 +948,11 @@ void GPUScene::destroyFrameResources(EngineResources& resources, GPUSceneFrameRe
         vmaDestroyBuffer(resources.allocator, frameRes.objectIdBuffer, frameRes.objectIdAlloc);
         ::eng::ResourceTracker::decBuffer();
         frameRes.objectIdBuffer = VK_NULL_HANDLE;
+    }
+    if (frameRes.meshDrawDataBuffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, frameRes.meshDrawDataBuffer, frameRes.meshDrawDataAlloc);
+        ::eng::ResourceTracker::decBuffer();
+        frameRes.meshDrawDataBuffer = VK_NULL_HANDLE;
     }
     if (frameRes.localLightBuffer.buffer != VK_NULL_HANDLE) {
         vmaDestroyBuffer(resources.allocator, frameRes.localLightBuffer.buffer, frameRes.localLightBuffer.allocation);
@@ -877,7 +1039,7 @@ void GPUScene::resizeBufferIfNeeded(
 void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResources& frameRes)
 {
     std::vector<VkWriteDescriptorSet> writes;
-    writes.reserve(5);
+    writes.reserve(7);
 
     // Binding 0: Camera Uniform Buffer
     VkDescriptorBufferInfo cameraInfo{};
@@ -958,6 +1120,38 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     objectIdWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     objectIdWrite.pBufferInfo     = &objectIdInfo;
     writes.push_back(objectIdWrite);
+
+    // Binding 5: Frustum Uniform Buffer
+    VkDescriptorBufferInfo frustumInfo{};
+    frustumInfo.buffer = frameRes.frustumBuffer;
+    frustumInfo.offset = 0;
+    frustumInfo.range  = sizeof(GPUFrustum);
+
+    VkWriteDescriptorSet frustumWrite{};
+    frustumWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    frustumWrite.dstSet          = frameRes.descriptorSet;
+    frustumWrite.dstBinding      = 5;
+    frustumWrite.dstArrayElement = 0;
+    frustumWrite.descriptorCount = 1;
+    frustumWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    frustumWrite.pBufferInfo     = &frustumInfo;
+    writes.push_back(frustumWrite);
+
+    // Binding 6: MeshDrawData Storage Buffer
+    VkDescriptorBufferInfo meshDrawDataInfo{};
+    meshDrawDataInfo.buffer = frameRes.meshDrawDataBuffer;
+    meshDrawDataInfo.offset = 0;
+    meshDrawDataInfo.range  = frameRes.meshDrawDataBufferSize;
+
+    VkWriteDescriptorSet meshDrawDataWrite{};
+    meshDrawDataWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    meshDrawDataWrite.dstSet          = frameRes.descriptorSet;
+    meshDrawDataWrite.dstBinding      = 6;
+    meshDrawDataWrite.dstArrayElement = 0;
+    meshDrawDataWrite.descriptorCount = 1;
+    meshDrawDataWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    meshDrawDataWrite.pBufferInfo     = &meshDrawDataInfo;
+    writes.push_back(meshDrawDataWrite);
 
     // Write local lights descriptor set if buffer exists
     VkDescriptorBufferInfo localLightInfo{};

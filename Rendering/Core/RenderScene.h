@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include "Runtime/Public/AssetHandle.h"
 #include "Runtime/Public/OmnixMeshFormat.h" // For BoundingBox
+#include "Rendering/GPUScene/GPUInstance.h"
 #include "RenderingEngine/Renderer/scene/RenderObject.h"
 #include "RenderingEngine/Renderer/scene/Mesh.h"
 #include "RenderingEngine/Renderer/scene/Material.h"
@@ -31,12 +32,13 @@ namespace eng::renderer {
         glm::vec3 color{1.0f, 1.0f, 1.0f};
         float castShadows = 1.0f; // 1.0f for true, 0.0f for false
         glm::mat4 lightSpaceMatrix{1.0f};
-        float shadowBias = 0.003f;
-        float shadowSlopeBias = 0.01f;
-        float shadowNormalBias = 0.0f;
+        float shadowBias = 0.0015f;
+        float shadowSlopeBias = 0.003f;
+        float shadowNormalBias = 0.05f;
         float shadowStrength = 1.0f;
         int shadowResolution = 2048;
         int pcfKernelSize = 3;
+        float shadowDistance = 75.0f;
     };
 
     struct PointLightGPU {
@@ -81,13 +83,6 @@ namespace eng::renderer {
         glm::vec4 cameraPlanes{0.1f, 1000.0f, 0.0f, 0.0f}; // x = near, y = far, zw = unused
     };
 
-    struct InstanceGPUData {
-        glm::mat4 worldMatrix{1.0f};
-        glm::mat4 previousWorldMatrix{1.0f};
-        glm::vec4 minBounds_materialIndex{0.0f}; // xyz = min bounds, w = materialIndex
-        glm::vec4 maxBounds_entityID{0.0f};      // xyz = max bounds, w = entityID
-    };
-
     using MaterialGPUData = MaterialGPU;
 
     struct RenderScene {
@@ -97,6 +92,8 @@ namespace eng::renderer {
         std::vector<SpotLightGPU> spotLights;
         CameraData camera;
         SkyLightData skyLight;
+        bool sceneHasValidLights = false;
+        bool previewLightingActive = false;
     };
 
 } // namespace eng::renderer

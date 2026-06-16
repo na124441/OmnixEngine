@@ -17,18 +17,21 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
-    vec4 sunDirectionIntensity;
-    vec4 sunColorAngularSize;
-
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
 
+struct DirectionalLightData
+{
+    vec3 direction;
+    float intensity;
+    vec4 color;
+};
+
 // Binding 3: Light Storage Buffer
 layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 ambientColorIntensity; // rgb = color, w = intensity
-    vec4 directionalDirectionIntensity; // xyz = direction, w = intensity
-    vec4 directionalColor; // rgb = color, w = unused
+    DirectionalLightData directional;
     vec4 pointPositionsRadius[16]; // xyz = pos, w = radius
     vec4 pointColorsIntensity[16]; // rgb = color, w = intensity
     uint pointLightCount;
@@ -213,14 +216,14 @@ vec3 EvaluateDirectionalLight(
     float metallic,
     float roughness)
 {
-    vec3 L = normalize(-frame.sunDirectionIntensity.xyz);
+    vec3 L = normalize(-light.directional.direction);
     vec3 H = normalize(V + L);
 
     float NdotL = max(dot(N, L), 0.0);
     float NdotV = max(dot(N, V), 0.001);
 
-    vec3 sunColor = frame.sunColorAngularSize.rgb;
-    float sunIntensity = frame.sunDirectionIntensity.w;
+    vec3 sunColor = light.directional.color.rgb;
+    float sunIntensity = light.directional.intensity;
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
@@ -260,7 +263,9 @@ float CalculateShadow(vec3 worldPos, vec3 N)
         return 0.0;
     }
 
-    vec4 lightSpace = lighting.directionalLightProjView * vec4(worldPos, 1.0);
+    // Apply normal bias to prevent shadow acne (especially with PCF filtering)
+    vec3 offsetWorldPos = worldPos + N * lighting.shadowNormalBias;
+    vec4 lightSpace = lighting.directionalLightProjView * vec4(offsetWorldPos, 1.0);
 
     vec3 projCoords = lightSpace.xyz / lightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
@@ -272,7 +277,7 @@ float CalculateShadow(vec3 worldPos, vec3 N)
         return 0.0;
     }
 
-    vec3 L = normalize(-frame.sunDirectionIntensity.xyz);
+    vec3 L = normalize(-light.directional.direction);
 
     float constantBias = lighting.shadowParams.y;
     float slopeBias = lighting.shadowParams.z;
@@ -458,38 +463,7 @@ void main()
     float depth = texture(depthBuffer, inUV).r;
     float exposure = frame.exposureSettings.x;
 
-    // Selected object outline check
-    uint selectedID = frame.renderFlags.z;
-    if (selectedID != 0) {
-        uint centerID = uint(round(gbufferCSample.b * 255.0));
-        vec2 texelSize = 1.0 / vec2(textureSize(gbufferC, 0));
-        
-        float leftID = texture(gbufferC, inUV + vec2(-texelSize.x, 0.0)).b;
-        float rightID = texture(gbufferC, inUV + vec2(texelSize.x, 0.0)).b;
-        float upID = texture(gbufferC, inUV + vec2(0.0, -texelSize.y)).b;
-        float downID = texture(gbufferC, inUV + vec2(0.0, texelSize.y)).b;
-        
-        uint lID = uint(round(leftID * 255.0));
-        uint rID = uint(round(rightID * 255.0));
-        uint uID = uint(round(upID * 255.0));
-        uint dID = uint(round(downID * 255.0));
-        
-        bool isEdge = false;
-        if (centerID == selectedID) {
-            if (lID != selectedID || rID != selectedID || uID != selectedID || dID != selectedID) {
-                isEdge = true;
-            }
-        } else {
-            if (lID == selectedID || rID == selectedID || uID == selectedID || dID == selectedID) {
-                isEdge = true;
-            }
-        }
-        
-        if (isEdge) {
-            outColor = vec4(1.0, 0.55, 0.0, 1.0); // Orange outline
-            return;
-        }
-    }
+
 
     // Background pixel: no geometry was rendered here.
     if (depth >= 0.9999) {
@@ -506,6 +480,12 @@ void main()
     float AO = gbufferCSample.g;
     float rawEntityID = gbufferCSample.b;
     vec3 emissive = gbufferDSample.rgb;
+
+    // Mode 14: LightingOnly (overwrite albedo to neutral grey, emissive to black)
+    if (light.shadingMode == 14) {
+        albedo = vec3(0.5);
+        emissive = vec3(0.0);
+    }
     uint shadingModel = uint(round(gbufferDSample.a * 255.0));
 
     // ----- Shading Modes Check -----
@@ -537,8 +517,8 @@ void main()
 
     // Mode 3: Normal Debug
     if (light.shadingMode == 3) {
-        vec3 normalColor = N * 0.5 + 0.5;
-        outColor = vec4(normalColor, 0.0);
+        vec3 normalColor = normalize(N) * 0.5 + 0.5;
+        outColor = vec4(normalColor, 1.0);
         return;
     }
 
@@ -601,7 +581,7 @@ void main()
     if (light.shadingMode == 12) {
         vec3 vWorldPos = reconstructWorldPos(inUV, depth);
         uint affectingLights = 0;
-        if (light.directionalDirectionIntensity.w > 0.0) {
+        if (light.directional.intensity > 0.0) {
             affectingLights += 1;
         }
         for (uint i = 0; i < light.pointLightCount && i < 16; ++i) {

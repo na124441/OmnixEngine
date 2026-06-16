@@ -32,14 +32,14 @@ namespace eng::renderer {
             const CameraComponent& activeCamera,
             const glm::mat4& cameraWorldMatrix,
             RenderScene& outRenderScene,
-            bool useEditorDefaultLighting = true
+            bool usePreviewLighting = false
         );
 
         static void DebugPrint(const RenderScene& scene);
 
         static void ExtractLighting(
             eng::runtime::World* world,
-            bool useEditorDefaultLighting,
+            bool usePreviewLighting,
             uint32_t shadingMode,
             LightData& uboData,
             bool& lastFallbackActive

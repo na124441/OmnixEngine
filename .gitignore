@@ -139,3 +139,5 @@ Omnix.log
 # Temporary/editor files
 .DS_Store
 Thumbs.db
+.pdf
+

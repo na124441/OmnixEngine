@@ -17,9 +17,12 @@ struct MeshMetadata
     BoundingSphere sphere;
 
     bool hasNormals = false;
+    bool hasUVs = false;
     bool hasTangents = false;
-    bool hasUV0 = false;
+    bool hasUV0 = false; // keep for compatibility
     bool hasSkeleton = false;
+    bool normalsGenerated = false;
+    bool tangentsGenerated = false;
 
     uint64_t sourceTimestamp = 0;
     uint64_t importTimestamp = 0;
@@ -43,9 +46,12 @@ inline bool SaveMeshMetadata(const MeshMetadata& meta, const std::string& filepa
     jsonMeta["sphere"] = bsphere;
 
     jsonMeta["hasNormals"] = meta.hasNormals;
+    jsonMeta["hasUVs"] = meta.hasUVs;
     jsonMeta["hasTangents"] = meta.hasTangents;
     jsonMeta["hasUV0"] = meta.hasUV0;
     jsonMeta["hasSkeleton"] = meta.hasSkeleton;
+    jsonMeta["normalsGenerated"] = meta.normalsGenerated;
+    jsonMeta["tangentsGenerated"] = meta.tangentsGenerated;
     jsonMeta["sourceTimestamp"] = meta.sourceTimestamp;
     jsonMeta["importTimestamp"] = meta.importTimestamp;
 
@@ -112,6 +118,9 @@ inline bool LoadMeshMetadata(MeshMetadata& meta, const std::string& filepath) {
     if (jsonMeta.contains("hasNormals") && jsonMeta["hasNormals"].is_boolean()) {
         meta.hasNormals = jsonMeta["hasNormals"].get<bool>();
     }
+    if (jsonMeta.contains("hasUVs") && jsonMeta["hasUVs"].is_boolean()) {
+        meta.hasUVs = jsonMeta["hasUVs"].get<bool>();
+    }
     if (jsonMeta.contains("hasTangents") && jsonMeta["hasTangents"].is_boolean()) {
         meta.hasTangents = jsonMeta["hasTangents"].get<bool>();
     }
@@ -120,6 +129,12 @@ inline bool LoadMeshMetadata(MeshMetadata& meta, const std::string& filepath) {
     }
     if (jsonMeta.contains("hasSkeleton") && jsonMeta["hasSkeleton"].is_boolean()) {
         meta.hasSkeleton = jsonMeta["hasSkeleton"].get<bool>();
+    }
+    if (jsonMeta.contains("normalsGenerated") && jsonMeta["normalsGenerated"].is_boolean()) {
+        meta.normalsGenerated = jsonMeta["normalsGenerated"].get<bool>();
+    }
+    if (jsonMeta.contains("tangentsGenerated") && jsonMeta["tangentsGenerated"].is_boolean()) {
+        meta.tangentsGenerated = jsonMeta["tangentsGenerated"].get<bool>();
     }
     if (jsonMeta.contains("sourceTimestamp") && jsonMeta["sourceTimestamp"].is_number()) {
         meta.sourceTimestamp = jsonMeta["sourceTimestamp"].get<uint64_t>();

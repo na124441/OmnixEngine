@@ -1,0 +1,71 @@
+#version 450
+layout(local_size_x = 64) in;
+
+struct GPUInstance
+{
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+layout(set = 0, binding = 0) readonly buffer InstanceBuffer
+{
+    GPUInstance instances[];
+};
+
+layout(set = 0, binding = 1) uniform FrustumBuffer
+{
+    vec4 planes[6];
+} frustum;
+
+layout(set = 0, binding = 2) buffer VisibleInstanceBuffer
+{
+    uint visibleInstances[];
+};
+
+layout(set = 0, binding = 3) buffer VisibleCountBuffer
+{
+    uint visibleCount;
+};
+
+layout(push_constant) uniform CullPushConstants
+{
+    uint instanceCount;
+} pc;
+
+bool SphereInFrustum(vec3 center, float radius)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        vec4 plane = frustum.planes[i];
+        float d = dot(plane.xyz, center) + plane.w;
+        if (d < -radius)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void main()
+{
+    uint instanceIndex = gl_GlobalInvocationID.x;
+    if (instanceIndex >= pc.instanceCount)
+    {
+        return;
+    }
+
+    GPUInstance instance = instances[instanceIndex];
+    vec3 center = instance.boundsCenterRadius.xyz;
+    float radius = instance.boundsCenterRadius.w;
+
+    if (SphereInFrustum(center, radius))
+    {
+        uint outIndex = atomicAdd(visibleCount, 1);
+        visibleInstances[outIndex] = instanceIndex;
+    }
+}

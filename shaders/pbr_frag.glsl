@@ -16,9 +16,6 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
-    vec4 sunDirectionIntensity;
-    vec4 sunColorAngularSize;
-
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
@@ -26,8 +23,11 @@ layout(set = 0, binding = 0) uniform RadianceFrame
 struct InstanceData {
     mat4 worldMatrix;
     mat4 previousWorldMatrix;
-    vec4 minBounds_materialIndex;
-    vec4 maxBounds_entityID;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
 };
 
 // Binding 1: Instance Storage Buffer
@@ -36,11 +36,21 @@ layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
 } inst;
 
 struct MaterialData {
-    vec4 albedoColor;
-    float roughness;
-    float metallic;
+    vec4 baseColorFactor;
+    float roughnessFactor;
+    float metallicFactor;
+    float normalScale;
+    float emissiveStrength;
+
     float hasAlbedoMap;
-    float hasNormalMap;
+    float useNormalMap;
+    float hasMetallicRoughnessMap;
+    float hasAOMap;
+
+    float hasEmissiveMap;
+    uint blendMode;
+    uint shadingModel;
+    uint padding;
 };
 
 // Binding 2: Material Storage Buffer
@@ -112,18 +122,43 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     return ggx1 * ggx2;
 }
 
+// TBN frame formulation for normal perturbation
+vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
+{
+    vec3 tangentNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    tangentNormal.xy *= normalScale; // Scale normal perturbation
+
+    vec3 dp1 = dFdx(vWorldPos);
+    vec3 dp2 = dFdy(vWorldPos);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
+
+    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
+    vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+    vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
+
+    T = normalize(T - dot(T, N) * N);
+    B = cross(N, T);
+
+    mat3 TBN = mat3(T, B, N);
+    return normalize(TBN * tangentNormal);
+}
+
 void main()
 {
     // ----- Fetch Material Parameters -----
-    vec4 albedoColor = mat.materials[vMaterialIndex].albedoColor;
-    float roughness = mat.materials[vMaterialIndex].roughness;
-    float metallic = mat.materials[vMaterialIndex].metallic;
-    float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
-    float hasNormalMap = mat.materials[vMaterialIndex].hasNormalMap;
+    vec4 baseColorFactor = mat.materials[vMaterialIndex].baseColorFactor;
+    float roughness = mat.materials[vMaterialIndex].roughnessFactor;
+    float metallic = mat.materials[vMaterialIndex].metallicFactor;
+    float normalScale = mat.materials[vMaterialIndex].normalScale;
+    float emissiveStrength = mat.materials[vMaterialIndex].emissiveStrength;
 
-    vec3 albedo = albedoColor.rgb;
+    float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
+    float useNormalMap = mat.materials[vMaterialIndex].useNormalMap;
+
+    vec3 albedo = baseColorFactor.rgb;
     if (hasAlbedoMap > 0.5) {
-        albedo = texture(albedoMap, vUV).rgb * albedoColor.rgb;
+        albedo = texture(albedoMap, vUV).rgb * baseColorFactor.rgb;
     }
 
     // Unlit View Mode Check
@@ -148,9 +183,8 @@ void main()
     }
 
     vec3 N = normalize(vNormal);
-    if (hasNormalMap > 0.5) {
-        vec3 normalSample = texture(normalMap, vUV).rgb * 2.0 - 1.0;
-        N = normalize(vNormal + normalSample);
+    if (useNormalMap > 0.5) {
+        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
     }
 
     roughness = clamp(roughness, 0.04, 1.0);

@@ -10,6 +10,9 @@
 #include "Rendering/Radiance/RadianceGPUData.h"
 #include "Rendering/Lighting/LocalLightGPU.h"
 #include "Rendering/Lighting/ClusteredLightingTypes.h"
+#include "GPUInstance.h"
+#include "GPUVisibilityTypes.h"
+#include "GPUMeshDrawData.h"
 
 class Scene;
 
@@ -36,6 +39,14 @@ namespace eng::renderer {
         VmaAllocation objectIdAlloc = VK_NULL_HANDLE;
         VkDeviceSize objectIdBufferSize = 0;
         uint32_t objectIdCapacity = 0;
+
+        VkBuffer meshDrawDataBuffer = VK_NULL_HANDLE;
+        VmaAllocation meshDrawDataAlloc = VK_NULL_HANDLE;
+        VkDeviceSize meshDrawDataBufferSize = 0;
+        uint32_t meshDrawDataCapacity = 0;
+
+        VkBuffer frustumBuffer = VK_NULL_HANDLE;
+        VmaAllocation frustumAlloc = VK_NULL_HANDLE;
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
@@ -106,6 +117,8 @@ namespace eng::renderer {
         VkDescriptorSet GetLightCullingDescriptorSet(uint32_t frameIndex) const { return m_Frames[frameIndex].lightCullingDescriptorSet; }
         uint32_t GetLocalLightCount(uint32_t frameIndex) const { return m_Frames[frameIndex].localLightCount; }
         const GPUSceneFrameResources& GetFrameResources(uint32_t frameIndex) const { return m_Frames[frameIndex]; }
+        const std::vector<GPUInstance>& GetGPUInstances() const { return m_GPUInstances; }
+        const std::vector<GPUMeshDrawData>& GetGPUMeshDrawData() const { return m_GPUMeshDrawData; }
 
     private:
         void createDescriptorSetLayout(EngineResources& resources);
@@ -129,6 +142,8 @@ namespace eng::renderer {
         VkDescriptorSetLayout m_LocalLightsDescriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_LightCullingDescriptorSetLayout = VK_NULL_HANDLE;
         std::vector<GPUSceneFrameResources> m_Frames;
+        std::vector<GPUInstance> m_GPUInstances;
+        std::vector<GPUMeshDrawData> m_GPUMeshDrawData;
     };
 
 } // namespace eng::renderer

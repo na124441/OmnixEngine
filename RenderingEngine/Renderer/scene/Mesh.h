@@ -13,6 +13,14 @@ namespace eng::renderer {
 
 struct EngineResources;
 
+struct MeshBounds
+{
+    glm::vec3 localCenter = glm::vec3(0.0f);
+    float localRadius = 1.0f;
+    glm::vec3 localMin = glm::vec3(0.0f);
+    glm::vec3 localMax = glm::vec3(0.0f);
+};
+
 class Mesh {
 public:
     Mesh() = default;
@@ -37,6 +45,9 @@ public:
     VkDeviceSize indexSize = 0;
 
     uint32_t indexCount = 0;
+    uint32_t firstIndex = 0;
+    int32_t vertexOffset = 0;
+    uint32_t materialSlotOffset = 0;
 
     // Helper for move semantics
     void moveFrom(Mesh&& rhs);
@@ -45,6 +56,13 @@ public:
 
     glm::vec3 minBounds = glm::vec3(0.0f);
     glm::vec3 maxBounds = glm::vec3(0.0f);
+    MeshBounds bounds;
+
+    bool hasNormals = false;
+    bool hasUVs = false;
+    bool hasTangents = false;
+    bool normalsGenerated = false;
+    bool tangentsGenerated = false;
 };
 
 } // namespace eng::renderer

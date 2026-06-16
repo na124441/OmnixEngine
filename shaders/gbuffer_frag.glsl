@@ -1,8 +1,9 @@
 #version 450
 layout(location = 0) out vec4 outGBufferA; // Albedo + Material Flags
 layout(location = 1) out vec4 outGBufferB; // Normal + Roughness
-layout(location = 2) out vec4 outGBufferC; // Metallic + Ambient Occlusion + Entity ID
+layout(location = 2) out vec4 outGBufferC; // Metallic + Ambient Occlusion
 layout(location = 3) out vec4 outGBufferD; // Emissive + Shading Model
+layout(location = 4) out uint outObjectID;  // ObjectID (32-bit uint)
 
 // Binding 0: Camera Uniform Buffer
 layout(set = 0, binding = 0) uniform RadianceFrame
@@ -19,9 +20,6 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
-    vec4 sunDirectionIntensity;
-    vec4 sunColorAngularSize;
-
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
@@ -29,8 +27,11 @@ layout(set = 0, binding = 0) uniform RadianceFrame
 struct InstanceData {
     mat4 worldMatrix;
     mat4 previousWorldMatrix;
-    vec4 minBounds_materialIndex;
-    vec4 maxBounds_entityID;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
 };
 
 // Binding 1: Instance Storage Buffer
@@ -46,7 +47,7 @@ struct MaterialData {
     float emissiveStrength;
 
     float hasAlbedoMap;
-    float hasNormalMap;
+    float useNormalMap;
     float hasMetallicRoughnessMap;
     float hasAOMap;
 
@@ -107,7 +108,7 @@ void main()
     float emissiveStrength = mat.materials[vMaterialIndex].emissiveStrength;
 
     float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
-    float hasNormalMap = mat.materials[vMaterialIndex].hasNormalMap;
+    float useNormalMap = mat.materials[vMaterialIndex].useNormalMap;
     float hasMetallicRoughnessMap = mat.materials[vMaterialIndex].hasMetallicRoughnessMap;
     float hasAOMap = mat.materials[vMaterialIndex].hasAOMap;
     float hasEmissiveMap = mat.materials[vMaterialIndex].hasEmissiveMap;
@@ -124,7 +125,7 @@ void main()
     }
 
     vec3 N = normalize(vNormal);
-    if (hasNormalMap > 0.5) {
+    if (useNormalMap > 0.5) {
         N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
     }
 
@@ -150,6 +151,7 @@ void main()
     // Write GBuffer outputs
     outGBufferA = vec4(albedo.rgb, 0.0); // Material flags
     outGBufferB = vec4(N, roughness);
-    outGBufferC = vec4(metallic, ao, float(vEntityID) / 255.0, 1.0); // Metallic, AO, Entity ID
+    outGBufferC = vec4(metallic, ao, 0.0, 1.0); // Metallic, AO, 0.0 (Unused/Clean)
     outGBufferD = vec4(emissive, float(shadingModel) / 255.0); // Emissive (RGB) + Shading Model (A)
+    outObjectID = vEntityID;
 }

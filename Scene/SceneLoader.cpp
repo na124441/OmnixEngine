@@ -394,6 +394,7 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("shadowStrength") && comp["shadowStrength"].IsNumber()) dlc.shadowStrength = comp["shadowStrength"].GetFloat();
                     if (comp.HasMember("shadowResolution") && comp["shadowResolution"].IsInt()) dlc.shadowResolution = comp["shadowResolution"].GetInt();
                     if (comp.HasMember("pcfKernelSize") && comp["pcfKernelSize"].IsInt()) dlc.pcfKernelSize = comp["pcfKernelSize"].GetInt();
+                    if (comp.HasMember("shadowDistance") && comp["shadowDistance"].IsNumber()) dlc.shadowDistance = comp["shadowDistance"].GetFloat();
                     sceneObject->SetDirectionalLight(dlc);
                 } else if (compType == "PointLight") {
                     PointLightComponent plc;

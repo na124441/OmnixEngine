@@ -314,6 +314,7 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("shadowStrength", object->m_DirectionalLight.shadowStrength, allocator);
             comp.AddMember("shadowResolution", object->m_DirectionalLight.shadowResolution, allocator);
             comp.AddMember("pcfKernelSize", object->m_DirectionalLight.pcfKernelSize, allocator);
+            comp.AddMember("shadowDistance", object->m_DirectionalLight.shadowDistance, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasPointLight) {
