@@ -47,6 +47,7 @@ namespace eng::renderer {
         void CollectGpuTimings(EngineResources& resources, uint32_t frameIndex);
         const std::vector<RenderPassTiming>& GetLastPassTimings() const { return m_LastPassTimings; }
         float GetLastGpuFrameTimeMs() const { return m_LastGpuFrameTimeMs; }
+        const std::vector<bool>& GetLastRecordedSlots() const { return m_LastRecordedSlots; }
 
         void PrintDebug() const;
         void Clear();
@@ -66,6 +67,7 @@ namespace eng::renderer {
         std::vector<RenderPass> m_CompiledPasses;
         std::vector<std::string> m_LastTimingNames;
         std::vector<RenderPassTiming> m_LastPassTimings;
+        std::vector<bool> m_LastRecordedSlots;
         VkQueryPool m_TimestampQueryPool = VK_NULL_HANDLE;
         uint32_t m_TimestampQueryCapacity = 0;
         float m_TimestampPeriodNs = 1.0f;

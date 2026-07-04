@@ -8,15 +8,26 @@
 
 namespace eng::renderer {
 
+static std::unique_ptr<Texture> s_WhiteTex = nullptr;
+static std::unique_ptr<Texture> s_NormalTex = nullptr;
+static std::unique_ptr<Texture> s_BlackTex = nullptr;
+static std::unique_ptr<Texture> s_MrTex = nullptr;
+
+void Texture::cleanupFallbackTextures()
+{
+    s_WhiteTex.reset();
+    s_NormalTex.reset();
+    s_BlackTex.reset();
+    s_MrTex.reset();
+    LOG_INFO("Static fallback textures cleaned up successfully.");
+}
+
 bool Texture::loadFromFile(const std::string& filename,
-                           VkDevice dev,
-                           VmaAllocator alloc,
-                           VkCommandPool transferPool,
-                           VkQueue graphicsQueue,
+                           const EngineResources& res,
                            TextureUsage usage)
 {
-    device    = dev;
-    allocator = alloc;
+    device    = res.device;
+    allocator = res.allocator;
 
     // ---------------------------------------------------------------
     // Load image data (force 4 channels)
@@ -68,7 +79,7 @@ bool Texture::loadFromFile(const std::string& filename,
     ) + 1u;
 
     VkFormatProperties formatProps{};
-    vkGetPhysicalDeviceFormatProperties(EngineResources::get().physicalDevice, format, &formatProps);
+    vkGetPhysicalDeviceFormatProperties(res.physicalDevice, format, &formatProps);
     const bool supportsLinearBlit =
         (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0 &&
         (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) != 0 &&
@@ -110,7 +121,7 @@ bool Texture::loadFromFile(const std::string& filename,
 
     // ---------------------------------------------------------------
     // 3️⃣ Transition image layout & copy from staging to image
-    VkCommandBuffer cmd = EngineResources::get().beginSingleTimeCommands();
+    VkCommandBuffer cmd = res.beginSingleTimeCommands();
 
     // Transition to TRANSFER_DST_OPTIMAL
     VkImageMemoryBarrier barrier{};
@@ -266,7 +277,7 @@ bool Texture::loadFromFile(const std::string& filename,
                              1, &barrier);
     }
 
-    EngineResources::get().endSingleTimeCommands(cmd);
+    res.endSingleTimeCommands(cmd);
 
     // ---------------------------------------------------------------
     // 4️⃣ Destroy staging resources
@@ -337,11 +348,11 @@ void Texture::destroy()
 // ---------------------------------------------------------------------
 Texture* Texture::getWhiteTexture(const EngineResources& res)
 {
-    static std::unique_ptr<Texture> whiteTex = nullptr;
-    if (whiteTex) return whiteTex.get();
+    if (s_WhiteTex) return s_WhiteTex.get();
 
     LOG_INFO("Creating fallback 1x1 white texture...");
-    whiteTex = std::make_unique<Texture>();
+    s_WhiteTex = std::make_unique<Texture>();
+    Texture* whiteTex = s_WhiteTex.get();
     whiteTex->device = res.device;
     whiteTex->allocator = res.allocator;
 
@@ -443,16 +454,16 @@ Texture* Texture::getWhiteTexture(const EngineResources& res)
     VK_CHECK(vkCreateSampler(res.device, &samplerInfo, nullptr, &whiteTex->samplerHandle));
 
     LOG_INFO("Fallback 1x1 white texture ready.");
-    return whiteTex.get();
+    return whiteTex;
 }
 
 Texture* Texture::getFlatNormalTexture(const EngineResources& res)
 {
-    static std::unique_ptr<Texture> normalTex = nullptr;
-    if (normalTex) return normalTex.get();
+    if (s_NormalTex) return s_NormalTex.get();
 
     LOG_INFO("Creating fallback 1x1 flat normal texture...");
-    normalTex = std::make_unique<Texture>();
+    s_NormalTex = std::make_unique<Texture>();
+    Texture* normalTex = s_NormalTex.get();
     normalTex->device = res.device;
     normalTex->allocator = res.allocator;
 
@@ -552,16 +563,16 @@ Texture* Texture::getFlatNormalTexture(const EngineResources& res)
     VK_CHECK(vkCreateSampler(res.device, &samplerInfo, nullptr, &normalTex->samplerHandle));
 
     LOG_INFO("Fallback 1x1 flat normal texture ready.");
-    return normalTex.get();
+    return normalTex;
 }
 
 Texture* Texture::getBlackTexture(const EngineResources& res)
 {
-    static std::unique_ptr<Texture> blackTex = nullptr;
-    if (blackTex) return blackTex.get();
+    if (s_BlackTex) return s_BlackTex.get();
 
     LOG_INFO("Creating fallback 1x1 black texture...");
-    blackTex = std::make_unique<Texture>();
+    s_BlackTex = std::make_unique<Texture>();
+    Texture* blackTex = s_BlackTex.get();
     blackTex->device = res.device;
     blackTex->allocator = res.allocator;
 
@@ -661,16 +672,16 @@ Texture* Texture::getBlackTexture(const EngineResources& res)
     VK_CHECK(vkCreateSampler(res.device, &samplerInfo, nullptr, &blackTex->samplerHandle));
 
     LOG_INFO("Fallback 1x1 black texture ready.");
-    return blackTex.get();
+    return blackTex;
 }
 
 Texture* Texture::getMetallicRoughnessFallbackTexture(const EngineResources& res)
 {
-    static std::unique_ptr<Texture> mrTex = nullptr;
-    if (mrTex) return mrTex.get();
+    if (s_MrTex) return s_MrTex.get();
 
     LOG_INFO("Creating fallback 1x1 metallic-roughness texture (metallic=0, roughness=0.6)...");
-    mrTex = std::make_unique<Texture>();
+    s_MrTex = std::make_unique<Texture>();
+    Texture* mrTex = s_MrTex.get();
     mrTex->device = res.device;
     mrTex->allocator = res.allocator;
 
@@ -769,7 +780,7 @@ Texture* Texture::getMetallicRoughnessFallbackTexture(const EngineResources& res
     VK_CHECK(vkCreateSampler(res.device, &samplerInfo, nullptr, &mrTex->samplerHandle));
 
     LOG_INFO("Fallback 1x1 metallic-roughness texture ready.");
-    return mrTex.get();
+    return mrTex;
 }
 
 } // namespace eng::renderer

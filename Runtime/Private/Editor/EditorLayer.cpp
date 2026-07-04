@@ -1051,87 +1051,25 @@ namespace eng::runtime {
                     }
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Create Test Cube")) {
-                    AssetHandle cubeHandle = GenerateAssetUUID("Assets/Models/cube.obj", AssetType::Mesh);
-                    AssetHandle woodHandle = GenerateAssetUUID("Assets/Materials/wood.omnixmat", AssetType::Material);
-                    
-                    auto& coordinator = m_Context->ecs->getCoordinator();
-                    Entity newEntity = coordinator.CreateEntity();
-                    
-                    coordinator.AddComponent<NameComponent>(newEntity, NameComponent("Test Cube"));
-                    
-                    TransformComponent tc;
-                    tc.position = Vector3(0.0f, 0.5f, 0.0f);
-                    tc.scale = Vector3(2.0f, 2.0f, 2.0f);
-                    tc.dirty = true;
-                    coordinator.AddComponent<TransformComponent>(newEntity, tc);
-                    
-                    coordinator.AddComponent<MeshRendererComponent>(newEntity, MeshRendererComponent());
-                    coordinator.AddComponent<RenderableMeshComponent>(newEntity, RenderableMeshComponent(cubeHandle));
-                    coordinator.AddComponent<MaterialComponent>(newEntity, MaterialComponent(woodHandle));
-                    
-                    m_Selection.Select(newEntity);
-                    m_DirtyState.MarkSceneDirty();
-                    ensureActiveSceneAndSync();
-                    
-                    // Frame selected automatically
-                    m_EditorCamera.FrameEntity(glm::vec3(0.0f, 0.5f, 0.0f), 2.0f);
-                    m_EditorCamera.LookAt(glm::vec3(0.0f, 0.5f, 0.0f));
-                    
-                    CORE_LOG_INFO("[Editor] Successfully created Test Cube!");
+                if (ImGui::Button("Add Cube")) {
+                    CreatePrimitiveMeshEntity("Cube", "Assets/Models/cube.obj", Vector3(0.0f, 0.5f, 0.0f), Vector3(1.0f, 1.0f, 1.0f));
                 }
                 ImGui::SameLine();
-                // One-click setup: floor plane + PlayerStart so Play mode works immediately
-                if (ImGui::Button("Create Play Setup")) {
-                    auto& coord = m_Context->ecs->getCoordinator();
-
-                    // --- Floor entity (large flat cube used as ground) ---
-                    AssetHandle cubeHandle = GenerateAssetUUID("Assets/Models/cube.obj", AssetType::Mesh);
-                    Entity floorEnt = coord.CreateEntity();
-                    coord.AddComponent<NameComponent>(floorEnt, NameComponent("Floor"));
-
-                    TransformComponent floorTc;
-                    floorTc.position = Vector3(0.0f, -0.25f, 0.0f);  // centred at origin, sits at Y=0
-                    floorTc.scale    = Vector3(20.0f, 0.5f, 20.0f);  // 20x0.5x20 flat slab
-                    floorTc.dirty    = true;
-                    coord.AddComponent<TransformComponent>(floorEnt, floorTc);
-
-                    coord.AddComponent<MeshRendererComponent>(floorEnt, MeshRendererComponent());
-                    coord.AddComponent<RenderableMeshComponent>(floorEnt, RenderableMeshComponent(cubeHandle));
-
-                    // Default material
-                    std::filesystem::create_directories("Assets/Materials");
-                    std::string defaultMatPath = "Assets/Materials/default.omnixmat";
-                    if (!std::filesystem::exists(defaultMatPath)) {
-                        OmnixMaterial dmat; dmat.name = "default";
-                        dmat.header.blendMode = 0; dmat.header.cullMode = 0; dmat.header.depthTest = 1;
-                        SerializeMaterial(dmat, defaultMatPath);
+                if (ImGui::Button("Add Sphere")) {
+                    CreatePrimitiveMeshEntity("Sphere", "Assets/Models/sphere.obj", Vector3(1.5f, 0.5f, 0.0f), Vector3(1.0f, 1.0f, 1.0f));
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add Plane")) {
+                    Entity plane = CreatePrimitiveMeshEntity("Plane", "Assets/Models/cube.obj", Vector3(0.0f, -0.05f, 0.0f), Vector3(8.0f, 0.1f, 8.0f));
+                    if (plane != 0 && m_Context && m_Context->ecs) {
+                        auto& coord = m_Context->ecs->getCoordinator();
+                        if (coord.IsEntityAlive(plane)) {
+                            BoxColliderComponent floorCol;
+                            floorCol.size = { 8.0f, 0.1f, 8.0f };
+                            floorCol.offset = { 0.0f, 0.0f, 0.0f };
+                            coord.AddComponent<BoxColliderComponent>(plane, floorCol);
+                        }
                     }
-                    AssetHandle defMatH = m_Context->assetRegistry->RegisterAsset(defaultMatPath, AssetType::Material);
-                    coord.AddComponent<MaterialComponent>(floorEnt, MaterialComponent(defMatH));
-
-                    // Box collider matching the floor slab (half-extents = scale/2)
-                    BoxColliderComponent floorCol;
-                    floorCol.size   = { 20.0f, 0.5f, 20.0f };
-                    floorCol.offset = { 0.0f, 0.0f, 0.0f };
-                    coord.AddComponent<BoxColliderComponent>(floorEnt, floorCol);
-
-                    // --- PlayerStart entity ---
-                    Entity psEnt = coord.CreateEntity();
-                    coord.AddComponent<NameComponent>(psEnt, NameComponent("PlayerStart"));
-                    TransformComponent psTc;
-                    psTc.position = Vector3(0.0f, 2.0f, 5.0f);  // spawn 2 m above floor, 5 m back
-                    psTc.dirty    = true;
-                    coord.AddComponent<TransformComponent>(psEnt, psTc);
-                    coord.AddComponent<PlayerStartComponent>(psEnt, PlayerStartComponent());
-
-                    m_DirtyState.MarkSceneDirty();
-                    ensureActiveSceneAndSync();
-                    // Frame camera on the floor so it's immediately visible
-                    m_EditorCamera.position = glm::vec3(0.0f, 6.0f, 14.0f);
-                    m_EditorCamera.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
-
-                    CORE_LOG_INFO("[Editor] Created play setup: Floor + PlayerStart.");
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Create Mesh Entity")) {
@@ -1264,6 +1202,39 @@ namespace eng::runtime {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Deselect", "Esc", false, m_Selection.HasSelection())) {
                     m_Selection.Clear();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Add")) {
+                if (ImGui::BeginMenu("Mesh", !isPlaying)) {
+                    if (ImGui::MenuItem("Cube")) {
+                        CreatePrimitiveMeshEntity("Cube", "Assets/Models/cube.obj", Vector3(0.0f, 0.5f, 0.0f), Vector3(1.0f, 1.0f, 1.0f));
+                    }
+                    if (ImGui::MenuItem("Sphere")) {
+                        CreatePrimitiveMeshEntity("Sphere", "Assets/Models/sphere.obj", Vector3(1.5f, 0.5f, 0.0f), Vector3(1.0f, 1.0f, 1.0f));
+                    }
+                    if (ImGui::MenuItem("Plane")) {
+                        Entity plane = CreatePrimitiveMeshEntity("Plane", "Assets/Models/cube.obj", Vector3(0.0f, -0.05f, 0.0f), Vector3(8.0f, 0.1f, 8.0f));
+                        if (plane != 0 && m_Context && m_Context->ecs) {
+                            auto& coord = m_Context->ecs->getCoordinator();
+                            if (coord.IsEntityAlive(plane)) {
+                                BoxColliderComponent floorCol;
+                                floorCol.size = { 8.0f, 0.1f, 8.0f };
+                                floorCol.offset = { 0.0f, 0.0f, 0.0f };
+                                coord.AddComponent<BoxColliderComponent>(plane, floorCol);
+                            }
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Light", !isPlaying)) {
+                    auto* world = dynamic_cast<World*>(m_Context->ecs);
+                    EditorSceneService sceneService(sceneMgr, world, &m_DirtyState, &m_Selection, &m_Notifications);
+                    if (ImGui::MenuItem("Directional Light")) sceneService.CreateDirectionalLight();
+                    if (ImGui::MenuItem("Point Light")) sceneService.CreatePointLight();
+                    if (ImGui::MenuItem("Spot Light")) sceneService.CreateSpotLight();
+                    if (ImGui::MenuItem("Sky Light")) sceneService.CreateSkyLight();
+                    ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }
@@ -2810,6 +2781,80 @@ namespace eng::runtime {
         m_EditorCamera.LookAt(entityPos);
 
         CORE_LOG_INFO("[Editor] Successfully created Entity %u from mesh asset: %s", newEntity, entityName.c_str());
+    }
+
+    Entity EditorLayer::CreatePrimitiveMeshEntity(const char* label,
+                                                  const char* meshPath,
+                                                  const Vector3& position,
+                                                  const Vector3& scale) {
+        if (!m_Context || !m_Context->ecs || !m_Context->assetRegistry) {
+            CORE_LOG_ERROR("[Editor] Cannot create primitive: Context, ECS, or AssetRegistry is null.");
+            return 0;
+        }
+
+        if (!meshPath || !std::filesystem::exists(meshPath)) {
+            CORE_LOG_ERROR("[Editor] Cannot create primitive: missing mesh asset %s", meshPath ? meshPath : "<null>");
+            m_Notifications.Error("Missing built-in primitive mesh asset.");
+            return 0;
+        }
+
+        auto* sceneMgr = dynamic_cast<SceneManager*>(m_Context->scenes);
+        auto* world = dynamic_cast<World*>(m_Context->ecs);
+        EditorSceneService sceneService(sceneMgr, world, &m_DirtyState, &m_Selection, &m_Notifications);
+
+        AssetHandle meshHandle = GenerateAssetUUID(meshPath, AssetType::Mesh);
+        if (!meshHandle.IsValid()) {
+            meshHandle = m_Context->assetRegistry->RegisterAsset(meshPath, AssetType::Mesh);
+        }
+
+        const std::string entityName = label && label[0] ? label : "Primitive";
+        Entity entity = sceneService.CreateMeshObject(entityName, meshHandle);
+        if (entity == 0) {
+            return 0;
+        }
+
+        auto& coordinator = m_Context->ecs->getCoordinator();
+        if (coordinator.IsEntityAlive(entity)) {
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TransformComponent>())) {
+                auto& transform = coordinator.GetComponent<TransformComponent>(entity);
+                transform.position = position;
+                transform.scale = scale;
+                transform.dirty = true;
+            }
+
+            if (!coordinator.GetSignature(entity).test(coordinator.GetComponentType<MaterialComponent>())) {
+                std::filesystem::create_directories("Assets/Materials");
+                const std::string defaultMatPath = "Assets/Materials/default.omnixmat";
+                if (!std::filesystem::exists(defaultMatPath)) {
+                    OmnixMaterial dmat;
+                    dmat.name = "default";
+                    dmat.header.blendMode = 0;
+                    dmat.header.cullMode = 0;
+                    dmat.header.depthTest = 1;
+                    SerializeMaterial(dmat, defaultMatPath);
+                }
+                AssetHandle materialHandle = m_Context->assetRegistry->RegisterAsset(defaultMatPath, AssetType::Material);
+                coordinator.AddComponent<MaterialComponent>(entity, MaterialComponent(materialHandle));
+            }
+
+            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<MeshRendererComponent>())) {
+                auto& meshRenderer = coordinator.GetComponent<MeshRendererComponent>(entity);
+                meshRenderer.visible = true;
+                meshRenderer.castShadows = true;
+                meshRenderer.receiveShadows = true;
+            }
+        }
+
+        sceneService.SyncAfterMutation("create primitive mesh");
+        m_Selection.Select(entity);
+
+        glm::vec3 focus(position.x, position.y, position.z);
+        float radius = std::max({std::abs(scale.x), std::abs(scale.y), std::abs(scale.z), 1.0f});
+        m_EditorCamera.FrameEntity(focus, radius);
+        m_EditorCamera.LookAt(focus);
+
+        CORE_LOG_INFO("[Editor] Created primitive %s as entity %u.", entityName.c_str(), entity);
+        return entity;
     }
 
     void EditorLayer::DrawGameplayValidatorWindow() {

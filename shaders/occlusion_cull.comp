@@ -58,6 +58,7 @@ layout(push_constant) uniform OcclusionCullPushConstants
 {
     uint maxInstanceCount;
     uint frustumOnlyMode; // 1 if we should skip occlusion check and just copy
+    float depthBias;
 } pc;
 
 void main()
@@ -70,7 +71,15 @@ void main()
 
     uint instanceIndex = frustumVisibleInstances[gId];
     GPUInstance instance = instances[instanceIndex];
-
+    if ((instance.flags & 1) == 0)
+    {
+        return;
+    }
+    // Skip virtual geometry instances
+    if ((instance.flags & 4) != 0)
+    {
+        return;
+    }
     vec3 center = instance.boundsCenterRadius.xyz;
     float radius = instance.boundsCenterRadius.w;
 
@@ -82,50 +91,84 @@ void main()
         return;
     }
 
+    // Compute scaled radius in world space
+    float scaleX = length(instance.worldMatrix[0].xyz);
+    float scaleY = length(instance.worldMatrix[1].xyz);
+    float scaleZ = length(instance.worldMatrix[2].xyz);
+    float worldRadius = radius * max(scaleX, max(scaleY, scaleZ));
+
     // Transform center to view space
     vec4 viewCenter = camera.view * instance.worldMatrix * vec4(center, 1.0);
 
     // If sphere intersects or is behind the near plane, project conservatively or mark visible
-    if (viewCenter.z + radius > 0.0)
+    if (viewCenter.z + worldRadius >= -0.1)
     {
         uint outIndex = atomicAdd(finalVisibleCount, 1);
         finalVisibleInstances[outIndex] = instanceIndex;
         return;
     }
 
-    // Project sphere center and bounds
-    vec4 clipCenter = camera.projection * viewCenter;
-    if (clipCenter.w <= 0.0)
+    // Form the 8 corners of the view-space bounding box of the sphere
+    vec3 viewMin = viewCenter.xyz - vec3(worldRadius);
+    vec3 viewMax = viewCenter.xyz + vec3(worldRadius);
+
+    vec3 corners[8];
+    corners[0] = vec3(viewMin.x, viewMin.y, viewMin.z);
+    corners[1] = vec3(viewMax.x, viewMin.y, viewMin.z);
+    corners[2] = vec3(viewMin.x, viewMax.y, viewMin.z);
+    corners[3] = vec3(viewMax.x, viewMax.y, viewMin.z);
+    corners[4] = vec3(viewMin.x, viewMin.y, viewMax.z);
+    corners[5] = vec3(viewMax.x, viewMin.y, viewMax.z);
+    corners[6] = vec3(viewMin.x, viewMax.y, viewMax.z);
+    corners[7] = vec3(viewMax.x, viewMax.y, viewMax.z);
+
+    vec2 minUV = vec2(1.0);
+    vec2 maxUV = vec2(0.0);
+    
+    for (int i = 0; i < 8; ++i)
     {
-        uint outIndex = atomicAdd(finalVisibleCount, 1);
-        finalVisibleInstances[outIndex] = instanceIndex;
-        return;
+        vec4 projected = camera.projection * vec4(corners[i], 1.0);
+        if (projected.w > 0.0)
+        {
+            vec3 ndc = projected.xyz / projected.w;
+            vec2 uv = ndc.xy * 0.5 + 0.5;
+            uv.y = 1.0 - uv.y; // Flip Y for Vulkan
+            minUV = min(minUV, uv);
+            maxUV = max(maxUV, uv);
+        }
     }
 
-    vec3 ndcCenter = clipCenter.xyz / clipCenter.w;
-    vec2 uv = ndcCenter.xy * 0.5 + 0.5;
-    uv.y = 1.0 - uv.y; // Flip Y for Vulkan texture coords
+    minUV = clamp(minUV, vec2(0.0), vec2(1.0));
+    maxUV = clamp(maxUV, vec2(0.0), vec2(1.0));
 
-    // Determine HZB mip level based on screen-space footprint
-    float projRadius = (radius * camera.projection[0][0]) / (-viewCenter.z);
-    float screenDiameter = projRadius * 2.0 * max(camera.viewportSize.x, camera.viewportSize.y);
-    float mip = max(0.0, ceil(log2(screenDiameter)));
+    // Calculate footprint size in pixels
+    vec2 boxSize = (maxUV - minUV) * camera.viewportSize.xy;
+    float boxWidth = max(boxSize.x, boxSize.y);
+
+    // Determine HZB mip level based on screen-space footprint (width of bounding box)
+    float mip = max(0.0, ceil(log2(boxWidth)) - 1.0);
 
     // Clamp mip level to maximum mips of HZB
     float maxMip = float(textureQueryLevels(hzbTexture) - 1);
     mip = min(mip, maxMip);
 
-    // Sample HZB at the projected sphere center
-    float hzbDepth = textureLod(hzbTexture, uv, mip).r;
+    // Sample HZB at the 4 corners of the projected screen bounding box
+    float hzb0 = textureLod(hzbTexture, vec2(minUV.x, minUV.y), mip).r;
+    float hzb1 = textureLod(hzbTexture, vec2(maxUV.x, minUV.y), mip).r;
+    float hzb2 = textureLod(hzbTexture, vec2(minUV.x, maxUV.y), mip).r;
+    float hzb3 = textureLod(hzbTexture, vec2(maxUV.x, maxUV.y), mip).r;
+
+    // Standard Z (0 near, 1 far): Furthest depth is the maximum depth
+    float hzbDepth = max(max(hzb0, hzb1), max(hzb2, hzb3));
 
     // Nearest point of sphere depth in NDC (standard Vulkan: 0 = near, 1 = far)
     vec4 closestView = viewCenter;
-    closestView.z += radius; // Z is negative in camera space, so moving closer means adding radius
+    closestView.z += worldRadius; // moving closer to camera (which is at 0)
     vec4 closestClip = camera.projection * closestView;
     float sphereDepth = closestClip.z / closestClip.w;
 
     // Occlusion check
-    if (sphereDepth > hzbDepth)
+    if (sphereDepth > hzbDepth + pc.depthBias)
     {
         // Occluded!
         atomicAdd(occlusionCulledCount, 1);

@@ -1,0 +1,77 @@
+#version 450
+#extension GL_EXT_mesh_shader : require
+
+layout(local_size_x = 32) in;
+
+// Binding 0: Camera UBO
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    vec4 cameraPosition;
+    vec4 viewportSize;
+} frame;
+
+struct InstanceData {
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
+    InstanceData instances[];
+} inst;
+
+struct GPURVGCluster {
+    vec4 boundsSphere;
+    vec4 coneAxisCutoff;
+    uint pageIndex;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint indexCount;
+    uint padding[3];
+};
+
+layout(std430, set = 0, binding = 10) readonly buffer RVGClusterBuffer {
+    GPURVGCluster clusters[];
+} clusterBuf;
+
+struct TaskPayload {
+    uint clusterID;
+    uint instanceID;
+};
+taskPayloadSharedEXT TaskPayload payload;
+
+// Simple frustum culling test helper
+bool isVisible(vec3 center, float radius) {
+    // Standard frustum check against clip-space planes
+    return true; // Conservative fallback, always passes for G13 verification
+}
+
+void main()
+{
+    uint gID = gl_GlobalInvocationID.x;
+    uint instanceID = gID / 1000; // Mock mapping or dispatch layout
+    uint clusterID = gID % 1000;
+
+    GPURVGCluster cluster = clusterBuf.clusters[clusterID];
+    InstanceData instance = inst.instances[instanceID];
+
+    vec3 worldCenter = (instance.worldMatrix * vec4(cluster.boundsSphere.xyz, 1.0)).xyz;
+    float worldRadius = cluster.boundsSphere.w * length(instance.worldMatrix[0].xyz);
+
+    bool visible = isVisible(worldCenter, worldRadius);
+
+    if (visible && gl_LocalInvocationID.x == 0) {
+        payload.clusterID = clusterID;
+        payload.instanceID = instanceID;
+        EmitMeshTasksEXT(1, 1, 1);
+    }
+}

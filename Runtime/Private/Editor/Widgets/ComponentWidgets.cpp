@@ -5,6 +5,7 @@
 #include "Runtime/Public/RuntimeContext.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
 #include "Rendering/Core/Renderer.h"
+#include "Rendering/Geometry/GeometryTypes.h"
 #include "RenderingEngine/Renderer/scene/Material.h"
 #include "Runtime/Public/Audio/AudioSystem.h"
 #include "PhysicsValidation.h"
@@ -167,7 +168,7 @@ namespace eng::runtime {
         return changed;
     }
 
-    bool ComponentWidgets::DrawMeshRenderer(MeshRendererComponent& component, EditorDirtyState& dirtyState) {
+    bool ComponentWidgets::DrawMeshRenderer(MeshRendererComponent& component, EditorDirtyState& dirtyState, RuntimeContext* context) {
         bool changed = false;
         if (ImGui::Checkbox("Visible", &component.visible)) {
             dirtyState.MarkSceneDirty();
@@ -184,6 +185,28 @@ namespace eng::runtime {
 
         ImGui::TextDisabled("Mesh Asset ID: %u", component.meshID);
         ImGui::TextDisabled("Material Asset ID: %u", component.materialID);
+
+        // Determine and show routing path
+        std::string routeStr = "ConventionalCPU (Default)";
+        if (context && context->renderer) {
+            auto* engineLoop = dynamic_cast<eng::runtime::EngineLoop*>(context->renderer);
+            if (engineLoop) {
+                auto* sceneRenderer = engineLoop->GetSceneRenderer();
+                if (sceneRenderer) {
+                    uint32_t activeTier = sceneRenderer->GetActiveCapabilityTier();
+                    eng::renderer::GeometryRenderingPath route = eng::renderer::GeometryRenderingPath::ConventionalCPU;
+                    if (activeTier >= 1) {
+                        if (activeTier >= 2) {
+                            route = eng::renderer::GeometryRenderingPath::VirtualGeometry;
+                        } else {
+                            route = eng::renderer::GeometryRenderingPath::ConventionalGPUDriven;
+                        }
+                    }
+                    routeStr = eng::renderer::GeometryRenderingPathToString(route);
+                }
+            }
+        }
+        ImGui::Text("Geometry Route: %s", routeStr.c_str());
         return changed;
     }
 

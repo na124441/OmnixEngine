@@ -578,7 +578,9 @@ void SceneRenderer::buildRenderQueue()
                                     const auto* meta = m_AssetRegistry->GetMetadata(rm.meshAssetHandle);
                                     if (meta && meta->type == AssetType::Mesh) {
                                         Mesh* loadedMesh = nullptr;
-                                        if (!meta->importedPath.empty() && std::filesystem::exists(meta->importedPath)) {
+                                        if (meta->sourcePath.find(".rvg") != std::string::npos) {
+                                             loadedMesh = scene.createMeshFromRVG(meta->sourcePath, resources);
+                                         } else if (!meta->importedPath.empty() && std::filesystem::exists(meta->importedPath)) {
                                             loadedMesh = scene.createMeshFromOmnixMesh(meta->importedPath, resources);
                                         } else {
                                             loadedMesh = scene.createMeshFromOBJ(meta->sourcePath, resources);
@@ -686,7 +688,9 @@ void SceneRenderer::loadModel(const std::string& path)
     }
 
     Mesh* m = nullptr;
-    if (path.find(".omnixmesh") != std::string::npos) {
+    if (path.find(".rvg") != std::string::npos) {
+        m = scene.createMeshFromRVG(path, resources);
+    } else if (path.find(".omnixmesh") != std::string::npos) {
         m = scene.createMeshFromOmnixMesh(path, resources);
     } else {
         m = scene.createMeshFromOBJ(path, resources);

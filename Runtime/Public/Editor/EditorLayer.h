@@ -4,6 +4,8 @@
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorDirtyState.h"
 #include "Runtime/Public/Editor/EditorNotificationService.h"
+#include "ECS/ECSconfig.h"
+#include "Scene/Vector3.h"
 #include "Runtime/Private/Editor/Panels/SceneHierarchyPanel.h"
 #include "Runtime/Private/Editor/Panels/InspectorPanel.h"
 #include "Runtime/Private/Editor/Panels/ConsolePanel.h"
@@ -66,6 +68,10 @@ namespace eng::runtime {
 
         void DrawGameplayValidatorWindow();
         void DrawGameplayValidatorDiagnostics();
+        Entity CreatePrimitiveMeshEntity(const char* label,
+                                         const char* meshPath,
+                                         const Vector3& position,
+                                         const Vector3& scale);
 
         RuntimeContext* m_Context = nullptr;
 

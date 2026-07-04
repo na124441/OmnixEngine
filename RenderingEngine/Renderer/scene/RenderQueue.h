@@ -8,10 +8,11 @@
 #include "RenderObject.h"
 #include "Core/Engine/Log.h"
 
+#include "Rendering/Geometry/GeometryHandle.h"
+#include "Runtime/Public/OmnixMeshFormat.h"
+
 namespace eng::renderer {
 
-/// Small struct that is cheap to copy – it contains only raw pointers
-/// and a transform matrix.  It is built from a RenderObject each frame.
 struct RenderItem {
     Mesh*       mesh     = nullptr;   // non‑owning
     Material*   material = nullptr;   // non‑owning
@@ -21,6 +22,19 @@ struct RenderItem {
     glm::vec3   maxBounds{0.0f};
     uint32_t    entityID = 0;
     bool        castShadows = true;
+
+    // Standardized RVG v0.5 Fields
+    GeometryHandle geometry;
+    uint32_t       submeshIndex = 0;
+    uint64_t       materialHandle = 0;
+    glm::mat4      model = glm::mat4(1.0f);
+    glm::mat4      previousModel = glm::mat4(1.0f);
+    BoundingBox    worldBounds;
+    glm::vec4      worldSphere{0.0f}; // xyz = center, w = radius
+    uint32_t       objectID = 0;
+    uint32_t       meshID = 0;
+    uint32_t       materialID = 0;
+    uint32_t       flags = 0;
 };
 
 /// Container that lives for the whole lifetime of the renderer.

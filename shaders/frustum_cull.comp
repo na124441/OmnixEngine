@@ -12,7 +12,7 @@ struct GPUInstance
     uint flags;
 };
 
-layout(set = 0, binding = 0) readonly buffer InstanceBuffer
+layout(set = 0, binding = 0) buffer InstanceBuffer
 {
     GPUInstance instances[];
 };
@@ -60,6 +60,17 @@ void main()
     }
 
     GPUInstance instance = instances[instanceIndex];
+    
+    // Check if instance is active at all
+    if ((instance.flags & 1) == 0)
+    {
+        return;
+    }
+    // Skip virtual geometry instances
+    if ((instance.flags & 4) != 0)
+    {
+        return;
+    }
     vec3 center = instance.boundsCenterRadius.xyz;
     float radius = instance.boundsCenterRadius.w;
 
@@ -67,5 +78,11 @@ void main()
     {
         uint outIndex = atomicAdd(visibleCount, 1);
         visibleInstances[outIndex] = instanceIndex;
+        // Keep visible flag set
+    }
+    else
+    {
+        // Clear visible flag (bit 0)
+        instances[instanceIndex].flags &= ~1;
     }
 }

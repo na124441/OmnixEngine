@@ -44,6 +44,7 @@ namespace eng::renderer {
         uint32_t GetMipCount(uint32_t frameIndex) const { return m_Frames[frameIndex].mipLevels; }
         uint32_t GetWidth(uint32_t frameIndex) const { return m_Frames[frameIndex].width; }
         uint32_t GetHeight(uint32_t frameIndex) const { return m_Frames[frameIndex].height; }
+        VkSampler GetSampler() const { return m_HZBSampler; }
 
     private:
         void createPipelines(EngineResources& resources);

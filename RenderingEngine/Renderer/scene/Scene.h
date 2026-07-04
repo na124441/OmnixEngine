@@ -23,6 +23,7 @@ public:
     }
     Mesh* createMeshFromOBJ(const std::string& path, EngineResources& resources);
     Mesh* createMeshFromOmnixMesh(const std::string& path, EngineResources& resources);
+    Mesh* createMeshFromRVG(const std::string& path, EngineResources& resources);
     void destroyMesh(Mesh* m)
     {
         auto it = std::find_if(meshes.begin(), meshes.end(),
@@ -62,6 +63,13 @@ public:
     }
 
     void clearObjects() { objects.clear(); }
+    void clearAll() {
+        for (auto& m : meshes) { if (m) m->destroy(); }
+        meshes.clear();
+        for (auto& mat : materials) { if (mat) mat->destroy(); }
+        materials.clear();
+        objects.clear();
+    }
 
     // -----------------------------------------------------------------
     // Accessors

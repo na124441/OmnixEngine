@@ -21,6 +21,7 @@
 #include "Rendering/Visibility/IndirectCommandBuildPass.h"
 #include "Rendering/Visibility/HZBPass.h"
 #include "Rendering/Visibility/OcclusionCullPass.h"
+#include "Rendering/Visibility/RVGClusterCullPass.h"
 #include "Rendering/Core/RenderTargetManager.h"
 #include "Rendering/Core/FramebufferManager.h"
 #include "Rendering/Core/FrameContext.h"
@@ -36,6 +37,8 @@
 #include "RenderingEngine/Renderer/gltf/GltfModel.h"
 #include "Rendering/Radiance/RadianceSettings.h"
 #include "Rendering/Radiance/RadianceGPUData.h"
+#include "Rendering/Geometry/CapabilityTiers.h"
+#include "Rendering/Geometry/Arena/GeometryArena.h"
 
 struct CameraComponent;
 
@@ -77,8 +80,48 @@ namespace eng::renderer {
         float intensity = 1.5f;
     };
 
+    struct RenderDebugConfig {
+        bool enableShadowPass = false;
+        bool enableDepthPrepass = false;
+        bool enableSSAO = false;
+        bool enableLightCulling = false;
+        bool enableDeferredLighting = false;
+        bool enableTransparentPass = false;
+        bool enablePostProcessing = false;
+        bool enableEditorOverlay = false;
+
+        bool disableBackfaceCulling = false;
+        bool forceDefaultMaterial = true;
+        bool showGBufferAlbedo = true;
+        bool disableFallback = true;
+    };
+
     class Renderer {
     public:
+        struct FrameDiagnostics {
+            uint32_t frameNumber = 0;
+            uint32_t entitiesExtracted = 0;
+            uint32_t opaqueItems = 0;
+            uint32_t transparentItems = 0;
+            uint32_t instancesUploaded = 0;
+            uint32_t drawCalls = 0;
+            uint32_t triangles = 0;
+            uint32_t rejectedItems = 0;
+            uint32_t validationErrors = 0;
+        };
+
+        FrameDiagnostics m_FrameDiagnostics;
+        static FrameDiagnostics* GetCurrentDiagnostics();    friend bool RunGPUSceneTests(EngineResources& eng, GPUScene& scene, Renderer* renderer) noexcept;
+    public:
+        enum class VisibilityMode : uint32_t
+        {
+            CPUDriven = 0,
+            GPUFrustumOnly = 1,
+            GPUFrustumIndirect = 2,
+            GPUFrustumOcclusion = 3,
+            VisibilityBuffer = 4
+        };
+
         explicit Renderer(EngineResources& eng)
             : resources(eng) {}
 
@@ -101,6 +144,7 @@ namespace eng::renderer {
 
         void initPipelines();
         void recreateOffscreenPostProcessPipeline();
+        bool CreateGBufferPipeline();
         void setupRenderGraph();
         void buildRenderQueue();
         void buildPyramidMesh();
@@ -134,6 +178,7 @@ namespace eng::renderer {
         uint32_t GetOffscreenHeight() const { return m_ViewportRenderer.getOffscreenHeight(); }
         VkRenderPass GetOffscreenRenderPass() const { return m_OffscreenViewportRenderPass; }
         uint32_t PickEntity(uint32_t x, uint32_t y);
+        bool CaptureScreenshot(const std::string& filename);
 
         void SetWorld(eng::runtime::World* world) { m_World = world; }
         void SetActiveScene(const ::Scene* scene) { m_ActiveScene = scene; }
@@ -153,11 +198,34 @@ namespace eng::renderer {
         Omnix::Radiance::RadianceSettings& GetRadianceSettings() { return m_RadianceSettings; }
         const Omnix::Radiance::RadianceSettings& GetRadianceSettings() const { return m_RadianceSettings; }
 
+        RenderDebugConfig& GetDebugConfig() { return m_DebugConfig; }
+        const RenderDebugConfig& GetDebugConfig() const { return m_DebugConfig; }
+
+        const CapabilityReport& GetCapabilityReport() const { return m_CapabilityReport; }
+        void SetDeveloperTierOverride(uint32_t tier) {
+            if (tier != 0xFFFFFFFF && tier > 3) {
+                LOG_ERROR("SetDeveloperTierOverride: Invalid tier override " + std::to_string(tier) + ". Tier must be 0, 1, 2, or 3.");
+                return;
+            }
+            if (tier != 0xFFFFFFFF && tier > m_CapabilityReport.selectedTier) {
+                LOG_ERROR("SetDeveloperTierOverride: Cannot force higher tier " + std::to_string(tier) + " than supported by hardware (Tier " + std::to_string(m_CapabilityReport.selectedTier) + ")");
+                return;
+            }
+            m_DeveloperTierOverride = tier;
+            LOG_INFO("SetDeveloperTierOverride: Developer tier override set to " + (tier == 0xFFFFFFFF ? "NONE" : "Tier " + std::to_string(tier)));
+        }
+        uint32_t GetActiveCapabilityTier() const {
+            return m_DeveloperTierOverride != 0xFFFFFFFF ? m_DeveloperTierOverride : m_CapabilityReport.selectedTier;
+        }
+
         const std::vector<uint32_t>& GetGpuVisibleInstances() const { return m_GpuVisibleInstances; }
         const std::vector<uint32_t>& GetGpuFinalVisibleInstances() const { return m_GpuFinalVisibleInstances; }
         uint32_t GetGpuFinalVisibleCount() const { return m_GpuFinalVisibleCount; }
         uint32_t GetGpuOcclusionCulledCount() const { return m_GpuOcclusionCulledCount; }
         uint32_t GetCpuRefVisibleCount() const { return m_CpuRefVisibleCount; }
+        uint32_t GetGpuVisibleMeshCount() const { return m_GpuVisibleMeshCount; }
+        VisibilityMode GetVisibilityMode() const { return m_VisibilityMode; }
+        void SetVisibilityMode(VisibilityMode mode) { m_VisibilityMode = mode; }
         uint32_t GetGpuIndirectDrawCount() const { return m_GpuIndirectDrawCount; }
         uint32_t GetTotalInstanceCount() const { return m_TotalInstanceCount; }
         const GPUFrustum& GetCpuFrustum() const { return m_CpuFrustum; }
@@ -172,6 +240,7 @@ namespace eng::renderer {
         VkPipeline      postProcessPipeline = VK_NULL_HANDLE;
 
         uint32_t m_SelectedEntityID = 0;
+        uint32_t m_FrameCount = 0;
         bool m_LocalViewActive = false;
         uint32_t m_LocalViewEntityID = 0;
 
@@ -180,13 +249,6 @@ namespace eng::renderer {
         float        lightIntensity = 1.0f;
         bool         m_UsePreviewLighting = false;
         bool         m_UseEditorDefaultLighting = true;
-        enum class VisibilityMode
-        {
-            CPUDriven,
-            GPUFrustumOnly,
-            GPUFrustumIndirect,
-            GPUFrustumOcclusion
-        };
         VisibilityMode m_VisibilityMode = VisibilityMode::CPUDriven;
         bool         m_CPUFrustumCulling = true;
 
@@ -200,10 +262,21 @@ namespace eng::renderer {
             bool showCullingStats = true;
         } m_VisibilityDebugSettings;
 
+        struct RVGLODSettings {
+            float lodBias = 0.0f;
+            float targetPixelError = 2.0f;
+            uint32_t maxTraversalDepth = 16;
+            uint32_t debugMode = 0; // 0: Normal, 1: Hierarchy Level, 2: Geometric Error, 3: Projected Error, 4: Selected Nodes
+            bool forceRoot = false;
+            bool forceFullDetail = false;
+            bool freezeSelection = false;
+        } m_RVGLODSettings;
+
         FrustumCullPass m_FrustumCullPass;
         IndirectCommandBuildPass m_IndirectCommandBuildPass;
         HZBPass m_HZBPass;
         OcclusionCullPass m_OcclusionCullPass;
+        RVGClusterCullPass m_RVGClusterCullPass;
         SelectionOutlinePass m_SelectionOutlinePass;
         EditorOverlayPass m_EditorOverlayPass;
         ViewportOverlaySettings m_OverlaySettings;
@@ -228,8 +301,10 @@ namespace eng::renderer {
         RenderGraph renderGraph;
         Camera      camera;
         uint32_t frameIndex = 0;
+        uint32_t m_CurrentFrameCount = 0;
         uint32_t currentSwapchainImageIndex = 0;
         bool m_SwapchainNeedsRecreation = false;
+        bool m_IsInitialized = false;
         FrameContext activeFrameContext;
         RenderScene activeRenderScene;
         eng::FrameTimer timer;
@@ -259,6 +334,9 @@ namespace eng::renderer {
         RenderStats m_RenderStats;
         bool m_RenderDocCaptureRequested = false;
 
+        CapabilityReport m_CapabilityReport;
+        uint32_t m_DeveloperTierOverride = 0xFFFFFFFF; // 0xFFFFFFFF for no override
+
         std::function<void()> recreateSwapChainCallback;
 
     public:
@@ -269,9 +347,12 @@ namespace eng::renderer {
     private:
         void recreateDepthResources(uint32_t width, uint32_t height);
         void updateGBufferDescriptorSets();
+        void updateVisibilityResolveDescriptorSets();
+        void updateVisibilityMeshDescriptorSets();
+        void updateSoftwareRasterizerDescriptorSets();
         void updateRenderStats();
 
-        VkPipeline                  m_DepthPipeline      = VK_NULL_HANDLE;
+        GraphicsPipelineInfo        m_DepthPipeline;
         VkRenderPass                m_DepthRenderPass    = VK_NULL_HANDLE;
         std::vector<VkFramebuffer>  m_DepthFramebuffers;
         std::vector<VkFramebuffer>  m_OffscreenDepthFramebuffers;
@@ -292,6 +373,56 @@ namespace eng::renderer {
         VkRenderPass                m_GBufferRenderPass  = VK_NULL_HANDLE;
         std::vector<VkFramebuffer>  m_GBufferFramebuffers;
         std::vector<VkFramebuffer>  m_OffscreenGBufferFramebuffers;
+
+        // G10: Visibility Buffer rendering resources
+        VkRenderPass                m_VisibilityRenderPass = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer>  m_VisibilityFramebuffers;
+        std::vector<VkFramebuffer>  m_OffscreenVisibilityFramebuffers;
+        
+        std::vector<RenderTargetHandle> m_VisibilityInstanceHandles;
+        std::vector<RenderTargetHandle> m_VisibilityClusterHandles;
+        std::vector<RenderTargetHandle> m_VisibilityPrimitiveHandles;
+        std::vector<RenderTargetHandle> m_VisibilityDepthHandles;
+        
+        std::vector<FramebufferHandle>  m_VisibilityFbHandles;
+        std::vector<FramebufferHandle>  m_OffscreenVisibilityFbHandles;
+
+        std::vector<VkImage>        m_VisibilityInstanceImages;
+        std::vector<VmaAllocation>  m_VisibilityInstanceAllocations;
+        std::vector<VkImageView>    m_VisibilityInstanceImageViews;
+
+        std::vector<VkImage>        m_VisibilityClusterImages;
+        std::vector<VmaAllocation>  m_VisibilityClusterAllocations;
+        std::vector<VkImageView>    m_VisibilityClusterImageViews;
+
+        std::vector<VkImage>        m_VisibilityPrimitiveImages;
+        std::vector<VmaAllocation>  m_VisibilityPrimitiveAllocations;
+        std::vector<VkImageView>    m_VisibilityPrimitiveImageViews;
+
+        std::vector<VkImage>        m_VisibilityDepthImages;
+        std::vector<VmaAllocation>  m_VisibilityDepthAllocations;
+        std::vector<VkImageView>    m_VisibilityDepthImageViews;
+
+        VkPipeline                  m_VisibilityPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_VisibilityPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline                  m_VisibilityMeshPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_VisibilityMeshPipelineLayout = VK_NULL_HANDLE;
+        PFN_vkCmdDrawMeshTasksEXT   m_pfnCmdDrawMeshTasksEXT = nullptr;
+        VkDescriptorSetLayout       m_VisibilityMeshDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_VisibilityMeshDescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_VisibilityMeshDescriptorSets;
+
+        VkPipeline                  m_SoftwareRasterizerPipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_SoftwareRasterizerPipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout       m_SoftwareRasterizerDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_SoftwareRasterizerDescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_SoftwareRasterizerDescriptorSets;
+
+        VkPipeline                  m_VisibilityResolvePipeline = VK_NULL_HANDLE;
+        VkPipelineLayout            m_VisibilityResolvePipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout       m_VisibilityResolveDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool            m_VisibilityResolveDescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_VisibilityResolveDescriptorSets;
         
         std::vector<VkImage>        m_GBufferAImages;
         std::vector<VmaAllocation>  m_GBufferAAllocations;
@@ -357,14 +488,24 @@ namespace eng::renderer {
         EditorViewportRenderer m_ViewportRenderer;
         VkRenderPass                m_SwapchainRenderPass = VK_NULL_HANDLE;
 
+        GraphicsPipelineInfo        m_GBufferPipeline;
+        VkPipelineLayout            m_GBufferPipelineLayout = VK_NULL_HANDLE;
+
         // Shadow mapping resources and methods
-        VkPipeline                  m_ShadowPipeline = VK_NULL_HANDLE;
+        GraphicsPipelineInfo        m_ShadowPipeline;
         VkPipelineLayout            m_ShadowPipelineLayout = VK_NULL_HANDLE;
         VkRenderPass                m_ShadowRenderPass = VK_NULL_HANDLE;
         std::vector<VkImage>        m_ShadowImages;
         std::vector<VmaAllocation>  m_ShadowAllocations;
         std::vector<VkImageView>    m_ShadowImageViews;
         std::vector<VkFramebuffer>  m_ShadowFramebuffers;
+        std::vector<VkImage>        m_ShadowImagesCascades[4];
+        std::vector<VmaAllocation>  m_ShadowAllocationsCascades[4];
+        std::vector<VkImageView>    m_ShadowImageViewsCascades[4];
+        std::vector<VkFramebuffer>  m_ShadowFramebuffersCascades[4];
+        std::vector<RenderTargetHandle> m_ShadowHandlesCascades[4];
+        glm::mat4                   m_LastLightSpaceMatrices[4];
+        glm::vec4                   m_CascadeSplits;
         VkSampler                   m_ShadowSampler = VK_NULL_HANDLE;
         uint32_t                    m_CurrentShadowResolution = 2048;
         glm::mat4                   m_LastLightSpaceMatrix{1.0f};
@@ -380,6 +521,7 @@ namespace eng::renderer {
 
         RenderTargetManager m_RenderTargetManager;
         FramebufferManager m_FramebufferManager;
+        GeometryArena       m_GeometryArena;
         std::vector<RenderTargetHandle> m_DepthHandles;
         std::vector<RenderTargetHandle> m_GBufferAHandles;
         std::vector<RenderTargetHandle> m_GBufferBHandles;
@@ -447,6 +589,7 @@ namespace eng::renderer {
         std::chrono::steady_clock::time_point m_StartTime = std::chrono::steady_clock::now();
 
         Omnix::Radiance::RadianceSettings m_RadianceSettings;
+        RenderDebugConfig m_DebugConfig;
     };
 
 } // namespace eng::renderer

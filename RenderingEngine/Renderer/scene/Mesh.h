@@ -5,6 +5,7 @@
 #include "Core/Engine/ResourceTracker.h"
 #include "Core/Engine/Log.h"
 #include "Core/Engine/VmaUsage.h"
+#include "Rendering/Geometry/GeometryHandle.h"
 #include <cstdint>
 #include <vector>
 #include <glm/glm.hpp>
@@ -36,6 +37,7 @@ public:
     void cleanup(VkDevice device); // kept for compatibility if needed
 
     // Data members (now public for ease of access in current architecture)
+    GeometryHandle handle;
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VmaAllocation vertexAlloc = VK_NULL_HANDLE;
     VkDeviceSize vertexSize = 0;
@@ -58,11 +60,17 @@ public:
     glm::vec3 maxBounds = glm::vec3(0.0f);
     MeshBounds bounds;
 
+    bool isVirtualGeometry = false;
+    uint32_t rvgAssetIndex = 0xFFFFFFFF;
+
     bool hasNormals = false;
     bool hasUVs = false;
     bool hasTangents = false;
     bool normalsGenerated = false;
     bool tangentsGenerated = false;
+
+    VkDevice      device = VK_NULL_HANDLE;
+    VmaAllocator allocator = VK_NULL_HANDLE;
 };
 
 } // namespace eng::renderer

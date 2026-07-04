@@ -32,6 +32,8 @@ struct LightData
 
     // Shadow mapping uniform data
     alignas(16) glm::mat4 directionalLightProjView;
+    alignas(16) glm::mat4 directionalLightProjViews[4];
+    alignas(16) glm::vec4 cascadeSplitDepths;
     alignas(16) float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;

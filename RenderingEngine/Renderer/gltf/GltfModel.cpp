@@ -44,10 +44,7 @@ std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
     // Load the PNG via our existing Texture::loadFromFile() method.
     auto tex = std::make_shared<Texture>();
     if (!tex->loadFromFile(tmpPath,
-                           resources.device,
-                           resources.allocator,
-                           resources.commandPools[0],
-                           resources.graphicsQueue,
+                           resources,
                            usage)) {
         LOG_ERROR("Failed to load texture from temporary PNG: " + tmpPath);
         std::remove(tmpPath.c_str());
@@ -105,7 +102,7 @@ std::vector<PbrVertex> GltfModel::buildVertices(const tinygltf::Primitive& prim,
     verts.reserve(vertexCount);
     for (size_t i = 0; i < vertexCount; ++i) {
         PbrVertex v{};
-        v.pos = glm::vec3(posData[3*i+0], posData[3*i+1], posData[3*i+2]);
+        v.position = glm::vec3(posData[3*i+0], posData[3*i+1], posData[3*i+2]);
 
         if (!normData.empty()) {
             v.normal = glm::vec3(normData[3*i+0], normData[3*i+1], normData[3*i+2]);

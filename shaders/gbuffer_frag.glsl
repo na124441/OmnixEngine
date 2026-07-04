@@ -3,10 +3,15 @@ layout(location = 0) out vec4 outGBufferA; // Albedo + Material Flags
 layout(location = 1) out vec4 outGBufferB; // Normal + Roughness
 layout(location = 2) out vec4 outGBufferC; // Metallic + Ambient Occlusion
 layout(location = 3) out vec4 outGBufferD; // Emissive + Shading Model
-layout(location = 4) out uint outObjectID;  // ObjectID (32-bit uint)
+
+// GPUSceneBindings
+#define GPUSCENE_BINDING_CAMERA 0
+#define GPUSCENE_BINDING_INSTANCES 1
+#define GPUSCENE_BINDING_MATERIALS 2
+#define GPUSCENE_BINDING_LIGHTS 3
 
 // Binding 0: Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform RadianceFrame
+layout(set = 0, binding = GPUSCENE_BINDING_CAMERA) uniform RadianceFrame
 {
     mat4 view;
     mat4 projection;
@@ -19,6 +24,8 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyTopColorIntensity;
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
 
     vec4 exposureSettings;
     uvec4 renderFlags;
@@ -35,7 +42,7 @@ struct InstanceData {
 };
 
 // Binding 1: Instance Storage Buffer
-layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
+layout(std430, set = 0, binding = GPUSCENE_BINDING_INSTANCES) readonly buffer InstanceBuffer {
     InstanceData instances[];
 } inst;
 
@@ -58,7 +65,7 @@ struct MaterialData {
 };
 
 // Binding 2: Material Storage Buffer
-layout(std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
+layout(std430, set = 0, binding = GPUSCENE_BINDING_MATERIALS) readonly buffer MaterialBuffer {
     MaterialData materials[];
 } mat;
 
@@ -75,6 +82,7 @@ layout(location = 2) in vec2 vUV;
 layout(location = 3) in vec3 vCameraPos;
 layout(location = 4) flat in uint vMaterialIndex;
 layout(location = 5) flat in uint vEntityID;
+layout(location = 6) in vec3 vDebugColor;
 
 // TBN frame formulation for normal perturbation
 vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
@@ -133,7 +141,6 @@ void main()
     float metallic = metallicFactor;
     if (hasMetallicRoughnessMap > 0.5) {
         vec4 mrSample = texture(metallicRoughnessMap, vUV);
-        // glTF: roughness = green channel, metallic = blue channel
         roughness *= mrSample.g;
         metallic *= mrSample.b;
     }
@@ -148,10 +155,16 @@ void main()
         emissive = texture(emissiveMap, vUV).rgb * emissiveStrength;
     }
 
-    // Write GBuffer outputs
-    outGBufferA = vec4(albedo.rgb, 0.0); // Material flags
+    // G8: Check and apply debug coloring for virtual geometry modes
+    if ((frame.renderFlags.w & 0xFF) != 0) {
+        albedo.rgb = vDebugColor;
+        emissive = vec3(0.0);
+    }
+
+    // Deferred lighting expects raw material attributes here. Preview lighting
+    // belongs in the lighting path, not in the G-buffer albedo.
+    outGBufferA = vec4(albedo.rgb, 1.0);
     outGBufferB = vec4(N, roughness);
-    outGBufferC = vec4(metallic, ao, 0.0, 1.0); // Metallic, AO, 0.0 (Unused/Clean)
+    outGBufferC = vec4(metallic, ao, 0.0, 1.0); // Metallic, AO, 0.0, 1.0
     outGBufferD = vec4(emissive, float(shadingModel) / 255.0); // Emissive (RGB) + Shading Model (A)
-    outObjectID = vEntityID;
 }

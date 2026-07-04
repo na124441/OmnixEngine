@@ -324,11 +324,11 @@ namespace eng::platform {
 
     eng::core::Result WindowWin32::PollEvents()
     {
+        ProcessMessages();
         if (m_ShouldClose) {
             return eng::core::Result(eng::core::ResultCode::Failure);
         }
 
-        ProcessMessages();
         return eng::core::Result(); // Success
     }
 
@@ -427,6 +427,11 @@ namespace eng::platform {
 
         // Process all pending messages
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                ENG_LOG_INFO("Win32 window received WM_QUIT.");
+                m_ShouldClose = true;
+                continue;
+            }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -488,6 +493,7 @@ namespace eng::platform {
         if (window) {
             switch (msg) {
             case WM_CLOSE:
+                ENG_LOG_INFO("Win32 window received WM_CLOSE.");
                 window->m_ShouldClose = true;
                 return 0;
 
@@ -517,6 +523,7 @@ namespace eng::platform {
             }
 
             case WM_DESTROY:
+                ENG_LOG_INFO("Win32 window received WM_DESTROY.");
                 PostQuitMessage(0);
                 return 0;
 

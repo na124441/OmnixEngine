@@ -29,13 +29,10 @@ public:
     Texture(Texture&&) noexcept = default;
     Texture& operator=(Texture&&) noexcept = default;
 
-    /// Load an image from disk with stb_image, upload it to a GPU‑only
+    /// Load an image from disk with stb_image, upload it to a GPU-only
     /// image, create a view and a sampler.
     bool loadFromFile(const std::string& filename,
-                      VkDevice device,
-                      VmaAllocator allocator,
-                      VkCommandPool transferPool,
-                      VkQueue graphicsQueue,
+                      const struct EngineResources& res,
                       TextureUsage usage = TextureUsage::Albedo);
 
     VkImageView view()   const { return imageView; }
@@ -52,6 +49,8 @@ public:
 
     /** Returns a fallback 1x1 metallic-roughness texture (metallic=0, roughness=0.6: G=153, B=0) */
     static Texture* getMetallicRoughnessFallbackTexture(const struct EngineResources& res);
+
+    static void cleanupFallbackTextures();
 
     void destroy();
 

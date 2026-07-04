@@ -172,7 +172,6 @@ add_library(RenderingEngine
     RenderingEngine/Vulkan/VulkanMemory.cpp
     RenderingEngine/Platform/time/Timer.cpp
     RenderingEngine/runtime/render_scene/SceneBuilder.cpp
-    RenderingEngine/Renderer/PyramidRenderer.cpp
     Rendering/Core/Renderer.cpp
     Rendering/Core/RenderTargetManager.cpp
     Rendering/Core/FramebufferManager.cpp
@@ -184,8 +183,17 @@ add_library(RenderingEngine
     Rendering/Visibility/IndirectCommandBuildPass.cpp
     Rendering/Visibility/HZBPass.cpp
     Rendering/Visibility/OcclusionCullPass.cpp
+    Rendering/Visibility/RVGClusterCullPass.cpp
     Rendering/Geometry/MeshRenderer.cpp
     Rendering/Geometry/VisibilitySystem.cpp
+    Rendering/Geometry/CapabilityTiers.cpp
+    Rendering/Geometry/Assets/RVGAsset.cpp
+    Rendering/Geometry/Assets/RVGRegistry.cpp
+    Rendering/Geometry/Streaming/RVGPageStreamingManager.cpp
+    Rendering/Geometry/Arena/GeometryAllocator.cpp
+    Rendering/Geometry/Arena/GeometryUploader.cpp
+    Rendering/Geometry/Arena/GeometryArena.cpp
+    Rendering/Geometry/Arena/GeometryArenaStats.cpp
     Rendering/Materials/MaterialSystem.cpp
     Rendering/Materials/ShaderLibrary.cpp
     Rendering/Lighting/DeferredLightingPass.cpp
@@ -220,8 +228,6 @@ endif()
 find_program(GLSLC glslc PATHS ENV VULKAN_SDK)
 if(GLSLC)
     add_custom_target(CompileShaders ALL
-        COMMAND powershell.exe -Command "${GLSLC} ${CMAKE_SOURCE_DIR}/RenderingEngine/Shaders/shader.vert -o ${CMAKE_SOURCE_DIR}/vert.spv"
-        COMMAND powershell.exe -Command "${GLSLC} ${CMAKE_SOURCE_DIR}/RenderingEngine/Shaders/shader.frag -o ${CMAKE_SOURCE_DIR}/frag.spv"
         COMMAND powershell.exe -Command "if (-Not (Test-Path '${CMAKE_SOURCE_DIR}/shaders')) { New-Item -ItemType Directory -Path '${CMAKE_SOURCE_DIR}/shaders' }"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/pbr_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/pbr_vert.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/pbr_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/pbr_frag.spv"
@@ -237,6 +243,12 @@ if(GLSLC)
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/grid_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/grid_frag.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/light_culling.comp -o ${CMAKE_SOURCE_DIR}/shaders/light_culling.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/frustum_cull.comp -o ${CMAKE_SOURCE_DIR}/shaders/frustum_cull.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=vert ${CMAKE_SOURCE_DIR}/shaders/visibility_vert.glsl -o ${CMAKE_SOURCE_DIR}/shaders/visibility_vert.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/visibility_frag.glsl -o ${CMAKE_SOURCE_DIR}/shaders/visibility_frag.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/visibility_resolve.frag -o ${CMAKE_SOURCE_DIR}/shaders/visibility_resolve.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=mesh --target-env=vulkan1.3 ${CMAKE_SOURCE_DIR}/shaders/visibility.mesh -o ${CMAKE_SOURCE_DIR}/shaders/visibility_mesh.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=task --target-env=vulkan1.3 ${CMAKE_SOURCE_DIR}/shaders/visibility.task -o ${CMAKE_SOURCE_DIR}/shaders/visibility_task.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/software_rasterizer.comp -o ${CMAKE_SOURCE_DIR}/shaders/software_rasterizer.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
     add_dependencies(RenderingEngine CompileShaders)
@@ -287,6 +299,10 @@ add_library(EngineRuntime
     Core/Diagnostics/StressTest.cpp
     Runtime/Private/AssetRegistry.cpp
     Runtime/Private/AssetRegistryTests.cpp
+    Runtime/Private/GeometryHandleTests.cpp
+    Runtime/Private/GeometryArenaTests.cpp
+    Runtime/Private/GPUSceneTests.cpp
+    Runtime/Private/GoldenImageTests.cpp
     Runtime/Private/BinaryWriter.cpp
     Runtime/Private/BinaryReader.cpp
     Runtime/Private/World/WorldFileReader.cpp
@@ -329,6 +345,23 @@ add_executable(Application
 )
 target_link_libraries(Application PRIVATE EngineRuntime "${GLFW_TARGET}")
 target_include_directories(Application PRIVATE ${ENGINE_INCLUDE_DIRS})
+
+# -------------------------------
+# Tools
+# -------------------------------
+add_executable(OmnixRVGCooker
+    Tools/RVGCooker/RVGCookerMain.cpp
+    Tools/RVGCooker/MeshCanonicalizer.cpp
+    Tools/RVGCooker/MeshAdjacency.cpp
+    Tools/RVGCooker/ClusterBuilder.cpp
+    Tools/RVGCooker/ClusterGroupBuilder.cpp
+    Tools/RVGCooker/ClusterSimplifier.cpp
+    Tools/RVGCooker/HierarchyBuilder.cpp
+    Tools/RVGCooker/RVGPagePacker.cpp
+    Tools/RVGCooker/RVGWriter.cpp
+)
+target_link_libraries(OmnixRVGCooker PRIVATE EngineCore)
+target_include_directories(OmnixRVGCooker PRIVATE ${ENGINE_INCLUDE_DIRS})
 
 # add_executable(serialization_test Test/SerializationTest.cpp)
 # target_link_libraries(serialization_test PRIVATE EngineCore ECS Serialization)

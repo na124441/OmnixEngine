@@ -16,6 +16,8 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyTopColorIntensity;
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
 
     vec4 exposureSettings;
     uvec4 renderFlags;

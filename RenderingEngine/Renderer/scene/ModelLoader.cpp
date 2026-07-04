@@ -19,7 +19,7 @@
 
 namespace eng::renderer {
 
-MeshBounds ComputeMeshBounds(const std::vector<Vertex>& vertices)
+MeshBounds ComputeMeshBounds(const std::vector<PbrVertex>& vertices)
 {
     MeshBounds bounds{};
     if (vertices.empty())
@@ -28,12 +28,12 @@ MeshBounds ComputeMeshBounds(const std::vector<Vertex>& vertices)
         bounds.localRadius = 1.0f;
         return bounds;
     }
-    glm::vec3 minP = vertices[0].pos;
-    glm::vec3 maxP = vertices[0].pos;
+    glm::vec3 minP = vertices[0].position;
+    glm::vec3 maxP = vertices[0].position;
     for (const auto& v : vertices)
     {
-        minP = glm::min(minP, v.pos);
-        maxP = glm::max(maxP, v.pos);
+        minP = glm::min(minP, v.position);
+        maxP = glm::max(maxP, v.position);
     }
     bounds.localMin = minP;
     bounds.localMax = maxP;
@@ -41,7 +41,7 @@ MeshBounds ComputeMeshBounds(const std::vector<Vertex>& vertices)
     float radius = 0.0f;
     for (const auto& v : vertices)
     {
-        radius = glm::max(radius, glm::length(v.pos - bounds.localCenter));
+        radius = glm::max(radius, glm::length(v.position - bounds.localCenter));
     }
     bounds.localRadius = radius;
     return bounds;
@@ -54,7 +54,7 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
         return false;
     }
 
-    std::vector<Vertex> vertices;
+    std::vector<PbrVertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<glm::vec3> temp_positions;
 
@@ -88,13 +88,13 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
             }
 
             indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i1], {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}});
+            vertices.push_back({temp_positions[i1], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
 
             indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i2], {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}});
+            vertices.push_back({temp_positions[i2], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
 
             indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i3], {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}});
+            vertices.push_back({temp_positions[i3], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
         }
     }
 

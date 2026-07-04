@@ -1,5 +1,9 @@
 #include "Core/pch.h"
 #include "Renderer.h"
+#include "Core/Diagnostics/Assert.h"
+#include "stb/stb_image_write.h"
+#include "Rendering/Geometry/Assets/RVGRegistry.h"
+#include "Rendering/Geometry/Streaming/RVGPageStreamingManager.h"
 #include "Runtime/Public/OmnixMaterialFormat.h"
 #include "Runtime/Public/AssetRegistry.h"
 #include "ECS/Public/IECSWorld.h"
@@ -25,6 +29,60 @@
 
 namespace eng::renderer {
 
+    static Renderer::FrameDiagnostics* s_CurrentDiagnostics = nullptr;
+
+    Renderer::FrameDiagnostics* Renderer::GetCurrentDiagnostics() {
+        return s_CurrentDiagnostics;
+    }
+
+    bool IsFinite(const glm::mat4& m) {
+        for (int col = 0; col < 4; ++col) {
+            for (int row = 0; row < 4; ++row) {
+                float val = m[col][row];
+                if (std::isnan(val) || std::isinf(val)) {
+                    return false;
+                }
+            }
+        }
+        for (int i = 0; i < 3; ++i) {
+            float scaleVal = glm::length(glm::vec3(m[i]));
+            if (scaleVal > 1e7f) {
+                return false;
+            }
+        }
+        float tx = m[3][0];
+        float ty = m[3][1];
+        float tz = m[3][2];
+        if (std::abs(tx) > 1e7f || std::abs(ty) > 1e7f || std::abs(tz) > 1e7f) {
+            return false;
+        }
+        return true;
+    }
+
+    bool ValidateRenderItem(const RenderItem& item, uint32_t instanceIndex, const GPUScene& gpuScene) {
+        if (!item.mesh) {
+            return false;
+        }
+        if (!item.mesh->isVirtualGeometry) {
+            if (item.mesh->vertexBuffer == VK_NULL_HANDLE || item.mesh->indexBuffer == VK_NULL_HANDLE) {
+                return false;
+            }
+        }
+        if (item.mesh->indexCount == 0) {
+            return false;
+        }
+        if (!item.material) {
+            return false;
+        }
+        if (instanceIndex >= gpuScene.GetGPUInstances().size()) {
+            return false;
+        }
+        if (!IsFinite(item.transform) || !IsFinite(item.model)) {
+            return false;
+        }
+        return true;
+    }
+
 struct PostProcessPushConstants {
     float exposure;
     float gamma;
@@ -45,6 +103,7 @@ Renderer::~Renderer()
 
 void Renderer::Initialize()
 {
+    resources.debugConfig = &m_DebugConfig;
     m_RenderTargetManager.Initialize(resources.device, resources.allocator);
     m_FramebufferManager.Initialize(resources.device, &m_RenderTargetManager);
 
@@ -97,6 +156,8 @@ void Renderer::Initialize()
 
     m_ViewportRenderer.init(&resources);
 
+    RVGRegistry::Get().Initialize(resources);
+    RVGPageStreamingManager::Get().Initialize(resources);
     gpuScene.Initialize(resources);
     
     // Create m_DepthRenderPass (depth-only)
@@ -277,10 +338,11 @@ void Renderer::Initialize()
 
     // Swap to new render pass for all subsequent materials/pipelines compatibility
     resources.renderPass = m_GBufferRenderPass;
+    resources.gbufferRenderPass = m_GBufferRenderPass;
 
     // Create GBuffer descriptor set layout
-    VkDescriptorSetLayoutBinding gbufferBindings[7]{};
-    for (uint32_t i = 0; i < 7; ++i) {
+    VkDescriptorSetLayoutBinding gbufferBindings[10]{};
+    for (uint32_t i = 0; i < 10; ++i) {
         gbufferBindings[i].binding = i;
         gbufferBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         gbufferBindings[i].descriptorCount = 1;
@@ -289,14 +351,14 @@ void Renderer::Initialize()
     }
     VkDescriptorSetLayoutCreateInfo gbufferSetLayoutInfo{};
     gbufferSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    gbufferSetLayoutInfo.bindingCount = 7;
+    gbufferSetLayoutInfo.bindingCount = 10;
     gbufferSetLayoutInfo.pBindings = gbufferBindings;
     VK_CHECK(vkCreateDescriptorSetLayout(resources.device, &gbufferSetLayoutInfo, nullptr, &m_GBufferDescriptorSetLayout));
 
     // Create GBuffer descriptor pool
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = resources.MAX_FRAMES_IN_FLIGHT * 7;
+    poolSize.descriptorCount = resources.MAX_FRAMES_IN_FLIGHT * 10;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -516,7 +578,7 @@ void Renderer::Initialize()
     resources.createPipelineLayout();
 
     // 1. Geometry pipeline is already created by legacy engine
-    geometryPipeline = resources.graphicsPipeline;
+    geometryPipeline = VK_NULL_HANDLE;
 
     // 2. Create pipelines for other passes
     createSSAOResources();
@@ -527,12 +589,12 @@ void Renderer::Initialize()
 
     // 4. Create default fallback assets
     m_DefaultMesh = scene.createMesh();
-    const std::vector<Vertex> vertices = {
-        {{ 0.0f, -0.5f,  0.0f}, {1.0f, 0.0f, 0.0f}, {0.5f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}}
+    const std::vector<PbrVertex> vertices = {
+        {{ 0.0f, -0.5f,  0.0f}, {0.0f, -1.0f, 0.0f}, {0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f,  1.0f, 0.0f}, {1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.0f,  1.0f, 0.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f,  1.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f,  1.0f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}}
     };
     const std::vector<uint32_t> indices = {
         0,1,2, 0,3,1, 0,2,4, 0,4,3,
@@ -547,7 +609,7 @@ void Renderer::Initialize()
                                         "textures/brick_normal.png", 
                                         resources);
     if (!ok) {
-        m_DefaultMaterial->setFallbackPipeline(resources.graphicsPipeline);
+        m_DefaultMaterial->setFallbackPipeline(m_GBufferPipeline);
     }
 
     initGridPipeline();
@@ -564,6 +626,17 @@ void Renderer::Shutdown()
     renderGraph.Shutdown(resources);
 
     gpuScene.Shutdown(resources);
+    RVGPageStreamingManager::Get().Shutdown(resources);
+    RVGRegistry::Get().Shutdown();
+
+    if (m_GBufferPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(resources.device, m_GBufferPipeline, nullptr);
+        m_GBufferPipeline = VK_NULL_HANDLE;
+    }
+    if (m_GBufferPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(resources.device, m_GBufferPipelineLayout, nullptr);
+        m_GBufferPipelineLayout = VK_NULL_HANDLE;
+    }
 
     if (m_ShadowPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(resources.device, m_ShadowPipeline, nullptr);
@@ -757,6 +830,10 @@ void Renderer::BeginFrame()
 
 void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
 {
+    m_FrameDiagnostics = {};
+    m_FrameDiagnostics.frameNumber = m_FrameCount;
+    s_CurrentDiagnostics = &m_FrameDiagnostics;
+
     static eng::renderer::Renderer::VisibilityMode s_PrevMode = (eng::renderer::Renderer::VisibilityMode)-1;
     if (m_VisibilityMode != s_PrevMode) {
         std::string modeName = "Unknown";
@@ -831,10 +908,12 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
     this->camera.nearPlane = activeRenderScene.camera.nearPlane;
     this->camera.farPlane = activeRenderScene.camera.farPlane;
     
-    // --------------------------------------------------------------
-    // 3. Build render-queue
-    // --------------------------------------------------------------
     buildRenderQueue();
+
+    m_FrameDiagnostics.entitiesExtracted = static_cast<uint32_t>(activeRenderScene.meshInstances.size());
+    m_FrameDiagnostics.instancesUploaded = static_cast<uint32_t>(gpuScene.GetGPUInstances().size());
+    m_FrameDiagnostics.opaqueItems = static_cast<uint32_t>(renderQueue.getItems().size());
+    m_FrameDiagnostics.transparentItems = static_cast<uint32_t>(transparentRenderQueue.getItems().size());
 
     // Calculate shadow light space matrix if directional light is present
     if (!activeRenderScene.directionalLights.empty()) {
@@ -945,6 +1024,10 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
         timeSeconds
     );
 
+    m_CurrentFrameCount++;
+    RVGPageStreamingManager::Get().ProcessGPURequests(resources, frameIndex, m_CurrentFrameCount);
+    RVGPageStreamingManager::Get().Update(resources, frameIndex, m_CurrentFrameCount);
+
     gpuScene.UpdateFrame(
         resources,
         frameIndex,
@@ -979,6 +1062,9 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
     bool graphExecutionFailed = false;
     bool ok = renderGraph.ExecuteWithValidation(resources, frameIndex, m_RenderTargetManager, graphExecutionFailed);
     if (!ok || graphExecutionFailed) {
+        if (m_DebugConfig.disableFallback) {
+            OMNIX_FATAL_ASSERT(false, "RenderGraph execution failed under Phase 0 debug baseline! Fatal validation errors detected.");
+        }
         LOG_WARN("RenderGraph execution failed! Running fallback clear pass to safely present...");
         
         // Safety Fallback: Acquire command buffer for PassID::UI to perform clear/Imgui and transition swapchain to PRESENT_SRC
@@ -1132,6 +1218,19 @@ void Renderer::EndFrame()
         m_RenderDocCaptureRequested = false;
     }
 
+    // Log frame diagnostic report
+    LOG_INFO("Frame " + std::to_string(m_FrameDiagnostics.frameNumber));
+    LOG_INFO("Entities extracted: " + std::to_string(m_FrameDiagnostics.entitiesExtracted));
+    LOG_INFO("Opaque items: " + std::to_string(m_FrameDiagnostics.opaqueItems));
+    LOG_INFO("Transparent items: " + std::to_string(m_FrameDiagnostics.transparentItems));
+    LOG_INFO("Instances uploaded: " + std::to_string(m_FrameDiagnostics.instancesUploaded));
+    LOG_INFO("Draw calls: " + std::to_string(m_FrameDiagnostics.drawCalls));
+    LOG_INFO("Triangles: " + std::to_string(m_FrameDiagnostics.triangles));
+    LOG_INFO("Rejected items: " + std::to_string(m_FrameDiagnostics.rejectedItems));
+    LOG_INFO("Validation errors: " + std::to_string(m_FrameDiagnostics.validationErrors));
+
+    s_CurrentDiagnostics = nullptr;
+
     // --------------------------------------------------------------
     // 8. Advance frame index
     frameIndex = (frameIndex + 1) % resources.MAX_FRAMES_IN_FLIGHT;
@@ -1203,22 +1302,15 @@ void Renderer::initPipelines()
         stages[1].module = fragModule;
         stages[1].pName = "main";
 
-        VkVertexInputBindingDescription bindingDesc{};
-        bindingDesc.binding = 0;
-        bindingDesc.stride = sizeof(Vertex);
-        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription attrDescs[3]{};
-        attrDescs[0].binding = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
-        attrDescs[1].binding = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
-        attrDescs[2].binding = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, uv);
+        VkVertexInputBindingDescription bindingDesc = PbrVertex::GetBindingDescription();
+        auto attrDescs = PbrVertex::GetAttributeDescriptions();
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-        vertexInputInfo.vertexAttributeDescriptionCount = 3;
-        vertexInputInfo.pVertexAttributeDescriptions = attrDescs;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+        vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAsm{};
         inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1240,8 +1332,8 @@ void Renderer::initPipelines()
 
         VkPipelineRasterizationStateCreateInfo raster{};
         raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        raster.cullMode = VK_CULL_MODE_BACK_BIT;
-        raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        raster.cullMode = RasterConvention::CullMode;
+        raster.frontFace = RasterConvention::FrontFace;
         raster.lineWidth = 1.0f;
         raster.polygonMode = VK_POLYGON_MODE_FILL;
 
@@ -1314,22 +1406,15 @@ void Renderer::initPipelines()
         stage.module = shadowVertModule;
         stage.pName = "main";
 
-        VkVertexInputBindingDescription bindingDesc{};
-        bindingDesc.binding = 0;
-        bindingDesc.stride = sizeof(Vertex);
-        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription attrDescs[3]{};
-        attrDescs[0].binding = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
-        attrDescs[1].binding = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
-        attrDescs[2].binding = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, uv);
+        VkVertexInputBindingDescription bindingDesc = PbrVertex::GetBindingDescription();
+        auto attrDescs = PbrVertex::GetAttributeDescriptions();
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-        vertexInputInfo.vertexAttributeDescriptionCount = 3;
-        vertexInputInfo.pVertexAttributeDescriptions = attrDescs;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+        vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAsm{};
         inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1351,8 +1436,8 @@ void Renderer::initPipelines()
 
         VkPipelineRasterizationStateCreateInfo raster{};
         raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        raster.cullMode = VK_CULL_MODE_BACK_BIT;
-        raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        raster.cullMode = RasterConvention::CullMode;
+        raster.frontFace = RasterConvention::FrontFace;
         raster.lineWidth = 1.0f;
         raster.polygonMode = VK_POLYGON_MODE_FILL;
 
@@ -1395,7 +1480,12 @@ void Renderer::initPipelines()
         pipelineInfo.layout = m_ShadowPipelineLayout;
         pipelineInfo.renderPass = m_ShadowRenderPass;
 
-        VK_CHECK(vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_ShadowPipeline));
+        VK_CHECK(vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_ShadowPipeline.pipeline));
+        m_ShadowPipeline.name = "ShadowPipeline";
+        m_ShadowPipeline.layout = m_ShadowPipelineLayout;
+        m_ShadowPipeline.compatibleRenderPass = m_ShadowRenderPass;
+        m_ShadowPipeline.colorAttachmentCount = 0;
+        m_ShadowPipeline.vertexStride = sizeof(PbrVertex);
 
         vkDestroyShaderModule(resources.device, shadowVertModule, nullptr);
     } else {
@@ -1419,22 +1509,15 @@ void Renderer::initPipelines()
         stage.module = depthVertModule;
         stage.pName = "main";
 
-        VkVertexInputBindingDescription bindingDesc{};
-        bindingDesc.binding = 0;
-        bindingDesc.stride = sizeof(Vertex);
-        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputAttributeDescription attrDescs[3]{};
-        attrDescs[0].binding = 0; attrDescs[0].location = 0; attrDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[0].offset = offsetof(Vertex, pos);
-        attrDescs[1].binding = 0; attrDescs[1].location = 1; attrDescs[1].format = VK_FORMAT_R32G32B32_SFLOAT; attrDescs[1].offset = offsetof(Vertex, color);
-        attrDescs[2].binding = 0; attrDescs[2].location = 2; attrDescs[2].format = VK_FORMAT_R32G32_SFLOAT;    attrDescs[2].offset = offsetof(Vertex, uv);
+        VkVertexInputBindingDescription bindingDesc = PbrVertex::GetBindingDescription();
+        auto attrDescs = PbrVertex::GetAttributeDescriptions();
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-        vertexInputInfo.vertexAttributeDescriptionCount = 3;
-        vertexInputInfo.pVertexAttributeDescriptions = attrDescs;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+        vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAsm{};
         inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -1500,7 +1583,12 @@ void Renderer::initPipelines()
         pipelineInfo.layout = resources.pipelineLayout;
         pipelineInfo.renderPass = m_DepthRenderPass;
 
-        VK_CHECK(vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_DepthPipeline));
+        VK_CHECK(vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_DepthPipeline.pipeline));
+        m_DepthPipeline.name = "DepthPipeline";
+        m_DepthPipeline.layout = resources.pipelineLayout;
+        m_DepthPipeline.compatibleRenderPass = m_DepthRenderPass;
+        m_DepthPipeline.colorAttachmentCount = 0;
+        m_DepthPipeline.vertexStride = sizeof(PbrVertex);
 
         vkDestroyShaderModule(resources.device, depthVertModule, nullptr);
     } else {
@@ -1872,6 +1960,7 @@ void Renderer::recreateOffscreenPostProcessPipeline()
         vkDestroyShaderModule(resources.device, fullscreenVert, nullptr);
         vkDestroyShaderModule(resources.device, postprocessFrag, nullptr);
     }
+    CreateGBufferPipeline();
 }
 
 void Renderer::setupRenderGraph()
@@ -1911,153 +2000,187 @@ void Renderer::setupRenderGraph()
     // Register all 11 required passes in dependency order (topological sort will verify)
     
     // 1. Shadow Pass
-    renderGraph.RegisterPass(
-        "ShadowPass",
-        {},
-        {"ShadowMap"},
-        PassID::Shadow,
-        [this](VkCommandBuffer cmd) {
-            if (activeRenderScene.directionalLights.empty()) {
-                return;
-            }
-            const auto& dirLight = activeRenderScene.directionalLights[0];
-            if (dirLight.castShadows <= 0.0f) {
-                return;
-            }
-
-            VkImage shadowImg = m_ShadowImages[frameIndex];
-            if (shadowImg == VK_NULL_HANDLE) return;
-
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_ShadowRenderPass;
-            rpInfo.framebuffer = m_ShadowFramebuffers[frameIndex];
-            rpInfo.renderArea.offset = {0, 0};
-            rpInfo.renderArea.extent = { m_CurrentShadowResolution, m_CurrentShadowResolution };
-
-            VkClearValue clearValue{};
-            clearValue.depthStencil = { 1.0f, 0 };
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
-
-            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            VkViewport viewport{};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = static_cast<float>(m_CurrentShadowResolution);
-            viewport.height = static_cast<float>(m_CurrentShadowResolution);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-            VkRect2D scissor{};
-            scissor.offset = {0, 0};
-            scissor.extent = { m_CurrentShadowResolution, m_CurrentShadowResolution };
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-            if (m_ShadowPipeline != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipeline);
-
-                VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
-
-                struct ShadowPushConstants {
-                    uint32_t instanceIndex;
-                    uint32_t pad0, pad1, pad2;
-                    glm::mat4 lightSpaceMatrix;
-                };
-
-                const auto& items = renderQueue.getItems();
-                for (uint32_t i = 0; i < items.size(); ++i) {
-                    const RenderItem& item = items[i];
-                    if (!item.castShadows) {
-                        continue;
-                    }
-
-                    ShadowPushConstants push{};
-                    push.instanceIndex = i;
-                    push.lightSpaceMatrix = m_LastLightSpaceMatrix;
-
-                    vkCmdPushConstants(cmd, m_ShadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConstants), &push);
-
-                    item.mesh->bind(cmd);
-                    vkCmdDrawIndexed(cmd, item.mesh->getIndexCount(), 1, 0, 0, 0);
+    if (m_DebugConfig.enableShadowPass) {
+        renderGraph.RegisterPass(
+            "ShadowPass",
+            {},
+            {"ShadowMap"},
+            PassID::Shadow,
+            [this](VkCommandBuffer cmd) {
+                if (activeRenderScene.directionalLights.empty()) {
+                    return;
                 }
-            }
+                const auto& dirLight = activeRenderScene.directionalLights[0];
+                if (dirLight.castShadows <= 0.0f) {
+                    return;
+                }
 
-            vkCmdEndRenderPass(cmd);
-        },
-        true,
-        frameIndex < m_ShadowFramebuffers.size() ? m_ShadowFramebuffers[frameIndex] : VK_NULL_HANDLE,
-        true,
-        m_ShadowPipeline,
-        {},
-        { m_ShadowHandles[frameIndex] }
-    );
+                VkImage shadowImg = m_ShadowImages[frameIndex];
+                if (shadowImg == VK_NULL_HANDLE) return;
 
-    // 2. Depth Prepass
-    VkFramebuffer depthFb = VK_NULL_HANDLE;
-    if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenDepthFramebuffers.size()) {
-        depthFb = m_OffscreenDepthFramebuffers[frameIndex];
-    } else if (frameIndex < m_DepthFramebuffers.size()) {
-        depthFb = m_DepthFramebuffers[frameIndex];
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_ShadowRenderPass;
+                rpInfo.framebuffer = m_ShadowFramebuffers[frameIndex];
+                rpInfo.renderArea.offset = {0, 0};
+                rpInfo.renderArea.extent = { m_CurrentShadowResolution, m_CurrentShadowResolution };
+
+                VkClearValue clearValue{};
+                clearValue.depthStencil = { 1.0f, 0 };
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
+
+                vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                VkViewport viewport{};
+                viewport.x = 0.0f;
+                viewport.y = 0.0f;
+                viewport.width = static_cast<float>(m_CurrentShadowResolution);
+                viewport.height = static_cast<float>(m_CurrentShadowResolution);
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
+                vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+                VkRect2D scissor{};
+                scissor.offset = {0, 0};
+                scissor.extent = { m_CurrentShadowResolution, m_CurrentShadowResolution };
+                vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+                if (m_ShadowPipeline.pipeline != VK_NULL_HANDLE) {
+#ifndef NDEBUG
+                    assert(m_ShadowPipeline.compatibleRenderPass == m_ShadowRenderPass);
+                    assert(m_ShadowPipeline.vertexStride == sizeof(PbrVertex));
+#endif
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipeline.pipeline);
+
+                    VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ShadowPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
+
+                    struct ShadowPushConstants {
+                        uint32_t instanceIndex;
+                        uint32_t pad0, pad1, pad2;
+                        glm::mat4 lightSpaceMatrix;
+                    };
+
+                    const auto& items = renderQueue.getItems();
+                    for (uint32_t i = 0; i < items.size(); ++i) {
+                        const RenderItem& item = items[i];
+                        if (!item.mesh || !item.castShadows) {
+                            continue;
+                        }
+
+                        if (!ValidateRenderItem(item, i, gpuScene)) {
+                            m_FrameDiagnostics.rejectedItems++;
+                            m_FrameDiagnostics.validationErrors++;
+                            continue;
+                        }
+
+                        m_FrameDiagnostics.drawCalls++;
+                        m_FrameDiagnostics.triangles += item.mesh->indexCount / 3;
+
+                        ShadowPushConstants push{};
+                        push.instanceIndex = i;
+                        push.lightSpaceMatrix = m_LastLightSpaceMatrix;
+
+                        vkCmdPushConstants(cmd, m_ShadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConstants), &push);
+
+                        item.mesh->bind(cmd);
+
+                        bool useArena = GeometryArena::IsInitialized() && GeometryArena::IsEnabled() && item.mesh->handle.IsValid();
+                        if (useArena) {
+                            auto arenaPtr = GeometryArena::GetInstance();
+                            const GeometryAllocation* alloc = arenaPtr->GetAllocation(item.mesh->handle);
+                            if (alloc) {
+                                vkCmdDrawIndexed(cmd, alloc->indexCount, 1, alloc->firstIndex, alloc->vertexOffset, 0);
+                            }
+                        } else {
+                            vkCmdDrawIndexed(cmd, item.mesh->indexCount, 1, 0, 0, 0);
+                        }
+                    }
+                }
+
+                vkCmdEndRenderPass(cmd);
+            },
+            true,
+            frameIndex < m_ShadowFramebuffers.size() ? m_ShadowFramebuffers[frameIndex] : VK_NULL_HANDLE,
+            true,
+            m_ShadowPipeline,
+            {},
+            { m_ShadowHandles[frameIndex] }
+        );
     }
 
-    renderGraph.RegisterPass(
-        "DepthPrepass",
-        {"ShadowMap"},
-        {"DepthBuffer"},
-        PassID::Geometry,
-        [this](VkCommandBuffer cmd) {
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_DepthRenderPass;
-            if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenDepthFramebuffers.size() && m_OffscreenDepthFramebuffers[frameIndex] != VK_NULL_HANDLE) {
-                rpInfo.framebuffer = m_OffscreenDepthFramebuffers[frameIndex];
-                rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
-            } else {
-                rpInfo.framebuffer = frameIndex < m_DepthFramebuffers.size() ? m_DepthFramebuffers[frameIndex] : VK_NULL_HANDLE;
-                rpInfo.renderArea.extent = resources.swapChainExtent;
-            }
+    // 2. Depth Prepass
+    if (m_DebugConfig.enableDepthPrepass) {
+        VkFramebuffer depthFb = VK_NULL_HANDLE;
+        if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenDepthFramebuffers.size()) {
+            depthFb = m_OffscreenDepthFramebuffers[frameIndex];
+        } else if (frameIndex < m_DepthFramebuffers.size()) {
+            depthFb = m_DepthFramebuffers[frameIndex];
+        }
 
-            VkClearValue clearValue{};
-            clearValue.depthStencil = { 1.0f, 0 };
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
+        renderGraph.RegisterPass(
+            "DepthPrepass",
+            {"ShadowMap"},
+            {"DepthBuffer"},
+            PassID::Geometry,
+            [this](VkCommandBuffer cmd) {
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_DepthRenderPass;
+                if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenDepthFramebuffers.size() && m_OffscreenDepthFramebuffers[frameIndex] != VK_NULL_HANDLE) {
+                    rpInfo.framebuffer = m_OffscreenDepthFramebuffers[frameIndex];
+                    rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
+                } else {
+                    rpInfo.framebuffer = frameIndex < m_DepthFramebuffers.size() ? m_DepthFramebuffers[frameIndex] : VK_NULL_HANDLE;
+                    rpInfo.renderArea.extent = resources.swapChainExtent;
+                }
 
-            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+                VkClearValue clearValue{};
+                clearValue.depthStencil = { 1.0f, 0 };
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
 
-            VkViewport viewport{};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(resources.swapChainExtent.width);
-            viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(resources.swapChainExtent.height);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
+                vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-            VkRect2D scissor{};
-            scissor.offset = {0, 0};
-            scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : resources.swapChainExtent;
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
+                VkViewport viewport{};
+                viewport.x = 0.0f;
+                viewport.y = 0.0f;
+                viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(resources.swapChainExtent.width);
+                viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(resources.swapChainExtent.height);
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
+                vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-            // Bind GPUScene descriptor set to Set 0
-            VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, resources.pipelineLayout, 0, 1, &gpuSet, 0, nullptr);
+                VkRect2D scissor{};
+                scissor.offset = {0, 0};
+                scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : resources.swapChainExtent;
+                vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-            // Draw meshes in queue using MeshRenderer with depth pipeline override
-            MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue, m_DepthPipeline);
+                // Bind GPUScene descriptor set to Set 0
+                VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, resources.pipelineLayout, 0, 1, &gpuSet, 0, nullptr);
 
-            vkCmdEndRenderPass(cmd);
-        },
-        true,
-        depthFb,
-        true,
-        m_DepthPipeline,
-        { m_ShadowHandles[frameIndex] },
-        { m_DepthHandles[frameIndex] }
-    );
+#ifndef NDEBUG
+                if (m_DepthPipeline.pipeline != VK_NULL_HANDLE) {
+                    assert(m_DepthPipeline.compatibleRenderPass == m_DepthRenderPass);
+                    assert(m_DepthPipeline.vertexStride == sizeof(PbrVertex));
+                }
+#endif
+
+                // Draw meshes in queue using MeshRenderer with depth pipeline override
+                MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue, m_DepthPipeline, &gpuScene);
+
+                vkCmdEndRenderPass(cmd);
+            },
+            true,
+            depthFb,
+            true,
+            m_DepthPipeline,
+            { m_ShadowHandles[frameIndex] },
+            { m_DepthHandles[frameIndex] }
+        );
+    }
 
     // 3. GBuffer Pass (performs geometry queue rendering)
     VkFramebuffer gbufferFb = VK_NULL_HANDLE;
@@ -2095,6 +2218,20 @@ void Renderer::setupRenderGraph()
 
             vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+            if (!m_DebugConfig.enableDepthPrepass) {
+                VkClearAttachment clearAttachment{};
+                clearAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                clearAttachment.clearValue.depthStencil = { 1.0f, 0 };
+
+                VkClearRect rect{};
+                rect.rect.offset = {0, 0};
+                rect.rect.extent = { m_DepthWidth, m_DepthHeight };
+                rect.baseArrayLayer = 0;
+                rect.layerCount = 1;
+
+                vkCmdClearAttachments(cmd, 1, &clearAttachment, 1, &rect);
+            }
+
             VkViewport viewport{};
             viewport.x = 0.0f;
             viewport.y = 0.0f;
@@ -2108,109 +2245,324 @@ void Renderer::setupRenderGraph()
             scissor.offset = {0, 0};
             scissor.extent = { m_DepthWidth, m_DepthHeight };
             vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+#ifndef NDEBUG
+            if (m_GBufferPipeline.pipeline != VK_NULL_HANDLE) {
+                assert(m_GBufferPipeline.compatibleRenderPass == m_GBufferRenderPass);
+                assert(m_GBufferPipeline.vertexStride == sizeof(PbrVertex));
+            }
+#endif
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GBufferPipeline.pipeline);
 
             // Bind GPUScene descriptor set to Set 0
             VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, resources.pipelineLayout, 0, 1, &gpuSet, 0, nullptr);
 
             // Draw meshes in queue using MeshRenderer
-            MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue);
+            MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue, m_GBufferPipeline, &gpuScene);
 
             vkCmdEndRenderPass(cmd);
         },
         true,
         gbufferFb,
         true,
-        geometryPipeline,
+        m_GBufferPipeline,
         { m_DepthHandles[frameIndex] },
         { m_GBufferAHandles[frameIndex], m_GBufferBHandles[frameIndex], m_GBufferCHandles[frameIndex], m_GBufferDHandles[frameIndex] }
     );
 
     // 4. SSAO Pass
-    renderGraph.RegisterPass(
-        "SSAOPass",
-        {"DepthBuffer", "GBufferA", "GBufferB"},
-        {"SSAO"},
-        PassID::Lighting,
-        [this](VkCommandBuffer cmd) {
-            // Update constant buffer first
-            if (frameIndex < m_SSAOConstantAllocations.size() && m_SSAOConstantAllocations[frameIndex] != nullptr) {
-                struct SSAOConstantBufferData {
-                    glm::vec4 samples[64];
-                    glm::mat4 projection;
-                    float radius;
-                    float bias;
-                    float intensity;
-                    float screenWidth;
-                    float screenHeight;
-                    float enabled;
-                    float pad0, pad1;
-                } ubo{};
-                
-                std::memcpy(ubo.samples, m_SSAOKernel.data(), 64 * sizeof(glm::vec4));
-                ubo.projection = activeFrameContext.projectionMatrix;
-                ubo.radius = m_SSAOSettings.radius;
-                ubo.bias = m_SSAOSettings.bias;
-                ubo.intensity = m_SSAOSettings.intensity;
-                ubo.screenWidth = static_cast<float>(m_DepthWidth);
-                ubo.screenHeight = static_cast<float>(m_DepthHeight);
-                ubo.enabled = m_SSAOSettings.enabled ? 1.0f : 0.0f;
-                
-                void* mappedData = nullptr;
-                vmaMapMemory(resources.allocator, m_SSAOConstantAllocations[frameIndex], &mappedData);
-                std::memcpy(mappedData, &ubo, sizeof(ubo));
-                vmaUnmapMemory(resources.allocator, m_SSAOConstantAllocations[frameIndex]);
-            }
+    if (m_DebugConfig.enableSSAO) {
+        renderGraph.RegisterPass(
+            "SSAOPass",
+            {"DepthBuffer", "GBufferA", "GBufferB"},
+            {"SSAO"},
+            PassID::Lighting,
+            [this](VkCommandBuffer cmd) {
+                // Update constant buffer first
+                if (frameIndex < m_SSAOConstantAllocations.size() && m_SSAOConstantAllocations[frameIndex] != nullptr) {
+                    struct SSAOConstantBufferData {
+                        glm::vec4 samples[64];
+                        glm::mat4 projection;
+                        float radius;
+                        float bias;
+                        float intensity;
+                        float screenWidth;
+                        float screenHeight;
+                        float enabled;
+                        float pad0, pad1;
+                    } ubo{};
+                    
+                    std::memcpy(ubo.samples, m_SSAOKernel.data(), 64 * sizeof(glm::vec4));
+                    ubo.projection = activeFrameContext.projectionMatrix;
+                    ubo.radius = m_SSAOSettings.radius;
+                    ubo.bias = m_SSAOSettings.bias;
+                    ubo.intensity = m_SSAOSettings.intensity;
+                    ubo.screenWidth = static_cast<float>(m_DepthWidth);
+                    ubo.screenHeight = static_cast<float>(m_DepthHeight);
+                    ubo.enabled = m_SSAOSettings.enabled ? 1.0f : 0.0f;
+                    
+                    void* mappedData = nullptr;
+                    vmaMapMemory(resources.allocator, m_SSAOConstantAllocations[frameIndex], &mappedData);
+                    std::memcpy(mappedData, &ubo, sizeof(ubo));
+                    vmaUnmapMemory(resources.allocator, m_SSAOConstantAllocations[frameIndex]);
+                }
 
-            // Transition depth image to DEPTH_STENCIL_READ_ONLY_OPTIMAL for sampling
-            VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
-                m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
+                // Transition depth image to DEPTH_STENCIL_READ_ONLY_OPTIMAL for sampling
+                VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
+                    m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
 
-            if (depthImage != VK_NULL_HANDLE) {
-                VkImageMemoryBarrier barrier{};
-                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.image = depthImage;
-                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                barrier.subresourceRange.baseMipLevel = 0;
-                barrier.subresourceRange.levelCount = 1;
-                barrier.subresourceRange.baseArrayLayer = 0;
-                barrier.subresourceRange.layerCount = 1;
-                barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                if (depthImage != VK_NULL_HANDLE) {
+                    VkImageMemoryBarrier barrier{};
+                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.image = depthImage;
+                    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                    barrier.subresourceRange.baseMipLevel = 0;
+                    barrier.subresourceRange.levelCount = 1;
+                    barrier.subresourceRange.baseArrayLayer = 0;
+                    barrier.subresourceRange.layerCount = 1;
+                    barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-                vkCmdPipelineBarrier(cmd,
-                    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                    0,
-                    0, nullptr,
-                    0, nullptr,
-                    1, &barrier);
-            }
+                    vkCmdPipelineBarrier(cmd,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        0,
+                        0, nullptr,
+                        0, nullptr,
+                        1, &barrier);
+                }
 
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_SSAORenderPass;
-            rpInfo.framebuffer = frameIndex < m_SSAOFramebuffers.size() ? m_SSAOFramebuffers[frameIndex] : VK_NULL_HANDLE;
-            rpInfo.renderArea.offset = {0, 0};
-            rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_SSAORenderPass;
+                rpInfo.framebuffer = frameIndex < m_SSAOFramebuffers.size() ? m_SSAOFramebuffers[frameIndex] : VK_NULL_HANDLE;
+                rpInfo.renderArea.offset = {0, 0};
+                rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
 
-            VkClearValue clearValue{};
-            clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
+                VkClearValue clearValue{};
+                clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
 
-            if (rpInfo.framebuffer != VK_NULL_HANDLE && m_SSAOPipeline != VK_NULL_HANDLE) {
+                if (rpInfo.framebuffer != VK_NULL_HANDLE && m_SSAOPipeline != VK_NULL_HANDLE) {
+                    vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                    VkViewport viewport{};
+                    viewport.x = 0.0f; viewport.y = 0.0f;
+                    viewport.width = static_cast<float>(m_DepthWidth);
+                    viewport.height = static_cast<float>(m_DepthHeight);
+                    viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+                    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+                    VkRect2D scissor{};
+                    scissor.offset = {0, 0};
+                    scissor.extent = { m_DepthWidth, m_DepthHeight };
+                    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipeline);
+
+                    // Bind Set 0: GPUScene (camera, lights)
+                    VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
+
+                    // Bind Set 1: SSAO resources
+                    VkDescriptorSet ssaoSet = frameIndex < m_SSAODescriptorSets.size() ? m_SSAODescriptorSets[frameIndex] : VK_NULL_HANDLE;
+                    if (ssaoSet != VK_NULL_HANDLE) {
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipelineLayout, 1, 1, &ssaoSet, 0, nullptr);
+                    }
+
+                    vkCmdDraw(cmd, 3, 1, 0, 0);
+                    vkCmdEndRenderPass(cmd);
+                }
+            },
+            false,
+            VK_NULL_HANDLE,
+            false,
+            VK_NULL_HANDLE,
+            { m_DepthHandles[frameIndex], m_GBufferAHandles[frameIndex], m_GBufferBHandles[frameIndex] },
+            { m_SSAOHandles[frameIndex] }
+        );
+    }
+ 
+    // 5. AO Blur Pass
+    if (m_DebugConfig.enableSSAO) {
+        renderGraph.RegisterPass(
+            "AOBlurPass",
+            {"SSAO"},
+            {"AOBlur"},
+            PassID::Lighting,
+            [this](VkCommandBuffer cmd) {
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_SSAORenderPass;
+                rpInfo.framebuffer = frameIndex < m_SSAOBlurredFramebuffers.size() ? m_SSAOBlurredFramebuffers[frameIndex] : VK_NULL_HANDLE;
+                rpInfo.renderArea.offset = {0, 0};
+                rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
+
+                VkClearValue clearValue{};
+                clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
+
+                if (rpInfo.framebuffer != VK_NULL_HANDLE && m_SSAOBlurPipeline != VK_NULL_HANDLE) {
+                    vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                    VkViewport viewport{};
+                    viewport.x = 0.0f; viewport.y = 0.0f;
+                    viewport.width = static_cast<float>(m_DepthWidth);
+                    viewport.height = static_cast<float>(m_DepthHeight);
+                    viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+                    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+                    VkRect2D scissor{};
+                    scissor.offset = {0, 0};
+                    scissor.extent = { m_DepthWidth, m_DepthHeight };
+                    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOBlurPipeline);
+
+                    // Bind Set 0: SSAO Blur resources
+                    VkDescriptorSet blurSet = frameIndex < m_SSAOBlurDescriptorSets.size() ? m_SSAOBlurDescriptorSets[frameIndex] : VK_NULL_HANDLE;
+                    if (blurSet != VK_NULL_HANDLE) {
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOBlurPipelineLayout, 0, 1, &blurSet, 0, nullptr);
+                    }
+
+                    vkCmdDraw(cmd, 3, 1, 0, 0);
+                    vkCmdEndRenderPass(cmd);
+                }
+            },
+            false,
+            VK_NULL_HANDLE,
+            false,
+            VK_NULL_HANDLE,
+            { m_SSAOHandles[frameIndex] },
+            { m_SSAOBlurredHandles[frameIndex] }
+        );
+    }
+
+    // 5.5 Light Culling Compute Pass
+    if (m_DebugConfig.enableLightCulling) {
+        renderGraph.RegisterPass(
+            "LightCullingPass",
+            {},
+            {},
+            PassID::Lighting,
+            [this](VkCommandBuffer cmd) {
+                if (m_LightCullingPipeline == VK_NULL_HANDLE) {
+                    return;
+                }
+
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_LightCullingPipeline);
+
+                VkDescriptorSet cullingSet = gpuScene.GetLightCullingDescriptorSet(frameIndex);
+                if (cullingSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(
+                        cmd,
+                        VK_PIPELINE_BIND_POINT_COMPUTE,
+                        m_LightCullingPipelineLayout,
+                        0, 1, &cullingSet,
+                        0, nullptr
+                    );
+                }
+
+                Omnix::Radiance::ClusterSettings settings{};
+                uint32_t viewportWidth = m_DepthWidth;
+                uint32_t viewportHeight = m_DepthHeight;
+                if (viewportWidth == 0) viewportWidth = 1280;
+                if (viewportHeight == 0) viewportHeight = 720;
+                uint32_t tileCountX = (viewportWidth + settings.tileSizeX - 1) / settings.tileSizeX;
+                uint32_t tileCountY = (viewportHeight + settings.tileSizeY - 1) / settings.tileSizeY;
+                uint32_t depthSliceCount = settings.depthSliceCount;
+                uint32_t clusterCount = tileCountX * tileCountY * depthSliceCount;
+                uint32_t groupCount = (clusterCount + 63) / 64;
+
+                vkCmdDispatch(cmd, groupCount, 1, 1);
+
+                // Add pipeline barrier to transition cluster range/index buffer writes to fragment shader reads
+                const auto& frameRes = gpuScene.GetFrameResources(frameIndex);
+                if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE && frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
+                    std::array<VkBufferMemoryBarrier, 2> barriers{};
+
+                    barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barriers[0].buffer = frameRes.clusterRangeBuffer;
+                    barriers[0].offset = 0;
+                    barriers[0].size = VK_WHOLE_SIZE;
+
+                    barriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    barriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barriers[1].buffer = frameRes.clusterLightIndexBuffer;
+                    barriers[1].offset = 0;
+                    barriers[1].size = VK_WHOLE_SIZE;
+
+                    vkCmdPipelineBarrier(
+                        cmd,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        0,
+                        0, nullptr,
+                        static_cast<uint32_t>(barriers.size()), barriers.data(),
+                        0, nullptr
+                    );
+                }
+            },
+            false,            // isRasterPass
+            VK_NULL_HANDLE,   // fb
+            true,             // bindsPipeline
+            m_LightCullingPipeline,
+            {},               // readTargets
+            {}                // writeTargets
+        );
+    }
+
+    // 6. Deferred Lighting Pass
+    if (m_DebugConfig.enableDeferredLighting) {
+        renderGraph.RegisterPass(
+            "DeferredLightingPass",
+            {"GBufferA", "GBufferB", "GBufferC", "GBufferD", "DepthBuffer", "AOBlur"},
+            {"HDRColor"},
+            PassID::Lighting,
+            [this](VkCommandBuffer cmd) {
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_HDRRenderPass;
+                rpInfo.framebuffer = frameIndex < m_HDRColorFramebuffers.size() ? m_HDRColorFramebuffers[frameIndex] : VK_NULL_HANDLE;
+                rpInfo.renderArea.offset = {0, 0};
+                rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
+     
+                VkClearValue clearValue{};
+                clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
+     
+                if (rpInfo.framebuffer == VK_NULL_HANDLE || m_DeferredLightingPipeline == VK_NULL_HANDLE) {
+                    LOG_ERROR("DeferredLightingPass: Framebuffer or pipeline is NULL");
+                    return;
+                }
+     
+                VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
+                    m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
+     
                 vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
                 VkViewport viewport{};
-                viewport.x = 0.0f; viewport.y = 0.0f;
+                viewport.x = 0.0f;
+                viewport.y = 0.0f;
                 viewport.width = static_cast<float>(m_DepthWidth);
                 viewport.height = static_cast<float>(m_DepthHeight);
-                viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
                 vkCmdSetViewport(cmd, 0, 1, &viewport);
 
                 VkRect2D scissor{};
@@ -2218,474 +2570,292 @@ void Renderer::setupRenderGraph()
                 scissor.extent = { m_DepthWidth, m_DepthHeight };
                 vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipeline);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredLightingPipeline);
 
                 // Bind Set 0: GPUScene (camera, lights)
                 VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
 
-                // Bind Set 1: SSAO resources
-                VkDescriptorSet ssaoSet = frameIndex < m_SSAODescriptorSets.size() ? m_SSAODescriptorSets[frameIndex] : VK_NULL_HANDLE;
-                if (ssaoSet != VK_NULL_HANDLE) {
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOPipelineLayout, 1, 1, &ssaoSet, 0, nullptr);
+                // Bind Set 1: GBuffer textures
+                VkDescriptorSet gbufferSet = frameIndex < m_GBufferDescriptorSets.size() ? m_GBufferDescriptorSets[frameIndex] : VK_NULL_HANDLE;
+                if (gbufferSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 1, 1, &gbufferSet, 0, nullptr);
                 }
 
+                // Bind Set 3: Local Lights
+                VkDescriptorSet localLightsSet = gpuScene.GetLocalLightsDescriptorSet(frameIndex);
+                if (localLightsSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 3, 1, &localLightsSet, 0, nullptr);
+                }
+
+                // Push Constants: Local Light Count
+                uint32_t localLightCount = gpuScene.GetLocalLightCount(frameIndex);
+                vkCmdPushConstants(cmd, m_DeferredPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &localLightCount);
+
+                // Draw fullscreen triangle
                 vkCmdDraw(cmd, 3, 1, 0, 0);
+
                 vkCmdEndRenderPass(cmd);
-            }
-        },
-        false,
-        VK_NULL_HANDLE,
-        false,
-        VK_NULL_HANDLE,
-        { m_DepthHandles[frameIndex], m_GBufferAHandles[frameIndex], m_GBufferBHandles[frameIndex] },
-        { m_SSAOHandles[frameIndex] }
-    );
- 
-    // 5. AO Blur Pass
-    renderGraph.RegisterPass(
-        "AOBlurPass",
-        {"SSAO"},
-        {"AOBlur"},
-        PassID::Lighting,
-        [this](VkCommandBuffer cmd) {
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_SSAORenderPass;
-            rpInfo.framebuffer = frameIndex < m_SSAOBlurredFramebuffers.size() ? m_SSAOBlurredFramebuffers[frameIndex] : VK_NULL_HANDLE;
-            rpInfo.renderArea.offset = {0, 0};
-            rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
 
-            VkClearValue clearValue{};
-            clearValue.color = {{1.0f, 1.0f, 1.0f, 1.0f}};
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
+                // Transition depth buffer back to DEPTH_STENCIL_ATTACHMENT_OPTIMAL for subsequent passes
+                if (depthImage != VK_NULL_HANDLE) {
+                    VkImageMemoryBarrier barrier{};
+                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    barrier.image = depthImage;
+                    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                    barrier.subresourceRange.baseMipLevel = 0;
+                    barrier.subresourceRange.levelCount = 1;
+                    barrier.subresourceRange.baseArrayLayer = 0;
+                    barrier.subresourceRange.layerCount = 1;
+                    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-            if (rpInfo.framebuffer != VK_NULL_HANDLE && m_SSAOBlurPipeline != VK_NULL_HANDLE) {
+                    vkCmdPipelineBarrier(cmd,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        0,
+                        0, nullptr,
+                        0, nullptr,
+                        1, &barrier);
+                }
+            },
+            true,
+            frameIndex < m_HDRColorFramebuffers.size() ? m_HDRColorFramebuffers[frameIndex] : VK_NULL_HANDLE,
+            true,
+            m_DeferredLightingPipeline,
+            { m_GBufferAHandles[frameIndex], m_GBufferBHandles[frameIndex], m_GBufferCHandles[frameIndex], m_GBufferDHandles[frameIndex], m_DepthHandles[frameIndex], m_SSAOHandles[frameIndex] },
+            { m_HDRColorHandles[frameIndex] }
+        );
+    }
+
+    // 7. Transparent Pass
+    if (m_DebugConfig.enableTransparentPass) {
+        VkFramebuffer transFb = VK_NULL_HANDLE;
+        if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenTransparentFramebuffers.size()) {
+            transFb = m_OffscreenTransparentFramebuffers[frameIndex];
+        } else if (frameIndex < m_TransparentFramebuffers.size()) {
+            transFb = m_TransparentFramebuffers[frameIndex];
+        }
+
+        renderGraph.RegisterPass(
+            "TransparentPass",
+            {"DepthBuffer"},
+            {"HDRColor"},
+            PassID::Lighting,
+            [this](VkCommandBuffer cmd) {
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                rpInfo.renderPass = m_TransparentRenderPass;
+                
+                if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenTransparentFramebuffers.size() && m_OffscreenTransparentFramebuffers[frameIndex] != VK_NULL_HANDLE) {
+                    rpInfo.framebuffer = m_OffscreenTransparentFramebuffers[frameIndex];
+                    rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
+                } else {
+                    rpInfo.framebuffer = frameIndex < m_TransparentFramebuffers.size() ? m_TransparentFramebuffers[frameIndex] : VK_NULL_HANDLE;
+                    rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
+                }
+                rpInfo.renderArea.offset = {0, 0};
+
+                std::array<VkClearValue, 2> clearVals{};
+                rpInfo.clearValueCount = 2;
+                rpInfo.pClearValues = clearVals.data();
+
+                if (rpInfo.framebuffer == VK_NULL_HANDLE || m_TransparentRenderPass == VK_NULL_HANDLE) {
+                    return;
+                }
+
                 vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
                 VkViewport viewport{};
-                viewport.x = 0.0f; viewport.y = 0.0f;
-                viewport.width = static_cast<float>(m_DepthWidth);
-                viewport.height = static_cast<float>(m_DepthHeight);
-                viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+                viewport.x = 0.0f;
+                viewport.y = 0.0f;
+                viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(m_DepthWidth);
+                viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(m_DepthHeight);
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
                 vkCmdSetViewport(cmd, 0, 1, &viewport);
 
                 VkRect2D scissor{};
                 scissor.offset = {0, 0};
-                scissor.extent = { m_DepthWidth, m_DepthHeight };
+                scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : VkExtent2D{m_DepthWidth, m_DepthHeight};
                 vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOBlurPipeline);
+                // Bind GPUScene descriptor set to Set 0
+                VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, resources.pipelineLayout, 0, 1, &gpuSet, 0, nullptr);
 
-                // Bind Set 0: SSAO Blur resources
-                VkDescriptorSet blurSet = frameIndex < m_SSAOBlurDescriptorSets.size() ? m_SSAOBlurDescriptorSets[frameIndex] : VK_NULL_HANDLE;
-                if (blurSet != VK_NULL_HANDLE) {
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SSAOBlurPipelineLayout, 0, 1, &blurSet, 0, nullptr);
+                // Draw Infinite Grid
+                if (m_GridPipeline != VK_NULL_HANDLE) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GridPipeline);
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GridPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
+                    vkCmdDraw(cmd, 6, 1, 0, 0);
                 }
 
-                vkCmdDraw(cmd, 3, 1, 0, 0);
+                uint32_t opaqueCount = static_cast<uint32_t>(renderQueue.getItems().size());
+                const auto& transItems = transparentRenderQueue.getItems();
+
+                for (uint32_t i = 0; i < transItems.size(); ++i) {
+                    const RenderItem& item = transItems[i];
+                    if (!item.mesh || !item.material) continue;
+
+                    item.material->bind(cmd, resources.pipelineLayout);
+
+                    GBufferPushConstants push{};
+                    push.instanceIndex = opaqueCount + i;
+                    vkCmdPushConstants(cmd, resources.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GBufferPushConstants), &push);
+
+                    item.mesh->bind(cmd);
+
+                    bool useArena = GeometryArena::IsInitialized() && GeometryArena::IsEnabled() && item.mesh->handle.IsValid();
+                    if (useArena) {
+                        auto arenaPtr = GeometryArena::GetInstance();
+                        const GeometryAllocation* alloc = arenaPtr->GetAllocation(item.mesh->handle);
+                        if (alloc) {
+                            vkCmdDrawIndexed(cmd, alloc->indexCount, 1, alloc->firstIndex, alloc->vertexOffset, 0);
+                        }
+                    } else {
+                        vkCmdDrawIndexed(cmd, item.mesh->indexCount, 1, 0, 0, 0);
+                    }
+                }
+
                 vkCmdEndRenderPass(cmd);
-            }
-        },
-        false,
-        VK_NULL_HANDLE,
-        false,
-        VK_NULL_HANDLE,
-        { m_SSAOHandles[frameIndex] },
-        { m_SSAOBlurredHandles[frameIndex] }
-    );
-
-    // 5.5 Light Culling Compute Pass
-    renderGraph.RegisterPass(
-        "LightCullingPass",
-        {},
-        {},
-        PassID::Lighting,
-        [this](VkCommandBuffer cmd) {
-            if (m_LightCullingPipeline == VK_NULL_HANDLE) {
-                return;
-            }
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_LightCullingPipeline);
-
-            VkDescriptorSet cullingSet = gpuScene.GetLightCullingDescriptorSet(frameIndex);
-            if (cullingSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(
-                    cmd,
-                    VK_PIPELINE_BIND_POINT_COMPUTE,
-                    m_LightCullingPipelineLayout,
-                    0, 1, &cullingSet,
-                    0, nullptr
-                );
-            }
-
-            Omnix::Radiance::ClusterSettings settings{};
-            uint32_t viewportWidth = m_DepthWidth;
-            uint32_t viewportHeight = m_DepthHeight;
-            if (viewportWidth == 0) viewportWidth = 1280;
-            if (viewportHeight == 0) viewportHeight = 720;
-            uint32_t tileCountX = (viewportWidth + settings.tileSizeX - 1) / settings.tileSizeX;
-            uint32_t tileCountY = (viewportHeight + settings.tileSizeY - 1) / settings.tileSizeY;
-            uint32_t depthSliceCount = settings.depthSliceCount;
-            uint32_t clusterCount = tileCountX * tileCountY * depthSliceCount;
-            uint32_t groupCount = (clusterCount + 63) / 64;
-
-            vkCmdDispatch(cmd, groupCount, 1, 1);
-
-            // Add pipeline barrier to transition cluster range/index buffer writes to fragment shader reads
-            const auto& frameRes = gpuScene.GetFrameResources(frameIndex);
-            if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE && frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
-                std::array<VkBufferMemoryBarrier, 2> barriers{};
-
-                barriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barriers[0].buffer = frameRes.clusterRangeBuffer;
-                barriers[0].offset = 0;
-                barriers[0].size = VK_WHOLE_SIZE;
-
-                barriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                barriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barriers[1].buffer = frameRes.clusterLightIndexBuffer;
-                barriers[1].offset = 0;
-                barriers[1].size = VK_WHOLE_SIZE;
-
-                vkCmdPipelineBarrier(
-                    cmd,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                    0,
-                    0, nullptr,
-                    static_cast<uint32_t>(barriers.size()), barriers.data(),
-                    0, nullptr
-                );
-            }
-        },
-        false,            // isRasterPass
-        VK_NULL_HANDLE,   // fb
-        true,             // bindsPipeline
-        m_LightCullingPipeline,
-        {},               // readTargets
-        {}                // writeTargets
-    );
-
-    // 6. Deferred Lighting Pass
-    renderGraph.RegisterPass(
-        "DeferredLightingPass",
-        {"GBufferA", "GBufferB", "GBufferC", "GBufferD", "DepthBuffer", "AOBlur"},
-        {"HDRColor"},
-        PassID::Lighting,
-        [this](VkCommandBuffer cmd) {
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_HDRRenderPass;
-            rpInfo.framebuffer = frameIndex < m_HDRColorFramebuffers.size() ? m_HDRColorFramebuffers[frameIndex] : VK_NULL_HANDLE;
-            rpInfo.renderArea.offset = {0, 0};
-            rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
- 
-            VkClearValue clearValue{};
-            clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
- 
-            if (rpInfo.framebuffer == VK_NULL_HANDLE || m_DeferredLightingPipeline == VK_NULL_HANDLE) {
-                LOG_ERROR("DeferredLightingPass: Framebuffer or pipeline is NULL");
-                return;
-            }
- 
-            VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
-                m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
- 
-            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            VkViewport viewport{};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = static_cast<float>(m_DepthWidth);
-            viewport.height = static_cast<float>(m_DepthHeight);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-            VkRect2D scissor{};
-            scissor.offset = {0, 0};
-            scissor.extent = { m_DepthWidth, m_DepthHeight };
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredLightingPipeline);
-
-            // Bind Set 0: GPUScene (camera, lights)
-            VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
-
-            // Bind Set 1: GBuffer textures
-            VkDescriptorSet gbufferSet = frameIndex < m_GBufferDescriptorSets.size() ? m_GBufferDescriptorSets[frameIndex] : VK_NULL_HANDLE;
-            if (gbufferSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 1, 1, &gbufferSet, 0, nullptr);
-            }
-
-            // Bind Set 3: Local Lights
-            VkDescriptorSet localLightsSet = gpuScene.GetLocalLightsDescriptorSet(frameIndex);
-            if (localLightsSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DeferredPipelineLayout, 3, 1, &localLightsSet, 0, nullptr);
-            }
-
-            // Push Constants: Local Light Count
-            uint32_t localLightCount = gpuScene.GetLocalLightCount(frameIndex);
-            vkCmdPushConstants(cmd, m_DeferredPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t), &localLightCount);
-
-            // Draw fullscreen triangle
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-
-            vkCmdEndRenderPass(cmd);
-
-            // Transition depth buffer back to DEPTH_STENCIL_ATTACHMENT_OPTIMAL for subsequent passes
-            if (depthImage != VK_NULL_HANDLE) {
-                VkImageMemoryBarrier barrier{};
-                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.image = depthImage;
-                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                barrier.subresourceRange.baseMipLevel = 0;
-                barrier.subresourceRange.levelCount = 1;
-                barrier.subresourceRange.baseArrayLayer = 0;
-                barrier.subresourceRange.layerCount = 1;
-                barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-                vkCmdPipelineBarrier(cmd,
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                    0,
-                    0, nullptr,
-                    0, nullptr,
-                    1, &barrier);
-            }
-        },
-        true,
-        frameIndex < m_HDRColorFramebuffers.size() ? m_HDRColorFramebuffers[frameIndex] : VK_NULL_HANDLE,
-        true,
-        m_DeferredLightingPipeline,
-        { m_GBufferAHandles[frameIndex], m_GBufferBHandles[frameIndex], m_GBufferCHandles[frameIndex], m_GBufferDHandles[frameIndex], m_DepthHandles[frameIndex], m_SSAOHandles[frameIndex] },
-        { m_HDRColorHandles[frameIndex] }
-    );
-
-    // 7. Transparent Pass
-    VkFramebuffer transFb = VK_NULL_HANDLE;
-    if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenTransparentFramebuffers.size()) {
-        transFb = m_OffscreenTransparentFramebuffers[frameIndex];
-    } else if (frameIndex < m_TransparentFramebuffers.size()) {
-        transFb = m_TransparentFramebuffers[frameIndex];
+            },
+            true,
+            transFb,
+            false,
+            VK_NULL_HANDLE,
+            { m_DepthHandles[frameIndex] },
+            { m_HDRColorHandles[frameIndex] }
+        );
     }
-
-    renderGraph.RegisterPass(
-        "TransparentPass",
-        {"DepthBuffer"},
-        {"HDRColor"},
-        PassID::Lighting,
-        [this](VkCommandBuffer cmd) {
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            rpInfo.renderPass = m_TransparentRenderPass;
-            
-            if (m_ViewportRenderer.isOffscreenRenderingEnabled() && frameIndex < m_OffscreenTransparentFramebuffers.size() && m_OffscreenTransparentFramebuffers[frameIndex] != VK_NULL_HANDLE) {
-                rpInfo.framebuffer = m_OffscreenTransparentFramebuffers[frameIndex];
-                rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
-            } else {
-                rpInfo.framebuffer = frameIndex < m_TransparentFramebuffers.size() ? m_TransparentFramebuffers[frameIndex] : VK_NULL_HANDLE;
-                rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
-            }
-            rpInfo.renderArea.offset = {0, 0};
-
-            std::array<VkClearValue, 2> clearVals{};
-            rpInfo.clearValueCount = 2;
-            rpInfo.pClearValues = clearVals.data();
-
-            if (rpInfo.framebuffer == VK_NULL_HANDLE || m_TransparentRenderPass == VK_NULL_HANDLE) {
-                return;
-            }
-
-            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            VkViewport viewport{};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(m_DepthWidth);
-            viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(m_DepthHeight);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-            VkRect2D scissor{};
-            scissor.offset = {0, 0};
-            scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : VkExtent2D{m_DepthWidth, m_DepthHeight};
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-            // Bind GPUScene descriptor set to Set 0
-            VkDescriptorSet gpuSet = gpuScene.GetDescriptorSet(frameIndex);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, resources.pipelineLayout, 0, 1, &gpuSet, 0, nullptr);
-
-            // Draw Infinite Grid
-            if (m_GridPipeline != VK_NULL_HANDLE) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GridPipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GridPipelineLayout, 0, 1, &gpuSet, 0, nullptr);
-                vkCmdDraw(cmd, 6, 1, 0, 0);
-            }
-
-            uint32_t opaqueCount = static_cast<uint32_t>(renderQueue.getItems().size());
-            const auto& transItems = transparentRenderQueue.getItems();
-
-            for (uint32_t i = 0; i < transItems.size(); ++i) {
-                const RenderItem& item = transItems[i];
-                if (!item.mesh || !item.material) continue;
-
-                item.material->bind(cmd, resources.pipelineLayout);
-
-                uint32_t gpuInstanceIndex = opaqueCount + i;
-                vkCmdPushConstants(cmd, resources.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &gpuInstanceIndex);
-
-                item.mesh->bind(cmd);
-                vkCmdDrawIndexed(cmd, item.mesh->getIndexCount(), 1, 0, 0, 0);
-            }
-
-            vkCmdEndRenderPass(cmd);
-        },
-        true,
-        transFb,
-        false,
-        VK_NULL_HANDLE,
-        { m_DepthHandles[frameIndex] },
-        { m_HDRColorHandles[frameIndex] }
-    );
 
     // 8. Post Process Pass
-    VkFramebuffer postProcessFb = VK_NULL_HANDLE;
-    VkPipeline postProcessPipeline = VK_NULL_HANDLE;
-    if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
-        postProcessFb = m_ViewportRenderer.getOffscreenFramebuffer(frameIndex);
-        postProcessPipeline = m_OffscreenPostProcessPipeline;
-    } else {
-        postProcessFb = currentSwapchainImageIndex < resources.swapChainFramebuffers.size() ? resources.swapChainFramebuffers[currentSwapchainImageIndex] : VK_NULL_HANDLE;
-        postProcessPipeline = m_PostProcessPipeline;
+    if (m_DebugConfig.enablePostProcessing) {
+        VkFramebuffer postProcessFb = VK_NULL_HANDLE;
+        VkPipeline postProcessPipeline = VK_NULL_HANDLE;
+        if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
+            postProcessFb = m_ViewportRenderer.getOffscreenFramebuffer(frameIndex);
+            postProcessPipeline = m_OffscreenPostProcessPipeline;
+        } else {
+            postProcessFb = currentSwapchainImageIndex < resources.swapChainFramebuffers.size() ? resources.swapChainFramebuffers[currentSwapchainImageIndex] : VK_NULL_HANDLE;
+            postProcessPipeline = m_PostProcessPipeline;
+        }
+
+        renderGraph.RegisterPass(
+            "PostProcessPass",
+            {"HDRColor"},
+            {"LDRColor"},
+            PassID::PostProcess,
+            [this](VkCommandBuffer cmd) {
+                VkRenderPassBeginInfo rpInfo{};
+                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+
+                VkPipeline activePipeline = VK_NULL_HANDLE;
+
+                if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
+                    rpInfo.renderPass = m_ViewportRenderer.getOffscreenRenderPass();
+                    rpInfo.framebuffer = m_ViewportRenderer.getOffscreenFramebuffer(frameIndex);
+                    rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
+                    activePipeline = m_OffscreenPostProcessPipeline;
+                } else {
+                    rpInfo.renderPass = m_SwapchainRenderPass;
+                    rpInfo.framebuffer = currentSwapchainImageIndex < resources.swapChainFramebuffers.size() ? resources.swapChainFramebuffers[currentSwapchainImageIndex] : VK_NULL_HANDLE;
+                    rpInfo.renderArea.extent = resources.swapChainExtent;
+                    activePipeline = m_PostProcessPipeline;
+                }
+
+                if (activePipeline == VK_NULL_HANDLE || rpInfo.framebuffer == VK_NULL_HANDLE) {
+                    LOG_ERROR("PostProcessPass: activePipeline or framebuffer is NULL");
+                    return;
+                }
+
+                rpInfo.renderArea.offset = {0, 0};
+
+                VkClearValue clearValue{};
+                clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+                rpInfo.clearValueCount = 1;
+                rpInfo.pClearValues = &clearValue;
+
+                vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                VkViewport viewport{};
+                viewport.x = 0.0f;
+                viewport.y = 0.0f;
+                viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(resources.swapChainExtent.width);
+                viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(resources.swapChainExtent.height);
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
+                vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+                VkRect2D scissor{};
+                scissor.offset = {0, 0};
+                scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : resources.swapChainExtent;
+                vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
+
+                // Bind Set 0: PostProcess descriptor set (contains HDR texture)
+                VkDescriptorSet postProcessSet = frameIndex < m_PostProcessDescriptorSets.size() ? m_PostProcessDescriptorSets[frameIndex] : VK_NULL_HANDLE;
+                if (postProcessSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 0, 1, &postProcessSet, 0, nullptr);
+                }
+
+                // Bind Set 1: Camera/Radiance descriptor set
+                VkDescriptorSet cameraSet = gpuScene.GetDescriptorSet(frameIndex);
+                if (cameraSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 1, 1, &cameraSet, 0, nullptr);
+                }
+
+                // Auto exposure foundation: keep a stable fallback until luminance reduction is added.
+                m_AutoExposure = glm::mix(m_AutoExposure, 1.0f, 0.05f);
+                PostProcessPushConstants postConstants{};
+                postConstants.exposure = m_PostProcessSettings.exposure;
+                postConstants.gamma = m_PostProcessSettings.gamma;
+                postConstants.bloomThreshold = m_PostProcessSettings.bloomThreshold;
+                postConstants.bloomIntensity = m_PostProcessSettings.bloomIntensity;
+                postConstants.exposureMode = static_cast<uint32_t>(m_PostProcessSettings.exposureMode);
+                postConstants.enableTonemapping = m_PostProcessSettings.enableTonemapping ? 1u : 0u;
+                postConstants.enableGammaCorrection = m_PostProcessSettings.enableGammaCorrection ? 1u : 0u;
+                postConstants.debugBeforePostProcess = m_PostProcessSettings.debugBeforePostProcess ? 1u : 0u;
+                postConstants.autoExposure = m_AutoExposure;
+                vkCmdPushConstants(cmd, m_PostProcessPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostProcessPushConstants), &postConstants);
+
+                // Draw fullscreen triangle
+                vkCmdDraw(cmd, 3, 1, 0, 0);
+
+                vkCmdEndRenderPass(cmd);
+            },
+            true,
+            postProcessFb,
+            true,
+            postProcessPipeline,
+            { m_HDRColorHandles[frameIndex] },
+            { m_LDRColorHandles[frameIndex] }
+        );
     }
 
-    renderGraph.RegisterPass(
-        "PostProcessPass",
-        {"HDRColor"},
-        {"LDRColor"},
-        PassID::PostProcess,
-        [this](VkCommandBuffer cmd) {
-            VkRenderPassBeginInfo rpInfo{};
-            rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-
-            VkPipeline activePipeline = VK_NULL_HANDLE;
-
-            if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
-                rpInfo.renderPass = m_ViewportRenderer.getOffscreenRenderPass();
-                rpInfo.framebuffer = m_ViewportRenderer.getOffscreenFramebuffer(frameIndex);
-                rpInfo.renderArea.extent = { m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight() };
-                activePipeline = m_OffscreenPostProcessPipeline;
-            } else {
-                rpInfo.renderPass = m_SwapchainRenderPass;
-                rpInfo.framebuffer = currentSwapchainImageIndex < resources.swapChainFramebuffers.size() ? resources.swapChainFramebuffers[currentSwapchainImageIndex] : VK_NULL_HANDLE;
-                rpInfo.renderArea.extent = resources.swapChainExtent;
-                activePipeline = m_PostProcessPipeline;
-            }
-
-            if (activePipeline == VK_NULL_HANDLE || rpInfo.framebuffer == VK_NULL_HANDLE) {
-                LOG_ERROR("PostProcessPass: activePipeline or framebuffer is NULL");
-                return;
-            }
-
-            rpInfo.renderArea.offset = {0, 0};
-
-            VkClearValue clearValue{};
-            clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-            rpInfo.clearValueCount = 1;
-            rpInfo.pClearValues = &clearValue;
-
-            vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            VkViewport viewport{};
-            viewport.x = 0.0f;
-            viewport.y = 0.0f;
-            viewport.width = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenWidth()) : static_cast<float>(resources.swapChainExtent.width);
-            viewport.height = m_ViewportRenderer.isOffscreenRenderingEnabled() ? static_cast<float>(m_ViewportRenderer.getOffscreenHeight()) : static_cast<float>(resources.swapChainExtent.height);
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-            VkRect2D scissor{};
-            scissor.offset = {0, 0};
-            scissor.extent = m_ViewportRenderer.isOffscreenRenderingEnabled() ? VkExtent2D{m_ViewportRenderer.getOffscreenWidth(), m_ViewportRenderer.getOffscreenHeight()} : resources.swapChainExtent;
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
-
-            // Bind Set 0: PostProcess descriptor set (contains HDR texture)
-            VkDescriptorSet postProcessSet = frameIndex < m_PostProcessDescriptorSets.size() ? m_PostProcessDescriptorSets[frameIndex] : VK_NULL_HANDLE;
-            if (postProcessSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 0, 1, &postProcessSet, 0, nullptr);
-            }
-
-            // Bind Set 1: Camera/Radiance descriptor set
-            VkDescriptorSet cameraSet = gpuScene.GetDescriptorSet(frameIndex);
-            if (cameraSet != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PostProcessPipelineLayout, 1, 1, &cameraSet, 0, nullptr);
-            }
-
-            // Auto exposure foundation: keep a stable fallback until luminance reduction is added.
-            m_AutoExposure = glm::mix(m_AutoExposure, 1.0f, 0.05f);
-            PostProcessPushConstants postConstants{};
-            postConstants.exposure = m_PostProcessSettings.exposure;
-            postConstants.gamma = m_PostProcessSettings.gamma;
-            postConstants.bloomThreshold = m_PostProcessSettings.bloomThreshold;
-            postConstants.bloomIntensity = m_PostProcessSettings.bloomIntensity;
-            postConstants.exposureMode = static_cast<uint32_t>(m_PostProcessSettings.exposureMode);
-            postConstants.enableTonemapping = m_PostProcessSettings.enableTonemapping ? 1u : 0u;
-            postConstants.enableGammaCorrection = m_PostProcessSettings.enableGammaCorrection ? 1u : 0u;
-            postConstants.debugBeforePostProcess = m_PostProcessSettings.debugBeforePostProcess ? 1u : 0u;
-            postConstants.autoExposure = m_AutoExposure;
-            vkCmdPushConstants(cmd, m_PostProcessPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostProcessPushConstants), &postConstants);
-
-            // Draw fullscreen triangle
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-
-            vkCmdEndRenderPass(cmd);
-        },
-        true,
-        postProcessFb,
-        true,
-        postProcessPipeline,
-        { m_HDRColorHandles[frameIndex] },
-        { m_LDRColorHandles[frameIndex] }
-    );
-
     // 9. Editor Overlay Pass
-    renderGraph.RegisterPass(
-        "EditorOverlayPass",
-        {"LDRColor"},
-        {"ViewportColor"},
-        PassID::PostProcess,
-        [this](VkCommandBuffer cmd) {
-            // Editor grid, selection outline overlays (stub for now)
-        },
-        false,
-        VK_NULL_HANDLE,
-        false,
-        VK_NULL_HANDLE,
-        { m_LDRColorHandles[frameIndex] },
-        { m_ViewportColorHandles[frameIndex] }
-    );
+    if (m_DebugConfig.enableEditorOverlay) {
+        renderGraph.RegisterPass(
+            "EditorOverlayPass",
+            {"LDRColor"},
+            {"ViewportColor"},
+            PassID::PostProcess,
+            [this](VkCommandBuffer cmd) {
+                // Editor grid, selection outline overlays (stub for now)
+            },
+            false,
+            VK_NULL_HANDLE,
+            false,
+            VK_NULL_HANDLE,
+            { m_LDRColorHandles[frameIndex] },
+            { m_ViewportColorHandles[frameIndex] }
+        );
+    }
 
     // 10. UI Pass (records ImGui UI overlay)
     renderGraph.RegisterPass(
@@ -2694,6 +2864,94 @@ void Renderer::setupRenderGraph()
         {"Swapchain"},
         PassID::UI,
         [this](VkCommandBuffer cmd) {
+            if (m_DebugConfig.showGBufferAlbedo && m_ViewportRenderer.isOffscreenRenderingEnabled()) {
+                VkImage srcImage = m_GBufferAImages[frameIndex];
+                VkImage dstImage = m_ViewportRenderer.getOffscreenImage(frameIndex);
+
+                if (srcImage != VK_NULL_HANDLE && dstImage != VK_NULL_HANDLE) {
+                    VkImageMemoryBarrier srcBarrierStart{};
+                    srcBarrierStart.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    srcBarrierStart.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    srcBarrierStart.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    srcBarrierStart.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    srcBarrierStart.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    srcBarrierStart.image = srcImage;
+                    srcBarrierStart.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    srcBarrierStart.subresourceRange.baseMipLevel = 0;
+                    srcBarrierStart.subresourceRange.levelCount = 1;
+                    srcBarrierStart.subresourceRange.baseArrayLayer = 0;
+                    srcBarrierStart.subresourceRange.layerCount = 1;
+                    srcBarrierStart.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    srcBarrierStart.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+                    VkImageMemoryBarrier dstBarrierStart{};
+                    dstBarrierStart.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    dstBarrierStart.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    dstBarrierStart.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    dstBarrierStart.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    dstBarrierStart.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    dstBarrierStart.image = dstImage;
+                    dstBarrierStart.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    dstBarrierStart.subresourceRange.baseMipLevel = 0;
+                    dstBarrierStart.subresourceRange.levelCount = 1;
+                    dstBarrierStart.subresourceRange.baseArrayLayer = 0;
+                    dstBarrierStart.subresourceRange.layerCount = 1;
+                    dstBarrierStart.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    dstBarrierStart.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+                    std::array<VkImageMemoryBarrier, 2> startBarriers = { srcBarrierStart, dstBarrierStart };
+                    vkCmdPipelineBarrier(cmd,
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         0,
+                                         0, nullptr,
+                                         0, nullptr,
+                                         static_cast<uint32_t>(startBarriers.size()), startBarriers.data());
+
+                    VkImageBlit blit{};
+                    blit.srcOffsets[0] = { 0, 0, 0 };
+                    blit.srcOffsets[1] = { static_cast<int32_t>(m_DepthWidth), static_cast<int32_t>(m_DepthHeight), 1 };
+                    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    blit.srcSubresource.mipLevel = 0;
+                    blit.srcSubresource.baseArrayLayer = 0;
+                    blit.srcSubresource.layerCount = 1;
+
+                    blit.dstOffsets[0] = { 0, 0, 0 };
+                    blit.dstOffsets[1] = { static_cast<int32_t>(m_ViewportRenderer.getOffscreenWidth()), static_cast<int32_t>(m_ViewportRenderer.getOffscreenHeight()), 1 };
+                    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    blit.dstSubresource.mipLevel = 0;
+                    blit.dstSubresource.baseArrayLayer = 0;
+                    blit.dstSubresource.layerCount = 1;
+
+                    vkCmdBlitImage(cmd,
+                                   srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   1, &blit,
+                                   VK_FILTER_LINEAR);
+
+                    VkImageMemoryBarrier srcBarrierEnd = srcBarrierStart;
+                    srcBarrierEnd.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    srcBarrierEnd.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    srcBarrierEnd.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                    srcBarrierEnd.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                    VkImageMemoryBarrier dstBarrierEnd = dstBarrierStart;
+                    dstBarrierEnd.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    dstBarrierEnd.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    dstBarrierEnd.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                    dstBarrierEnd.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                    std::array<VkImageMemoryBarrier, 2> endBarriers = { srcBarrierEnd, dstBarrierEnd };
+                    vkCmdPipelineBarrier(cmd,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         0,
+                                         0, nullptr,
+                                         0, nullptr,
+                                         static_cast<uint32_t>(endBarriers.size()), endBarriers.data());
+                }
+            }
+
             if (m_ViewportRenderer.isOffscreenRenderingEnabled() && currentSwapchainImageIndex < resources.swapChainImages.size()) {
                 VkImageMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2767,6 +3025,9 @@ void Renderer::buildRenderQueue()
         RenderItem item{};
         item.mesh = ro.mesh;
         item.material = ro.material;
+        if (m_DebugConfig.forceDefaultMaterial && m_DefaultMaterial) {
+            item.material = m_DefaultMaterial;
+        }
         item.transform = ro.transform;
         item.previousTransform = ro.transform;
         item.minBounds = ro.mesh ? ro.mesh->minBounds : glm::vec3(0.0f);
@@ -2922,6 +3183,10 @@ void Renderer::buildRenderQueue()
                         }
                     }
                 }
+            }
+
+            if (m_DebugConfig.forceDefaultMaterial && m_DefaultMaterial) {
+                item.material = m_DefaultMaterial;
             }
 
             if (item.material && item.material->getBlendMode() == MaterialBlendMode::Blend) {
@@ -3178,7 +3443,7 @@ void Renderer::updateGBufferDescriptorSets()
             ssaoView == VK_NULL_HANDLE || ssaoBlurView == VK_NULL_HANDLE) {
             continue;
         }
-        std::array<VkWriteDescriptorSet, 7> writes{};
+        std::array<VkWriteDescriptorSet, 10> writes{};
 
         VkDescriptorImageInfo imageInfoA{};
         imageInfoA.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -3271,6 +3536,30 @@ void Renderer::updateGBufferDescriptorSets()
         writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[6].descriptorCount = 1;
         writes[6].pImageInfo = &imageInfoSSAO;
+
+        writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[7].dstSet = m_GBufferDescriptorSets[i];
+        writes[7].dstBinding = 7;
+        writes[7].dstArrayElement = 0;
+        writes[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[7].descriptorCount = 1;
+        writes[7].pImageInfo = &imageInfoShadow;
+
+        writes[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[8].dstSet = m_GBufferDescriptorSets[i];
+        writes[8].dstBinding = 8;
+        writes[8].dstArrayElement = 0;
+        writes[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[8].descriptorCount = 1;
+        writes[8].pImageInfo = &imageInfoShadow;
+
+        writes[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[9].dstSet = m_GBufferDescriptorSets[i];
+        writes[9].dstBinding = 9;
+        writes[9].dstArrayElement = 0;
+        writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[9].descriptorCount = 1;
+        writes[9].pImageInfo = &imageInfoShadow;
 
         vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
@@ -3592,7 +3881,7 @@ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
         gbufferADesc.width = width;
         gbufferADesc.height = height;
         gbufferADesc.format = VK_FORMAT_R8G8B8A8_UNORM;
-        gbufferADesc.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        gbufferADesc.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         gbufferADesc.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         gbufferADesc.colorAttachment = true;
         gbufferADesc.debugName = "GBufferA_" + std::to_string(i);
@@ -4572,6 +4861,186 @@ VkDescriptorSet Renderer::GetSSAOBlurredTexture(uint32_t frameIdx) const {
     return m_SSAOBlurredImGuiTextures[frameIdx];
 }
 
+bool Renderer::CreateGBufferPipeline()
+{
+    // Destroy existing
+    if (m_GBufferPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(resources.device, m_GBufferPipeline, nullptr);
+        m_GBufferPipeline = VK_NULL_HANDLE;
+    }
+    if (m_GBufferPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(resources.device, m_GBufferPipelineLayout, nullptr);
+        m_GBufferPipelineLayout = VK_NULL_HANDLE;
+    }
+
+    // 1. Create GBuffer pipeline layout
+    std::vector<VkDescriptorSetLayout> setLayouts = {
+        resources.globalSetLayout,   // Set 0
+        resources.materialSetLayout  // Set 1
+    };
+
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(GBufferPushConstants); // instance index
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    layoutInfo.pSetLayouts = setLayouts.data();
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushRange;
+
+    VK_CHECK(vkCreatePipelineLayout(resources.device, &layoutInfo, nullptr, &m_GBufferPipelineLayout));
+
+    // 2. Load Shaders
+    VkShaderModule vertModule = resources.loadShaderModule("shaders/gbuffer_vert.spv");
+    VkShaderModule fragModule = resources.loadShaderModule("shaders/gbuffer_frag.spv");
+
+    if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
+        LOG_ERROR("Failed to load GBuffer shaders!");
+        if (vertModule != VK_NULL_HANDLE) vkDestroyShaderModule(resources.device, vertModule, nullptr);
+        if (fragModule != VK_NULL_HANDLE) vkDestroyShaderModule(resources.device, fragModule, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertModule;
+    stages[0].pName = "main";
+
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragModule;
+    stages[1].pName = "main";
+
+    // 3. Vertex input format (PbrVertex)
+    VkVertexInputBindingDescription bindingDesc = PbrVertex::GetBindingDescription();
+    auto attrDescs = PbrVertex::GetAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDescs.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attrDescs.data();
+
+    // 4. Input Assembly
+    VkPipelineInputAssemblyStateCreateInfo inputAsm{};
+    inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAsm.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAsm.primitiveRestartEnable = VK_FALSE;
+
+    // 5. Viewport state (Dynamic viewport/scissor)
+    VkViewport viewport{};
+    viewport.x = 0.0f; viewport.y = 0.0f;
+    viewport.width  = (float)resources.swapChainExtent.width;
+    viewport.height = (float)resources.swapChainExtent.height;
+    viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0,0}; scissor.extent = resources.swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    // 6. Rasterization State
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = RasterConvention::CullMode;
+    rasterizer.frontFace = RasterConvention::FrontFace;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    // 7. Multisample State
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // 8. Depth Stencil State
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    // 9. Blend Attachments (4 for GBuffer)
+    std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachments{};
+    for (auto& attachment : blendAttachments) {
+        attachment.blendEnable = VK_FALSE;
+        attachment.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
+    }
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;
+    colorBlending.attachmentCount = static_cast<uint32_t>(blendAttachments.size());
+    colorBlending.pAttachments = blendAttachments.data();
+
+    // 10. Dynamic State
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicInfo{};
+    dynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicInfo.dynamicStateCount = 2;
+    dynamicInfo.pDynamicStates = dynamicStates;
+
+    // 11. Create Graphics Pipeline
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAsm;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicInfo;
+    pipelineInfo.layout = m_GBufferPipelineLayout;
+    pipelineInfo.renderPass = m_GBufferRenderPass;
+    pipelineInfo.subpass = 0;
+
+    VkResult result = vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_GBufferPipeline.pipeline);
+    if (result == VK_SUCCESS) {
+        m_GBufferPipeline.name = "GBufferPipeline";
+        m_GBufferPipeline.layout = m_GBufferPipelineLayout;
+        m_GBufferPipeline.compatibleRenderPass = m_GBufferRenderPass;
+        m_GBufferPipeline.colorAttachmentCount = 4;
+        m_GBufferPipeline.vertexStride = sizeof(PbrVertex);
+    }
+
+    vkDestroyShaderModule(resources.device, vertModule, nullptr);
+    vkDestroyShaderModule(resources.device, fragModule, nullptr);
+
+    VK_CHECK(result);
+
+    if (result == VK_SUCCESS) {
+        geometryPipeline = m_GBufferPipeline.pipeline;
+        return true;
+    }
+    return false;
+}
+
 void Renderer::initGridPipeline()
 {
     if (resources.device == VK_NULL_HANDLE) return;
@@ -5183,10 +5652,137 @@ VkDescriptorSet Renderer::GetShadowTexture(uint32_t frameIdx) const {
 
 void Renderer::SetOffscreenRenderingEnabled(bool enabled) {
     m_ViewportRenderer.setOffscreenRenderingEnabled(enabled);
+    if (enabled) {
+        recreateOffscreenPostProcessPipeline();
+    }
 }
 
 void Renderer::CreateOffscreenResources(uint32_t width, uint32_t height) {
     m_ViewportRenderer.createOffscreenResources(width, height);
+    if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
+        recreateOffscreenPostProcessPipeline();
+    }
+}
+
+bool Renderer::CaptureScreenshot(const std::string& filename) {
+    if (resources.device == VK_NULL_HANDLE) return false;
+
+    // Wait for GPU to finish work before reading image
+    vkDeviceWaitIdle(resources.device);
+
+    uint32_t activeFrameIndex = frameIndex % resources.MAX_FRAMES_IN_FLIGHT;
+    
+    VkImage srcImage = VK_NULL_HANDLE;
+    uint32_t width = m_DepthWidth;
+    uint32_t height = m_DepthHeight;
+    VkImageLayout oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    if (!m_ViewportColorHandles.empty()) {
+        const RenderTarget* rt = m_RenderTargetManager.Get(m_ViewportColorHandles[activeFrameIndex]);
+        if (rt) {
+            srcImage = rt->image;
+        }
+    }
+
+    if (srcImage == VK_NULL_HANDLE) {
+        if (activeFrameIndex < resources.swapChainImages.size()) {
+            srcImage = resources.swapChainImages[activeFrameIndex];
+            width = resources.swapChainExtent.width;
+            height = resources.swapChainExtent.height;
+            oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        }
+    }
+
+    if (srcImage == VK_NULL_HANDLE) {
+        LOG_ERROR("CaptureScreenshot: Source image is null!");
+        return false;
+    }
+
+    VkDeviceSize imageSize = width * height * 4;
+    VkBuffer stagingBuffer;
+    VmaAllocation stagingAlloc;
+
+    VkBufferCreateInfo bufInfo{};
+    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufInfo.size = imageSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    VmaAllocationCreateInfo stagingAllocInfo{};
+    stagingAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufInfo, &stagingAllocInfo, &stagingBuffer, &stagingAlloc, nullptr));
+
+    VkCommandBuffer cmd = resources.beginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = srcImage;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = { width, height, 1 };
+
+    vkCmdCopyImageToBuffer(cmd, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = oldLayout;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    if (oldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    } else {
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    }
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    resources.endSingleTimeCommands(cmd);
+
+    void* mappedData;
+    VK_CHECK(vmaMapMemory(resources.allocator, stagingAlloc, &mappedData));
+
+    uint8_t* pixels = static_cast<uint8_t*>(mappedData);
+    VkFormat format = resources.swapChainImageFormat;
+    if (!m_ViewportColorHandles.empty()) {
+        const RenderTarget* rt = m_RenderTargetManager.Get(m_ViewportColorHandles[activeFrameIndex]);
+        if (rt) {
+            format = rt->format;
+        }
+    }
+
+    if (format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB) {
+        for (uint32_t i = 0; i < width * height; ++i) {
+            uint8_t temp = pixels[i * 4];
+            pixels[i * 4] = pixels[i * 4 + 2];
+            pixels[i * 4 + 2] = temp;
+        }
+    }
+
+    int success = stbi_write_png(filename.c_str(), width, height, 4, pixels, width * 4);
+
+    vmaUnmapMemory(resources.allocator, stagingAlloc);
+    vmaDestroyBuffer(resources.allocator, stagingBuffer, stagingAlloc);
+
+    return success != 0;
 }
 
 } // namespace eng::renderer

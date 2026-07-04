@@ -11,7 +11,7 @@
 #include "Vulkan/VulkanInstance.h"
 #include "Vulkan/VulkanDevice.h"
 #include "Vulkan/VulkanSwapChain.h"
-#include "renderer/PyramidRenderer.h"
+
 #include "Rendering/Core/Renderer.h"
 #include "ECS/ECSComponents.h"
 #include "Core/Profiling/Profiler.h"
@@ -164,7 +164,7 @@ namespace eng::runtime {
                 m_SceneRenderer.reset();
             }
 
-            m_PyramidRenderer.reset();
+
 
             // Destroy sync objects cleanly via EngineResources
             m_SharedResources.destroySyncObjects();
@@ -411,9 +411,6 @@ namespace eng::runtime {
 
         // Sync objects are handled by m_SharedResources.createSyncObjects() below
 
-        m_PyramidRenderer = std::make_unique<eng::renderer::PyramidRenderer>();
-        m_PyramidRenderer->Initialize(m_VulkanInstance->GetHandle(), device, m_RenderPass, m_SwapChain->GetExtent());
-
         // Populate shared resources for SceneRenderer
         m_SharedResources.instance = m_VulkanInstance->GetHandle();
         m_SharedResources.device = vkDevice;
@@ -428,10 +425,6 @@ namespace eng::runtime {
         m_SharedResources.swapChainImages = m_SwapChain->GetImages();
         m_SharedResources.swapChainFramebuffers = m_Framebuffers;
         m_SharedResources.renderPass = m_RenderPass;
-        m_SharedResources.graphicsPipeline = m_PyramidRenderer->GetPipeline();
-        // m_SharedResources.pipelineLayout = m_PyramidRenderer->GetPipelineLayout(); // Handled by createPipelineLayout now
-        m_SharedResources.globalSetLayout = m_PyramidRenderer->GetDescriptorSetLayout();
-        m_SharedResources.descriptorSets = m_PyramidRenderer->GetDescriptorSets();
         m_SharedResources.imageAvailableSemaphores = m_ImageAvailableSemaphores;
         m_SharedResources.renderFinishedSemaphores = m_RenderFinishedSemaphores;
         m_SharedResources.inFlightFences = m_InFlightFences;
@@ -450,8 +443,8 @@ namespace eng::runtime {
         
         m_SharedResources.createMaterialDescriptorResources();
         m_SharedResources.createLightingDescriptorResources();
-        m_SharedResources.createPipelineLayout();
         m_SharedResources.createPerFrameResources();
+        m_SharedResources.createPipelineLayout();
         m_SharedResources.createCommandPools();
         m_SharedResources.createCommandBuffers();
 
@@ -540,9 +533,6 @@ namespace eng::runtime {
         ENG_PROFILE_SCOPE("BuildAndExecuteGraph");
 
         if (USE_SCENE_RENDERER && m_SceneRenderer) {
-            if (m_PyramidRenderer) {
-                m_PyramidRenderer->Update(static_cast<float>(m_FrameStats.lastFrameTime), m_CurrentFrame);
-            }
             m_SceneRenderer->BeginFrame();
 
             CameraComponent cameraComp;
@@ -624,8 +614,7 @@ namespace eng::runtime {
 
         vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         
-        m_PyramidRenderer->Update(static_cast<float>(m_FrameStats.lastFrameTime), m_CurrentFrame);
-        m_PyramidRenderer->RecordCommands(m_CommandBuffers[m_CurrentFrame], m_CurrentFrame);
+        // Legacy path: pyramid renderer removed
 
         vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
 

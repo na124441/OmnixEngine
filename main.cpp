@@ -22,7 +22,17 @@ int main(int argc, char* argv[])
         {
             eng::runtime::EngineRuntime runtime;
             if (runtime.Initialize(argc, argv)) {
-                runtime.Run();
+                try {
+                    runtime.Run();
+                }
+                catch (const std::exception& e) {
+                    fprintf(stderr, "FATAL ERROR: Exception inside runtime.Run(): %s\n", e.what());
+                    fflush(stderr);
+                }
+                catch (...) {
+                    fprintf(stderr, "FATAL ERROR: Unknown exception inside runtime.Run()\n");
+                    fflush(stderr);
+                }
                 runtime.Shutdown();
             } else {
                 fprintf(stderr, "FATAL ERROR: Failed to initialize EngineRuntime\n");

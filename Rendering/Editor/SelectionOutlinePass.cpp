@@ -11,7 +11,7 @@ void SelectionOutlinePass::Initialize(EngineResources& resources, VkRenderPass r
     VkPushConstantRange pushConstant{};
     pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstant.offset = 0;
-    pushConstant.size = 24; // uint32_t selectedEntityID + float outlineThickness + vec4 outlineColor (16 bytes) = 24 bytes
+    pushConstant.size = 32; // alignas(16) on outlineColor makes struct size 32 bytes to match std140 layout
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -182,7 +182,7 @@ void SelectionOutlinePass::Execute(
     struct PushConstants {
         uint32_t selectedEntityID;
         float outlineThickness;
-        float outlineColor[4];
+        alignas(16) float outlineColor[4];
     } pcs{};
     pcs.selectedEntityID = selectedEntityID;
     pcs.outlineThickness = 1.5f; // default thickness

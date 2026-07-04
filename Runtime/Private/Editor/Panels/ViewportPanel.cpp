@@ -1067,8 +1067,8 @@ namespace eng::runtime {
 
             ImGui::SetCursorScreenPos(ImVec2(imageStartPos.x + 10.0f, imageStartPos.y + size.y - 120.0f));
             
-            ImGui::BeginChild("ViewportStats", ImVec2(390.0f, 520.0f), ImGuiChildFlags_Borders, 
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+            ImGui::BeginChild("ViewportStats", ImVec2(390.0f, 600.0f), ImGuiChildFlags_Borders, 
+                              ImGuiWindowFlags_None);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.9f, 1.0f));
             ImGui::Text("--- Viewport Diagnostics ---");
             ImGui::Text("Scene: %s", activeScene ? activeScene->GetName().c_str() : "Untitled");
@@ -1105,6 +1105,32 @@ namespace eng::runtime {
             ImGui::Text("Transparent: %u", renderStats.transparentObjectCount);
             ImGui::Text("GBuffer Est: %.1f MB", renderStats.gbufferMemoryMB);
             ImGui::Text("RenderDoc: F12 capture foundation");
+            
+            // G3 GPU Scene Diagnostics
+            ImGui::Separator();
+            ImGui::Text("--- GPU Scene (G3) ---");
+            auto gpuDiag = renderer->gpuScene.GetDiagnostics();
+            ImGui::Text("GPU Instances: %u", gpuDiag.instanceCount);
+            ImGui::Text("Active Slots: %u", gpuDiag.activeSlots);
+            ImGui::Text("Free Slots: %u", gpuDiag.freeSlots);
+            ImGui::Text("Upload Size: %llu bytes", gpuDiag.uploadBytesThisFrame);
+            ImGui::Text("Stale Handles: %u", gpuDiag.staleHandleErrors);
+            ImGui::Text("GPU Meshes: %u", gpuDiag.gpuMeshRecordCount);
+            ImGui::Text("Material Overrides: %u", gpuDiag.materialOverrideCount);
+
+            // G4 GPU-Driven Indexed Rendering Diagnostics
+            ImGui::Separator();
+            ImGui::Text("--- GPU Rendering (G4) ---");
+            const char* modeName = "CPUDriven";
+            auto mode = renderer->GetVisibilityMode();
+            if (mode == eng::renderer::Renderer::VisibilityMode::GPUFrustumOnly) modeName = "GPUFrustumOnly";
+            else if (mode == eng::renderer::Renderer::VisibilityMode::GPUFrustumIndirect) modeName = "GPUFrustumIndirect";
+            else if (mode == eng::renderer::Renderer::VisibilityMode::GPUFrustumOcclusion) modeName = "GPUFrustumOcclusion";
+            else if (mode == eng::renderer::Renderer::VisibilityMode::VisibilityBuffer) modeName = "VisibilityBuffer";
+            ImGui::Text("Visibility Mode: %s", modeName);
+            ImGui::Text("GPU Visible Meshes: %u", renderer->GetGpuVisibleMeshCount());
+            ImGui::Text("GPU Indirect Draws: %u", renderer->GetGpuIndirectDrawCount());
+
             if (!renderStats.passTimings.empty()) {
                 ImGui::Separator();
                 ImGui::Text("GPU Pass Timings");

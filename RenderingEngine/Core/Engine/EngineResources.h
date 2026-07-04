@@ -9,6 +9,9 @@
 
 namespace eng::renderer {
 
+class GeometryArena;
+struct RenderDebugConfig;
+
 struct TransferContext {
     VkBuffer          stagingBuffer = VK_NULL_HANDLE;
     VmaAllocation     stagingAlloc;
@@ -25,6 +28,8 @@ struct FrameData {
 };
 
 struct EngineResources {
+    const RenderDebugConfig* debugConfig = nullptr;
+    GeometryArena*      geometryArena   = nullptr;
     // Core Vulkan objects – owned elsewhere
     VkInstance          instance        = VK_NULL_HANDLE;
     VkDevice            device          = VK_NULL_HANDLE;
@@ -44,6 +49,7 @@ struct EngineResources {
     // Render pass & pipeline (baseline)
     VkRenderPass        renderPass       = VK_NULL_HANDLE;
     VkRenderPass        transparentRenderPass = VK_NULL_HANDLE;
+    VkRenderPass        gbufferRenderPass = VK_NULL_HANDLE;
     VkPipeline          graphicsPipeline = VK_NULL_HANDLE;
     VkPipelineLayout    pipelineLayout   = VK_NULL_HANDLE;
 

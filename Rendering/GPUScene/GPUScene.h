@@ -11,8 +11,9 @@
 #include "Rendering/Lighting/LocalLightGPU.h"
 #include "Rendering/Lighting/ClusteredLightingTypes.h"
 #include "GPUInstance.h"
-#include "GPUVisibilityTypes.h"
 #include "GPUMeshDrawData.h"
+#include "GPUVisibilityTypes.h"
+#include <mutex>
 
 class Scene;
 
@@ -47,6 +48,12 @@ namespace eng::renderer {
 
         VkBuffer frustumBuffer = VK_NULL_HANDLE;
         VmaAllocation frustumAlloc = VK_NULL_HANDLE;
+
+        // G3: GPU Material Override Buffer
+        VkBuffer materialOverrideBuffer = VK_NULL_HANDLE;
+        VmaAllocation materialOverrideAlloc = VK_NULL_HANDLE;
+        VkDeviceSize materialOverrideBufferSize = 0;
+        uint32_t materialOverrideCapacity = 0;
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
@@ -84,10 +91,21 @@ namespace eng::renderer {
         VmaAllocation clusterSettingsAlloc = VK_NULL_HANDLE;
     };
 
+    struct GPUSceneDiagnostics {
+        uint32_t instanceCount = 0;
+        uint32_t activeSlots = 0;
+        uint32_t freeSlots = 0;
+        uint32_t dirtyRangesCount = 0;
+        uint64_t uploadBytesThisFrame = 0;
+        uint32_t staleHandleErrors = 0;
+        uint32_t gpuMeshRecordCount = 0;
+        uint32_t materialOverrideCount = 0;
+    };
+
     class GPUScene {
     public:
-        GPUScene() = default;
-        ~GPUScene() = default;
+        GPUScene();
+        ~GPUScene();
 
         GPUScene(const GPUScene&) = delete;
         GPUScene& operator=(const GPUScene&) = delete;
@@ -96,6 +114,21 @@ namespace eng::renderer {
 
         void Initialize(EngineResources& resources);
         void Shutdown(EngineResources& resources);
+
+        // G3 Stable Instance Allocation APIs
+        GPUSceneInstanceHandle CreateInstance(const GPUGeometryInstance& initialData);
+        void UpdateInstance(GPUSceneInstanceHandle handle, const GPUGeometryInstance& data);
+        void DestroyInstance(GPUSceneInstanceHandle handle);
+        bool IsInstanceValid(GPUSceneInstanceHandle handle) const;
+        
+        // Entity to Instance mapping
+        void RegisterEntityInstance(uint32_t entityID, GPUSceneInstanceHandle handle);
+        GPUSceneInstanceHandle GetEntityInstance(uint32_t entityID) const;
+        void UnregisterEntityInstance(uint32_t entityID);
+
+        // Material overrides
+        void SetInstanceMaterialOverrides(GPUSceneInstanceHandle handle, const std::vector<uint32_t>& materialIDs);
+        void ClearInstanceMaterialOverrides(GPUSceneInstanceHandle handle);
 
         void UpdateFrame(
             EngineResources& resources,
@@ -117,8 +150,11 @@ namespace eng::renderer {
         VkDescriptorSet GetLightCullingDescriptorSet(uint32_t frameIndex) const { return m_Frames[frameIndex].lightCullingDescriptorSet; }
         uint32_t GetLocalLightCount(uint32_t frameIndex) const { return m_Frames[frameIndex].localLightCount; }
         const GPUSceneFrameResources& GetFrameResources(uint32_t frameIndex) const { return m_Frames[frameIndex]; }
+        
         const std::vector<GPUInstance>& GetGPUInstances() const { return m_GPUInstances; }
         const std::vector<GPUMeshDrawData>& GetGPUMeshDrawData() const { return m_GPUMeshDrawData; }
+
+        GPUSceneDiagnostics GetDiagnostics() const;
 
     private:
         void createDescriptorSetLayout(EngineResources& resources);
@@ -138,12 +174,51 @@ namespace eng::renderer {
 
         void writeDescriptorSet(EngineResources& resources, GPUSceneFrameResources& frameRes);
 
+        // Persistent Slot Tables
+        struct InstanceSlot {
+            GPUGeometryInstance instance;
+            uint32_t generation = 0;
+            bool active = false;
+            uint32_t entityID = 0;
+            uint32_t dirtyFrames = 0; // Number of frames remaining to upload this slot
+            uint32_t overrideOffset = 0xFFFFFFFF; // Offset in overrides array
+            uint32_t overrideCount = 0;
+        };
+
+        struct MeshSlot {
+            GPUMeshRecord record;
+            const Mesh* meshPtr = nullptr;
+            uint32_t generation = 0;
+            bool active = false;
+        };
+
         VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_LocalLightsDescriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorSetLayout m_LightCullingDescriptorSetLayout = VK_NULL_HANDLE;
         std::vector<GPUSceneFrameResources> m_Frames;
+
+        // Stable records and managers
+        std::vector<InstanceSlot> m_InstanceSlots;
+        std::vector<uint32_t> m_FreeInstanceSlots;
+        std::unordered_map<uint32_t, GPUSceneInstanceHandle> m_EntityToInstance;
+
+        // Material overrides store
+        std::vector<uint32_t> m_MaterialOverrides;
+
+        // Mesh management
+        std::vector<MeshSlot> m_MeshSlots;
+        std::unordered_map<const Mesh*, uint32_t> m_MeshToIndex;
+
+        // Compat caches populated in UpdateFrame
         std::vector<GPUInstance> m_GPUInstances;
         std::vector<GPUMeshDrawData> m_GPUMeshDrawData;
+
+        // Stats
+        uint64_t m_UploadBytesThisFrame = 0;
+        uint32_t m_StaleHandleErrors = 0;
+        uint32_t m_GrowthEvents = 0;
+
+        mutable std::mutex m_SceneMutex;
     };
 
 } // namespace eng::renderer

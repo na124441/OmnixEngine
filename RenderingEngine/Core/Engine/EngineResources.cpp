@@ -1,5 +1,6 @@
 #include "Core/pch.h"
 #include "EngineResources.h"
+#include "Core/types/GPUSceneBindings.h"
 #include "RenderingEngine/Renderer/LightingUBO.h"
 #include <fstream>
 #include "VmaHelpers.h"
@@ -573,7 +574,7 @@ void EngineResources::createPipelineLayout()
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushRange.offset = 0;
-    pushRange.size = sizeof(uint32_t); // instance index
+    pushRange.size = sizeof(GBufferPushConstants); // instance index
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

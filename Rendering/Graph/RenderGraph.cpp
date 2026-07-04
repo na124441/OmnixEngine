@@ -77,6 +77,13 @@ void RenderGraph::Compile(EngineResources& resources)
 
 void RenderGraph::EnsureTimestampQueries(EngineResources& resources)
 {
+    // Timestamp profiling is disabled while render graph physical slots may be
+    // recorded and submitted independently. A single query pool reset/write/read
+    // stream is only valid once all timed command buffers have a guaranteed
+    // execution order and are all submitted.
+    (void)resources;
+    return;
+
     if (resources.device == VK_NULL_HANDLE || resources.physicalDevice == VK_NULL_HANDLE) {
         return;
     }
@@ -107,9 +114,12 @@ void RenderGraph::EnsureTimestampQueries(EngineResources& resources)
 
 void RenderGraph::CollectGpuTimings(EngineResources& resources, uint32_t frameIndex)
 {
+    (void)resources;
     (void)frameIndex;
     m_LastPassTimings.clear();
     m_LastGpuFrameTimeMs = 0.0f;
+    m_LastTimingNames.clear();
+    return;
 
     if (resources.device == VK_NULL_HANDLE || m_TimestampQueryPool == VK_NULL_HANDLE || m_LastTimingNames.empty()) {
         return;
@@ -203,6 +213,7 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
     }
 
     std::vector<bool> cmdBufferBegun(PASS_COUNT, false);
+    m_LastRecordedSlots.assign(PASS_COUNT, false);
     bool timestampQueriesReset = false;
     uint32_t queryIndex = 0;
 
@@ -338,6 +349,7 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
         if (cmdBufferBegun[i]) {
             VkCommandBuffer cmd = resources.commandBuffers[frameIndex][i];
             VK_CHECK(vkEndCommandBuffer(cmd));
+            m_LastRecordedSlots[i] = true;
         }
     }
 

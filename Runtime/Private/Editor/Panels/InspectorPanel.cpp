@@ -99,7 +99,7 @@ namespace eng::runtime {
             if (sig.test(coordinator.GetComponentType<MeshRendererComponent>())) {
                 if (ImGui::CollapsingHeader("Mesh Renderer Component", ImGuiTreeNodeFlags_DefaultOpen)) {
                     auto& meshRenderer = coordinator.GetComponent<MeshRendererComponent>(selectedEntity);
-                    ComponentWidgets::DrawMeshRenderer(meshRenderer, dirtyState);
+                    ComponentWidgets::DrawMeshRenderer(meshRenderer, dirtyState, m_Context);
                     ImGui::Spacing();
                     if (ImGui::Button("Remove Mesh Renderer Component")) {
                         coordinator.RemoveComponent<MeshRendererComponent>(selectedEntity);

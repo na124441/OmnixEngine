@@ -17,6 +17,9 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
 
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
     vec4 exposureSettings;
     uvec4 renderFlags;
 } frame;
@@ -45,6 +48,8 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     
     // Shadow mapping settings
     mat4 directionalLightProjView;
+    mat4 directionalLightProjViews[4];
+    vec4 cascadeSplitDepths;
     float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -111,6 +116,9 @@ layout(set = 1, binding = 3) uniform sampler2D depthBuffer; // Depth
 layout(set = 1, binding = 4) uniform sampler2D gbufferD; // Emissive + Shading Model
 layout(set = 1, binding = 5) uniform sampler2D shadowMap; // Shadow Depth Map
 layout(set = 1, binding = 6) uniform sampler2D ssaoMap; // SSAO Map
+layout(set = 1, binding = 7) uniform sampler2D shadowMapCascade1;
+layout(set = 1, binding = 8) uniform sampler2D shadowMapCascade2;
+layout(set = 1, binding = 9) uniform sampler2D shadowMapCascade3;
 
 struct LocalLightGPU
 {
@@ -256,6 +264,13 @@ vec3 reconstructWorldPos(vec2 uv, float depth) {
     return worldPos.xyz / worldPos.w;
 }
 
+float SampleShadowMap(uint cascadeIndex, vec2 coords) {
+    if (cascadeIndex == 0) return texture(shadowMap, coords).r;
+    if (cascadeIndex == 1) return texture(shadowMapCascade1, coords).r;
+    if (cascadeIndex == 2) return texture(shadowMapCascade2, coords).r;
+    return texture(shadowMapCascade3, coords).r;
+}
+
 float CalculateShadow(vec3 worldPos, vec3 N)
 {
     if (lighting.shadowLightCast == 0)
@@ -263,9 +278,17 @@ float CalculateShadow(vec3 worldPos, vec3 N)
         return 0.0;
     }
 
+    vec4 viewPos = frame.view * vec4(worldPos, 1.0);
+    float depthVal = -viewPos.z;
+
+    uint cascadeIndex = 0;
+    if (depthVal > lighting.cascadeSplitDepths[0]) cascadeIndex = 1;
+    if (depthVal > lighting.cascadeSplitDepths[1]) cascadeIndex = 2;
+    if (depthVal > lighting.cascadeSplitDepths[2]) cascadeIndex = 3;
+
     // Apply normal bias to prevent shadow acne (especially with PCF filtering)
     vec3 offsetWorldPos = worldPos + N * lighting.shadowNormalBias;
-    vec4 lightSpace = lighting.directionalLightProjView * vec4(offsetWorldPos, 1.0);
+    vec4 lightSpace = lighting.directionalLightProjViews[cascadeIndex] * vec4(offsetWorldPos, 1.0);
 
     vec3 projCoords = lightSpace.xyz / lightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
@@ -284,6 +307,9 @@ float CalculateShadow(vec3 worldPos, vec3 N)
 
     float bias = constantBias + slopeBias * (1.0 - max(dot(N, L), 0.0));
 
+    // Snapping adjustment bias scaling for farther cascades
+    bias *= (1.0 + float(cascadeIndex) * 2.0);
+
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
 
     float shadow = 0.0;
@@ -299,10 +325,10 @@ float CalculateShadow(vec3 worldPos, vec3 N)
     {
         for (int y = -radius; y <= radius; y++)
         {
-            float closestDepth = texture(
-                shadowMap,
+            float closestDepth = SampleShadowMap(
+                cascadeIndex,
                 projCoords.xy + vec2(x, y) * texelSize
-            ).r;
+            );
 
             shadow += (projCoords.z - bias) > closestDepth ? 1.0 : 0.0;
             total += 1.0;
@@ -474,7 +500,7 @@ void main()
     }
 
     vec3 albedo = gbufferASample.rgb;
-    vec3 N = gbufferBSample.rgb;
+    vec3 N = normalize(gbufferBSample.rgb);
     float roughness = gbufferBSample.a;
     float metallic = gbufferCSample.r;
     float AO = gbufferCSample.g;
@@ -708,8 +734,10 @@ void main()
 
     // Ambient sky light (multiplied by finalAO)
     float ssao = texture(ssaoMap, inUV).r;
-    float finalAO = AO * ssao;
-    vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo * finalAO;
+    float finalAO = clamp(AO * max(ssao, 0.45), 0.35, 1.0);
+    vec3 ambientLight = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * finalAO;
+    ambientLight = max(ambientLight, vec3(0.18));
+    vec3 ambient = ambientLight * albedo;
 
     vec3 color = (ambient + Lo) * exposure + emissive;
 

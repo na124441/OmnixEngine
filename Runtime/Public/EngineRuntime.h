@@ -55,6 +55,7 @@ namespace eng::runtime {
 
         RuntimeState GetState() const { return m_State.load(std::memory_order_relaxed); }
         bool IsRunning() const { return GetState() == RuntimeState::Running; }
+        const RuntimeContext& GetContext() const { return m_Context; }
 
     private:
         std::atomic<RuntimeState> m_State{ RuntimeState::Uninitialized };

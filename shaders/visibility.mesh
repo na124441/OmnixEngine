@@ -1,0 +1,116 @@
+#version 450
+#extension GL_EXT_mesh_shader : require
+
+layout(local_size_x = 32) in;
+layout(triangles, max_vertices = 64, max_primitives = 126) out;
+
+// Outputs to fragment shader matching visibility_frag
+layout(location = 0) out flat uint outInstanceID[];
+layout(location = 1) out flat uint outClusterID[];
+layout(location = 2) out flat uint outPrimitiveID[];
+
+// Binding 0: Camera UBO
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    vec4 cameraPosition;
+    vec4 viewportSize;
+} frame;
+
+struct InstanceData {
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
+    InstanceData instances[];
+} inst;
+
+struct GPURVGCluster {
+    vec4 boundsSphere;
+    vec4 coneAxisCutoff;
+    uint pageIndex;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint indexCount;
+    uint padding[3];
+};
+
+layout(std430, set = 0, binding = 10) readonly buffer RVGClusterBuffer {
+    GPURVGCluster clusters[];
+} clusterBuf;
+
+struct PbrVertex {
+    vec3 pos;
+    vec3 normal;
+    vec2 uv;
+    vec4 tangent;
+};
+
+// Global resident buffers (bound as storage buffers on Set 1)
+layout(std430, set = 1, binding = 0) readonly buffer GlobalVertexBuffer {
+    PbrVertex vertices[];
+} globalVB;
+
+layout(std430, set = 1, binding = 1) readonly buffer GlobalIndexBuffer {
+    uint indices[];
+} globalIB;
+
+// Task payload if task shader is used
+struct TaskPayload {
+    uint clusterID;
+    uint instanceID;
+};
+taskPayloadSharedEXT TaskPayload payload;
+
+void main()
+{
+    // Task shader passes instanceID and clusterID to us
+    uint clusterID = payload.clusterID;
+    uint instanceID = payload.instanceID;
+
+    GPURVGCluster cluster = clusterBuf.clusters[clusterID];
+    uint vertCount = cluster.vertexCount;
+    uint primCount = cluster.indexCount / 3;
+
+    // Set output counts
+    if (gl_LocalInvocationID.x == 0) {
+        SetMeshOutputsEXT(vertCount, primCount);
+    }
+
+    InstanceData instance = inst.instances[instanceID];
+    mat4 mvp = frame.projection * frame.view * instance.worldMatrix;
+
+    // 1. Process Vertices
+    for (uint i = gl_LocalInvocationID.x; i < vertCount; i += 32) {
+        uint globalVertIdx = cluster.vertexOffset + i;
+        PbrVertex v = globalVB.vertices[globalVertIdx];
+        
+        gl_MeshVerticesEXT[i].gl_Position = mvp * vec4(v.pos, 1.0);
+    }
+
+    // 2. Process Primitives
+    for (uint i = gl_LocalInvocationID.x; i < primCount; i += 32) {
+        uint globalIdxOffset = cluster.indexOffset + i * 3;
+        
+        uint i0 = globalIB.indices[globalIdxOffset + 0];
+        uint i1 = globalIB.indices[globalIdxOffset + 1];
+        uint i2 = globalIB.indices[globalIdxOffset + 2];
+
+        gl_PrimitiveTriangleIndicesEXT[i] = uvec3(i0, i1, i2);
+
+        // Assign attributes per primitive for visibility rendering
+        outInstanceID[i] = instanceID;
+        outClusterID[i] = clusterID;
+        outPrimitiveID[i] = i; // Flat primitive offset inside cluster
+    }
+}

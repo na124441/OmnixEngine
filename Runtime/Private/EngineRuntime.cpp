@@ -25,6 +25,8 @@
 #include "Runtime/Public/AssetLoadingStressTests.h"
 #include "Runtime/Public/HotReloadTests.h"
 #include "Runtime/Public/PackageTests.h"
+#include "Runtime/Public/GeometryHandleTests.h"
+#include "Runtime/Public/GoldenImageTests.h"
 #include <cstdlib>
 
 #include "Physics/Public/PhysicsWorld.h"
@@ -68,8 +70,9 @@ namespace eng::runtime {
                     // We can post CLI commands here or push to input system queue
                     // For compatibility, we can trigger rebindings or gameplay commands
                     if (line == "quit") {
+                        LOG_INFO("[Runtime] CLI input requested shutdown.");
                         if (m_Renderer) {
-                            static_cast<EngineLoop*>(m_Renderer.get())->RequestExit();
+                            static_cast<EngineLoop*>(m_Renderer.get())->RequestExit("CLI input command: quit");
                         }
                         m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
                     }
@@ -93,6 +96,7 @@ namespace eng::runtime {
         bool testLoad = false;
         bool testReload = false;
         bool testPackage = false;
+        bool testGolden = false;
         for (int i = 1; i < argc; ++i) {
             if (argv[i]) {
                 std::string arg(argv[i]);
@@ -118,6 +122,8 @@ namespace eng::runtime {
                     testReload = true;
                 } else if (arg == "--test-package") {
                     testPackage = true;
+                } else if (arg == "--test-rvg-golden") {
+                    testGolden = true;
                 } else if (arg == "--editor") {
                     m_Context.mode = RuntimeMode::Editor;
                 }
@@ -137,8 +143,17 @@ namespace eng::runtime {
         }
 
         if (testAssets) {
-            // Run asset registry tests
+            // Run asset registry tests & geometry handle tests
             bool success = eng::runtime::RunAssetRegistryTests();
+            if (success) {
+                success = eng::renderer::RunGeometryHandleTests();
+            }
+            std::exit(success ? 0 : 1);
+        }
+
+        if (testGolden) {
+            // Run golden-image comparison test
+            bool success = eng::renderer::RunGoldenImageTests();
             std::exit(success ? 0 : 1);
         }
 
@@ -211,9 +226,13 @@ namespace eng::runtime {
         m_GameplaySaveSystem = std::make_unique<GameplaySaveSystem>();
         TrackAllocation("SaveSystem", sizeof(GameplaySaveSystem));
 
-        // 3. Spawning Input Thread
-        m_InputThreadRunning.store(true, std::memory_order_relaxed);
-        m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
+        // 3. Spawning CLI Input Thread
+        // The editor is a GUI application; stdin can be redirected, closed, or contain
+        // stale console input. Do not let it control editor lifetime.
+        if (m_Context.mode != RuntimeMode::Editor) {
+            m_InputThreadRunning.store(true, std::memory_order_relaxed);
+            m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
+        }
 
         // Metadata Schema Registry
         m_SchemaRegistry = std::make_unique<ComponentSchemaRegistry>();
@@ -267,6 +286,7 @@ namespace eng::runtime {
 
         m_AssetRegistry = std::make_unique<AssetRegistry>();
         m_AssetRegistry->LoadRegistry("AssetRegistry.json");
+        m_AssetRegistry->ScanProjectAssets();
         if (m_AssetRegistry->GetAssets().empty()) {
             m_AssetRegistry->RegisterAsset("Assets/Models/cube.obj", AssetType::Mesh);
             m_AssetRegistry->RegisterAsset("Assets/Models/pyramid.obj", AssetType::Mesh);
@@ -577,23 +597,48 @@ namespace eng::runtime {
             RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
             
             if (m_Editor) {
-                m_Editor->Render();
+                try {
+                    m_Editor->Render();
+                } catch (const std::exception& e) {
+                    LOG_ERROR("[Runtime] Exception in EditorLayer::Render: %s", e.what());
+                    throw;
+                }
             }
 
             auto renderStart = Clock::now();
             {
                 OMNIX_PROFILE_SCOPE("Render");
                 if (m_Renderer) {
-                    m_Renderer->BeginFrame(dt);
-                    m_Renderer->Render();
-                    m_Renderer->EndFrame();
+                    try {
+                        m_Renderer->BeginFrame(dt);
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::BeginFrame: %s", e.what());
+                        throw;
+                    }
+                    try {
+                        m_Renderer->Render();
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::Render: %s", e.what());
+                        throw;
+                    }
+                    try {
+                        m_Renderer->EndFrame();
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::EndFrame: %s", e.what());
+                        throw;
+                    }
                 }
             }
             auto renderEnd = Clock::now();
             m_Timing.renderTime = std::chrono::duration<double>(renderEnd - renderStart).count();
 
             if (m_Editor) {
-                m_Editor->EndFrame();
+                try {
+                    m_Editor->EndFrame();
+                } catch (const std::exception& e) {
+                    LOG_ERROR("[Runtime] Exception in EditorLayer::EndFrame: %s", e.what());
+                    throw;
+                }
             }
 
             // Frame End Stage
@@ -606,6 +651,10 @@ namespace eng::runtime {
 
             // Check if renderer requested exit
             if (m_Renderer && !static_cast<EngineLoop*>(m_Renderer.get())->IsRunning()) {
+                auto* engineLoop = static_cast<EngineLoop*>(m_Renderer.get());
+                LOG_INFO("[Runtime] Main loop stopping because renderer is not running. HasStarted={}, ExitRequested={}",
+                         engineLoop->HasStarted() ? "true" : "false",
+                         engineLoop->HasExitRequest() ? "true" : "false");
                 m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
             }
 
@@ -637,10 +686,17 @@ namespace eng::runtime {
 
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
+
+        LOG_INFO("[Runtime] Engine main loop exited with state {}", static_cast<int>(GetState()));
     }
 
     void EngineRuntime::Shutdown() {
-        if (GetState() == RuntimeState::Uninitialized) {
+        RuntimeState currentState = GetState();
+        if (currentState == RuntimeState::Uninitialized) {
+            return;
+        }
+        if (currentState == RuntimeState::Running) {
+            LOG_WARN("[Runtime] Ignoring Shutdown() while main loop is still running; request exit through EngineLoop::RequestExit().");
             return;
         }
 

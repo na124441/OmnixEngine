@@ -459,8 +459,8 @@ struct PointLightComponent
 struct SkyLightComponent
 {
     bool enabled = true;
-    Vector3 color = {0.10f, 0.12f, 0.16f};
-    float intensity = 0.35f;
+    Vector3 color = {0.45f, 0.50f, 0.58f};
+    float intensity = 0.55f;
 };
 
 struct SpotLightComponent

@@ -25,7 +25,7 @@ layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
 
 void main()
 {
-    uint idx = pc.instanceIndex;
+    uint idx = gl_InstanceIndex;
     mat4 worldMatrix = inst.instances[idx].worldMatrix;
     gl_Position = pc.lightSpaceMatrix * worldMatrix * vec4(inPos, 1.0);
 }

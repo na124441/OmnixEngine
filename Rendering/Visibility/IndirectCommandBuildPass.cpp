@@ -6,6 +6,13 @@
 
 namespace eng::renderer {
 
+static_assert(sizeof(VkDrawIndexedIndirectCommand) == 20, "VkDrawIndexedIndirectCommand size must be exactly 20 bytes.");
+static_assert(offsetof(VkDrawIndexedIndirectCommand, indexCount) == 0, "indexCount must be at offset 0.");
+static_assert(offsetof(VkDrawIndexedIndirectCommand, instanceCount) == 4, "instanceCount must be at offset 4.");
+static_assert(offsetof(VkDrawIndexedIndirectCommand, firstIndex) == 8, "firstIndex must be at offset 8.");
+static_assert(offsetof(VkDrawIndexedIndirectCommand, vertexOffset) == 12, "vertexOffset must be at offset 12.");
+static_assert(offsetof(VkDrawIndexedIndirectCommand, firstInstance) == 16, "firstInstance must be at offset 16.");
+
 void IndirectCommandBuildPass::Initialize(EngineResources& resources)
 {
     LOG_INFO("IndirectCommandBuildPass: Initializing...");

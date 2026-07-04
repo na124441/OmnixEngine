@@ -1,0 +1,159 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+// Bindings matching visibility resolve passes
+layout(set = 0, binding = 0) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    vec4 cameraPosition;
+    vec4 viewportSize;
+} frame;
+
+struct InstanceData {
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer InstanceBuffer {
+    InstanceData instances[];
+} inst;
+
+struct GPURVGCluster {
+    vec4 boundsSphere;
+    vec4 coneAxisCutoff;
+    uint pageIndex;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint indexCount;
+    uint padding[3];
+};
+
+layout(std430, set = 0, binding = 10) readonly buffer RVGClusterBuffer {
+    GPURVGCluster clusters[];
+} clusterBuf;
+
+struct PbrVertex {
+    vec3 pos;
+    vec3 normal;
+    vec2 uv;
+    vec4 tangent;
+};
+
+// Global resident geometry buffers
+layout(std430, set = 1, binding = 0) readonly buffer GlobalVertexBuffer {
+    PbrVertex vertices[];
+} globalVB;
+
+layout(std430, set = 1, binding = 1) readonly buffer GlobalIndexBuffer {
+    uint indices[];
+} globalIB;
+
+// Output Visibility Storage Images (Set 2)
+layout(set = 2, binding = 0, r32ui) uniform uimage2D outVisInstance;
+layout(set = 2, binding = 1, r32ui) uniform uimage2D outVisCluster;
+layout(set = 2, binding = 2, r32ui) uniform uimage2D outVisPrimitive;
+layout(set = 2, binding = 3, r32ui) uniform uimage2D outVisDepth; // Uint atomic depth buffer
+
+// Simple edge function helper
+float edgeFunction(vec2 a, vec2 b, vec2 c) {
+    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+}
+
+void main()
+{
+    uint gID = gl_GlobalInvocationID.x;
+    uint instanceID = gID / 1000; // Dispatch structure
+    uint clusterID = gID % 1000;
+
+    GPURVGCluster cluster = clusterBuf.clusters[clusterID];
+    uint vertOffset = cluster.vertexOffset;
+    uint indexOffset = cluster.indexOffset;
+    uint primCount = cluster.indexCount / 3;
+
+    InstanceData instance = inst.instances[instanceID];
+    mat4 mvp = frame.projection * frame.view * instance.worldMatrix;
+
+    // Loop over primitives in cluster (parallelized across threads where applicable)
+    for (uint primID = 0; primID < primCount; ++primID) {
+        uint i0 = globalIB.indices[indexOffset + primID * 3 + 0];
+        uint i1 = globalIB.indices[indexOffset + primID * 3 + 1];
+        uint i2 = globalIB.indices[indexOffset + primID * 3 + 2];
+
+        vec3 p0_local = globalVB.vertices[vertOffset + i0].pos;
+        vec3 p1_local = globalVB.vertices[vertOffset + i1].pos;
+        vec3 p2_local = globalVB.vertices[vertOffset + i2].pos;
+
+        vec4 c0 = mvp * vec4(p0_local, 1.0);
+        vec4 c1 = mvp * vec4(p1_local, 1.0);
+        vec4 c2 = mvp * vec4(p2_local, 1.0);
+
+        // Simple clip check
+        if (c0.w <= 0.0 || c1.w <= 0.0 || c2.w <= 0.0) continue;
+
+        // Project to screen space
+        vec2 p0 = ((c0.xy / c0.w) * 0.5 + 0.5) * frame.viewportSize.xy;
+        vec2 p1 = ((c1.xy / c1.w) * 0.5 + 0.5) * frame.viewportSize.xy;
+        vec2 p2 = ((c2.xy / c2.w) * 0.5 + 0.5) * frame.viewportSize.xy;
+
+        float area = edgeFunction(p0, p1, p2);
+        if (abs(area) < 1e-6) continue;
+
+        // Winding order check
+        bool backFacing = area < 0.0;
+        if (backFacing) continue; // Backface culling
+
+        // Screen bounding box
+        float minX = min(p0.x, min(p1.x, p2.x));
+        float maxX = max(p0.x, max(p1.x, p2.x));
+        float minY = min(p0.y, min(p1.y, p2.y));
+        float maxY = max(p0.y, max(p1.y, p2.y));
+
+        int startX = max(0, int(floor(minX)));
+        int endX = min(int(frame.viewportSize.x) - 1, int(ceil(maxX)));
+        int startY = max(0, int(floor(minY)));
+        int endY = min(int(frame.viewportSize.y) - 1, int(ceil(maxY)));
+
+        for (int y = startY; y <= endY; ++y) {
+            for (int x = startX; x <= endX; ++x) {
+                vec2 pixel = vec2(x, y) + 0.5;
+
+                float w0 = edgeFunction(p1, p2, pixel);
+                float w1 = edgeFunction(p2, p0, pixel);
+                float w2 = edgeFunction(p0, p1, pixel);
+
+                if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
+                    w0 /= area;
+                    w1 /= area;
+                    w2 /= area;
+
+                    // Interpolate depth Z (1/w perspective interpolation)
+                    float z = w0 * (c0.z / c0.w) + w1 * (c1.z / c1.w) + w2 * (c2.z / c2.w);
+
+                    // Pack depth to uint32_t for atomic operations
+                    uint zInt = uint(clamp(z, 0.0, 1.0) * 4294967295.0);
+
+                    // Perform atomic depth test
+                    ivec2 imgCoord = ivec2(x, y);
+                    uint prevZ = imageAtomicMin(outVisDepth, imgCoord, zInt);
+
+                    if (zInt < prevZ) {
+                        // Write visibility IDs upon passing the depth test
+                        imageStore(outVisInstance, imgCoord, uvec4(instanceID, 0, 0, 0));
+                        imageStore(outVisCluster, imgCoord, uvec4(clusterID, 0, 0, 0));
+                        imageStore(outVisPrimitive, imgCoord, uvec4(primID, 0, 0, 0));
+                    }
+                }
+            }
+        }
+    }
+}

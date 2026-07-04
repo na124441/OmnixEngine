@@ -16,7 +16,7 @@ namespace eng::runtime {
         static bool DrawHealth(HealthComponent& component, EditorDirtyState& dirtyState);
         static bool DrawRigidBody(RigidBodyComponent& component, EditorDirtyState& dirtyState);
         static bool DrawCollider(ColliderComponent& component, EditorDirtyState& dirtyState);
-        static bool DrawMeshRenderer(MeshRendererComponent& component, EditorDirtyState& dirtyState);
+        static bool DrawMeshRenderer(MeshRendererComponent& component, EditorDirtyState& dirtyState, RuntimeContext* context = nullptr);
         static bool DrawPlayerController(PlayerControllerComponent& component, EditorDirtyState& dirtyState);
         static bool DrawRenderableMesh(RenderableMeshComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState);
         static bool DrawMaterial(MaterialComponent& component, AssetRegistry& registry, EditorDirtyState& dirtyState, RuntimeContext* context = nullptr);

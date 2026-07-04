@@ -1,6 +1,7 @@
 #include "Core/pch.h"
 #include "OcclusionCullPass.h"
 #include "Rendering/GPUScene/GPUScene.h"
+#include "Renderer/scene/Texture.h"
 #include "Core/Vulkan/VkUtils.h"
 #include "Core/Engine/Log.h"
 #include "Core/Engine/VmaHelpers.h"
@@ -14,6 +15,7 @@ namespace eng::renderer {
     struct OcclusionPushConstants {
         uint32_t maxInstanceCount;
         uint32_t frustumOnlyMode;
+        float depthBias;
     };
 
     void OcclusionCullPass::Initialize(EngineResources& resources, VkDescriptorSetLayout gbufferLayout) {
@@ -150,17 +152,17 @@ namespace eng::renderer {
     void OcclusionCullPass::createFrameResources(EngineResources& resources, OcclusionCullFrameResources& frameRes, VkDescriptorSetLayout gbufferLayout) {
         VkDescriptorPoolSize poolSizes[3]{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        poolSizes[0].descriptorCount = 9;
+        poolSizes[0].descriptorCount = 32;
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[1].descriptorCount = 2;
+        poolSizes[1].descriptorCount = 32;
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[2].descriptorCount = 1;
+        poolSizes[2].descriptorCount = 32;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 3;
         poolInfo.pPoolSizes = poolSizes;
-        poolInfo.maxSets = 2;
+        poolInfo.maxSets = 8;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
         VK_CHECK(vkCreateDescriptorPool(resources.device, &poolInfo, nullptr, &frameRes.descriptorPool));
@@ -173,14 +175,7 @@ namespace eng::renderer {
 
         VK_CHECK(vkAllocateDescriptorSets(resources.device, &setAlloc, &frameRes.descriptorSet));
 
-        if (gbufferLayout != VK_NULL_HANDLE) {
-            VkDescriptorSetAllocateInfo gbufferSetAlloc{};
-            gbufferSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            gbufferSetAlloc.descriptorPool = frameRes.descriptorPool;
-            gbufferSetAlloc.descriptorSetCount = 1;
-            gbufferSetAlloc.pSetLayouts = &gbufferLayout;
-            VK_CHECK(vkAllocateDescriptorSets(resources.device, &gbufferSetAlloc, &frameRes.gbufferDescriptorSet));
-        }
+
 
         // Create Count Buffers (visible count and culled count)
         VkBufferCreateInfo bufInfo{};
@@ -292,8 +287,8 @@ namespace eng::renderer {
         cameraBufInfo.range = VK_WHOLE_SIZE;
 
         VkDescriptorImageInfo hzbImgInfo{};
-        hzbImgInfo.imageView = hzbSRV;
-        hzbImgInfo.sampler = hzbSampler;
+        hzbImgInfo.imageView = hzbSRV != VK_NULL_HANDLE ? hzbSRV : Texture::getWhiteTexture(resources)->view();
+        hzbImgInfo.sampler = hzbSampler != VK_NULL_HANDLE ? hzbSampler : Texture::getWhiteTexture(resources)->sampler();
         hzbImgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorBufferInfo finalVisibleBufInfo{};
@@ -344,50 +339,6 @@ namespace eng::renderer {
         writes[7].pBufferInfo = &statsBufInfo;
 
         vkUpdateDescriptorSets(resources.device, 8, writes, 0, nullptr);
-
-        if (frameRes.gbufferDescriptorSet != VK_NULL_HANDLE) {
-            std::array<VkWriteDescriptorSet, 4> gbufferWrites{};
-
-            VkDescriptorBufferInfo instanceInfo{};
-            instanceInfo.buffer = instanceBuffer;
-            instanceInfo.offset = 0;
-            instanceInfo.range = instanceBufferSize;
-
-            gbufferWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            gbufferWrites[0].dstSet = frameRes.gbufferDescriptorSet;
-            gbufferWrites[0].dstBinding = 0;
-            gbufferWrites[0].descriptorCount = 1;
-            gbufferWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            gbufferWrites[0].pBufferInfo = &instanceInfo;
-
-            VkDescriptorBufferInfo frustumInfo{};
-            frustumInfo.buffer = frustumBuffer;
-            frustumInfo.offset = 0;
-            frustumInfo.range = VK_WHOLE_SIZE;
-
-            gbufferWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            gbufferWrites[1].dstSet = frameRes.gbufferDescriptorSet;
-            gbufferWrites[1].dstBinding = 1;
-            gbufferWrites[1].descriptorCount = 1;
-            gbufferWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            gbufferWrites[1].pBufferInfo = &frustumInfo;
-
-            gbufferWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            gbufferWrites[2].dstSet = frameRes.gbufferDescriptorSet;
-            gbufferWrites[2].dstBinding = 2;
-            gbufferWrites[2].descriptorCount = 1;
-            gbufferWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            gbufferWrites[2].pBufferInfo = &finalVisibleBufInfo;
-
-            gbufferWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            gbufferWrites[3].dstSet = frameRes.gbufferDescriptorSet;
-            gbufferWrites[3].dstBinding = 3;
-            gbufferWrites[3].descriptorCount = 1;
-            gbufferWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            gbufferWrites[3].pBufferInfo = &finalVisibleCountBufInfo;
-
-            vkUpdateDescriptorSets(resources.device, 4, gbufferWrites.data(), 0, nullptr);
-        }
     }
 
     void OcclusionCullPass::Execute(
@@ -448,6 +399,7 @@ namespace eng::renderer {
         OcclusionPushConstants pc{};
         pc.maxInstanceCount = instanceCount;
         pc.frustumOnlyMode = frustumOnlyMode ? 1 : 0;
+        pc.depthBias = 0.0001f;
 
         vkCmdPushConstants(cmd, m_PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(OcclusionPushConstants), &pc);
 

@@ -1,0 +1,402 @@
+#version 450
+layout(local_size_x = 64) in;
+
+struct GPUInstance
+{
+    mat4 worldMatrix;
+    mat4 previousWorldMatrix;
+    vec4 boundsCenterRadius;
+    uint meshIndex;
+    uint materialIndex;
+    uint objectID;
+    uint flags;
+};
+
+struct GPURVGAsset {
+    uint firstNodeIndex;
+    uint nodeCount;
+    uint firstClusterIndex;
+    uint clusterCount;
+    uint firstPageOffset;
+    uint pageCount;
+    uint pageSize;
+    uint padding;
+};
+
+struct GPURVGNode {
+    uint clusterId;
+    float geometricError;
+    uint parentNodeId;
+    uint childCount;
+    uint childNodeIds[4];
+};
+
+struct GPURVGCluster {
+    vec4 boundsSphere; // xyz = center, w = radius
+    vec4 coneAxisCutoff; // xyz = axis, w = cutoff
+    uint pageIndex;
+    uint vertexOffset;
+    uint indexOffset;
+    uint vertexCount;
+    uint indexCount;
+    uint padding[3];
+};
+
+struct VkDrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+layout(std430, set = 0, binding = 0) readonly buffer InstanceBuffer
+{
+    GPUInstance instances[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer RVGAssetBuffer
+{
+    GPURVGAsset assets[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer RVGClusterBuffer
+{
+    GPURVGCluster clusters[];
+};
+
+layout(std430, set = 0, binding = 3) writeonly buffer ClusterIndirectCommandBuffer
+{
+    VkDrawIndexedIndirectCommand commands[];
+};
+
+layout(std430, set = 0, binding = 4) buffer ClusterIndirectCountBuffer
+{
+    uint commandCount;
+};
+
+layout(set = 0, binding = 5) uniform CameraUBO
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    vec4 cameraPosition;
+    vec4 viewportSize; // xy = size, zw = 1.0/size
+} camera;
+
+layout(set = 0, binding = 6) uniform FrustumBuffer
+{
+    vec4 planes[6];
+} frustum;
+
+layout(set = 0, binding = 7) uniform sampler2D hzbTexture;
+
+// G8 Nodes Binding
+layout(std430, set = 0, binding = 8) readonly buffer RVGNodeBuffer
+{
+    GPURVGNode nodes[];
+};
+
+struct GPUPageMapping
+{
+    uint physicalPage;
+    uint generation;
+    uint flags;
+    uint reserved;
+};
+
+struct GeometryStreamingRequest
+{
+    uint assetID;
+    uint pageID;
+    float projectedImportance;
+    uint viewMask;
+    uint flags;
+};
+
+layout(std430, set = 0, binding = 9) readonly buffer VirtualPageTableBuffer
+{
+    GPUPageMapping virtualPageTable[];
+};
+
+layout(std430, set = 0, binding = 10) buffer StreamingRequestBuffer
+{
+    uint requestCount;
+    uint maxRequests;
+    uint reserved0;
+    uint reserved1;
+    GeometryStreamingRequest requests[];
+} streamingRequests;
+
+layout(push_constant) uniform CullPushConstants
+{
+    uint maxInstanceCount;
+    uint frustumOnlyMode;
+    float depthBias;
+    float lodBias;
+    float targetPixelError;
+    uint maxTraversalDepth;
+    uint debugMode;
+    uint forceRoot;
+    uint forceFullDetail;
+} pc;
+
+bool SphereInFrustum(vec3 center, float radius)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        vec4 plane = frustum.planes[i];
+        float d = dot(plane.xyz, center) + plane.w;
+        if (d < -radius)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void main()
+{
+    uint instanceIndex = gl_GlobalInvocationID.x;
+    if (instanceIndex >= pc.maxInstanceCount)
+    {
+        return;
+    }
+
+    GPUInstance instance = instances[instanceIndex];
+    if ((instance.flags & 1) == 0)
+    {
+        return; // Invisible/inactive
+    }
+    if ((instance.flags & 4) == 0)
+    {
+        return; // Not virtual geometry (flags & GPUInstanceFlags_VirtualGeometry)
+    }
+
+    uint assetIndex = instance.meshIndex;
+    GPURVGAsset asset = assets[assetIndex];
+
+    // Compute scaled radius multiplier
+    float scaleX = length(instance.worldMatrix[0].xyz);
+    float scaleY = length(instance.worldMatrix[1].xyz);
+    float scaleZ = length(instance.worldMatrix[2].xyz);
+    float maxScale = max(scaleX, max(scaleY, scaleZ));
+
+    // Local stack for hierarchical traversal
+    uint stack[32];
+    uint stackSize = 0;
+
+    // Push root node
+    uint rootNodeIndex = asset.firstNodeIndex + asset.nodeCount - 1;
+    stack[stackSize++] = rootNodeIndex;
+
+    while (stackSize > 0)
+    {
+        // Guard stack capacity
+        if (stackSize >= 32)
+        {
+            break; // Stack overflow, abort branch traversal
+        }
+
+        uint nodeIndex = stack[--stackSize];
+        GPURVGNode node = nodes[nodeIndex];
+
+        uint globalClusterIndex = asset.firstClusterIndex + node.clusterId;
+        GPURVGCluster cluster = clusters[globalClusterIndex];
+
+        vec4 sphereLocal = cluster.boundsSphere;
+        vec3 centerWS = (instance.worldMatrix * vec4(sphereLocal.xyz, 1.0)).xyz;
+        float radiusWS = sphereLocal.w * maxScale;
+
+        // 1. Frustum Culling
+        if (!SphereInFrustum(centerWS, radiusWS))
+        {
+            continue; // Node is outside the frustum, cull the entire branch
+        }
+
+        // 2. Normal-Cone Culling
+        vec3 coneAxisWS = normalize(mat3(instance.worldMatrix) * cluster.coneAxisCutoff.xyz);
+        vec3 viewDirWS = normalize(centerWS - camera.cameraPosition.xyz);
+        float cutoff = cluster.coneAxisCutoff.w;
+        bool coneVisible = true;
+        if (cutoff >= 0.0)
+        {
+            float cosAngle = dot(coneAxisWS, viewDirWS);
+            float sinCutoff = sqrt(max(0.0, 1.0 - cutoff * cutoff));
+            if (cosAngle >= sinCutoff)
+            {
+                coneVisible = false; // Backfacing
+            }
+        }
+
+        if (!coneVisible)
+        {
+            continue; // Node is completely backfacing, cull the branch
+        }
+
+        // 3. Occlusion Culling using HZB
+        bool occluded = false;
+        if (pc.frustumOnlyMode == 0)
+        {
+            vec4 viewCenter = camera.view * vec4(centerWS, 1.0);
+            if (viewCenter.z + radiusWS < -0.1)
+            {
+                // Form 8 corners of the view-space bounding box of the sphere
+                vec3 viewMin = viewCenter.xyz - vec3(radiusWS);
+                vec3 viewMax = viewCenter.xyz + vec3(radiusWS);
+
+                vec3 corners[8];
+                corners[0] = vec3(viewMin.x, viewMin.y, viewMin.z);
+                corners[1] = vec3(viewMax.x, viewMin.y, viewMin.z);
+                corners[2] = vec3(viewMin.x, viewMax.y, viewMin.z);
+                corners[3] = vec3(viewMax.x, viewMax.y, viewMin.z);
+                corners[4] = vec3(viewMin.x, viewMin.y, viewMax.z);
+                corners[5] = vec3(viewMax.x, viewMin.y, viewMax.z);
+                corners[6] = vec3(viewMin.x, viewMax.y, viewMax.z);
+                corners[7] = vec3(viewMax.x, viewMax.y, viewMax.z);
+
+                vec2 minUV = vec2(1.0);
+                vec2 maxUV = vec2(0.0);
+                
+                for (int c = 0; c < 8; ++c)
+                {
+                    vec4 projected = camera.projection * vec4(corners[c], 1.0);
+                    if (projected.w > 0.0)
+                    {
+                        vec3 ndc = projected.xyz / projected.w;
+                        vec2 uv = ndc.xy * 0.5 + 0.5;
+                        uv.y = 1.0 - uv.y;
+                        minUV = min(minUV, uv);
+                        maxUV = max(maxUV, uv);
+                    }
+                }
+
+                minUV = clamp(minUV, vec2(0.0), vec2(1.0));
+                maxUV = clamp(maxUV, vec2(0.0), vec2(1.0));
+
+                vec2 boxSize = (maxUV - minUV) * camera.viewportSize.xy;
+                float boxWidth = max(boxSize.x, boxSize.y);
+
+                float mip = max(0.0, ceil(log2(boxWidth)) - 1.0);
+                float maxMip = float(textureQueryLevels(hzbTexture) - 1);
+                mip = min(mip, maxMip);
+
+                float hzb0 = textureLod(hzbTexture, vec2(minUV.x, minUV.y), mip).r;
+                float hzb1 = textureLod(hzbTexture, vec2(maxUV.x, minUV.y), mip).r;
+                float hzb2 = textureLod(hzbTexture, vec2(minUV.x, maxUV.y), mip).r;
+                float hzb3 = textureLod(hzbTexture, vec2(maxUV.x, maxUV.y), mip).r;
+                float hzbDepth = max(max(hzb0, hzb1), max(hzb2, hzb3));
+
+                vec4 closestView = viewCenter;
+                closestView.z += radiusWS;
+                vec4 closestClip = camera.projection * closestView;
+                float sphereDepth = closestClip.z / closestClip.w;
+
+                if (sphereDepth > hzbDepth + pc.depthBias)
+                {
+                    occluded = true;
+                }
+            }
+        }
+
+        if (occluded)
+        {
+            continue; // Node is occluded, cull the branch
+        }
+
+        // 4. Projected Geometric Error calculation
+        vec4 viewCenter = camera.view * vec4(centerWS, 1.0);
+        float viewDepth = max(-viewCenter.z, 0.0001);
+
+        float projectionScale = camera.viewportSize.y * camera.projection[1][1] * 0.5;
+        float projectedError = node.geometricError * maxScale * projectionScale / viewDepth;
+
+        // Apply LOD bias
+        projectedError *= exp2(pc.lodBias);
+
+        // Check if level of detail is acceptable
+        bool errorAcceptable = (projectedError <= pc.targetPixelError);
+
+        // Override: Force Root
+        if (pc.forceRoot != 0)
+        {
+            errorAcceptable = (nodeIndex == rootNodeIndex);
+        }
+
+        // Override: Force Full Detail (refine as much as possible)
+        if (pc.forceFullDetail != 0)
+        {
+            errorAcceptable = false;
+        }
+
+        // Clip near-plane intersection conservatively
+        bool intersectsNearPlane = (viewCenter.z + radiusWS >= -0.1);
+        if (intersectsNearPlane)
+        {
+            errorAcceptable = false; // Force refinement
+        }
+
+        bool childrenResident = true;
+        if (!errorAcceptable && node.childCount > 0)
+        {
+            uint childLimit = min(node.childCount, 4);
+            for (uint c = 0; c < childLimit; ++c)
+            {
+                uint childNodeIndex = asset.firstNodeIndex + node.childNodeIds[c];
+                GPURVGNode childNode = nodes[childNodeIndex];
+                uint globalChildClusterIndex = asset.firstClusterIndex + childNode.clusterId;
+                GPURVGCluster childCluster = clusters[globalChildClusterIndex];
+                uint childPageIndex = childCluster.pageIndex;
+                
+                if (childPageIndex != 0)
+                {
+                    uint globalPageIndex = asset.firstPageOffset + childPageIndex;
+                    GPUPageMapping mapping = virtualPageTable[globalPageIndex];
+                    if ((mapping.flags & 1) == 0)
+                    {
+                        childrenResident = false;
+                        
+                        // Queue request for missing child page
+                        uint reqIdx = atomicAdd(streamingRequests.requestCount, 1);
+                        if (reqIdx < streamingRequests.maxRequests)
+                        {
+                            streamingRequests.requests[reqIdx].assetID = assetIndex;
+                            streamingRequests.requests[reqIdx].pageID = childPageIndex;
+                            streamingRequests.requests[reqIdx].projectedImportance = projectedError;
+                            streamingRequests.requests[reqIdx].viewMask = 1;
+                            streamingRequests.requests[reqIdx].flags = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (errorAcceptable || node.childCount == 0 || !childrenResident)
+        {
+            uint globalPageIndex = asset.firstPageOffset + cluster.pageIndex;
+            GPUPageMapping mapping = virtualPageTable[globalPageIndex];
+            uint physicalPageSlot = mapping.physicalPage;
+            uint pageStartByteOffset = physicalPageSlot * asset.pageSize;
+
+            // Select cluster for rendering!
+            uint cmdIdx = atomicAdd(commandCount, 1);
+            commands[cmdIdx].indexCount = cluster.indexCount;
+            commands[cmdIdx].instanceCount = 1;
+            commands[cmdIdx].firstIndex = (pageStartByteOffset + cluster.indexOffset) / 4;
+            commands[cmdIdx].vertexOffset = int((pageStartByteOffset + cluster.vertexOffset) / 48); // sizeof(PbrVertex) is 48
+            
+            // Pack instanceIndex and absolute nodeIndex (using 12/20 ratio)
+            commands[cmdIdx].firstInstance = instanceIndex | (nodeIndex << 12);
+        }
+        else
+        {
+            // Refine: Enqueue children
+            uint childLimit = min(node.childCount, 4);
+            for (uint c = 0; c < childLimit; ++c)
+            {
+                stack[stackSize++] = asset.firstNodeIndex + node.childNodeIds[c];
+            }
+        }
+    }
+}

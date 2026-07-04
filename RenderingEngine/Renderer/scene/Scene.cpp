@@ -4,6 +4,7 @@
 #include "Core/Engine/EngineResources.h"
 #include "Runtime/Public/OmnixMeshFormat.h"
 #include "Runtime/Public/MeshMetadata.h"
+#include "Rendering/Geometry/Assets/RVGRegistry.h"
 
 namespace eng::renderer {
 
@@ -32,7 +33,7 @@ Mesh* RenderSceneCache::createMeshFromOmnixMesh(const std::string& path, EngineR
 
     std::vector<PbrVertex> vertices(meshData.header.vertexCount);
     for (size_t i = 0; i < meshData.header.vertexCount; ++i) {
-        vertices[i].pos = glm::vec3(meshData.vertices[i].position.x, meshData.vertices[i].position.y, meshData.vertices[i].position.z);
+        vertices[i].position = glm::vec3(meshData.vertices[i].position.x, meshData.vertices[i].position.y, meshData.vertices[i].position.z);
         vertices[i].normal = glm::vec3(meshData.vertices[i].normal.x, meshData.vertices[i].normal.y, meshData.vertices[i].normal.z);
         vertices[i].uv = glm::vec2(meshData.vertices[i].uv0.x, meshData.vertices[i].uv0.y);
         vertices[i].tangent = glm::vec4(meshData.vertices[i].tangent.x, meshData.vertices[i].tangent.y, meshData.vertices[i].tangent.z, meshData.vertices[i].tangent.w);
@@ -62,6 +63,43 @@ Mesh* RenderSceneCache::createMeshFromOmnixMesh(const std::string& path, EngineR
         destroyMesh(m);
         return nullptr;
     }
+    return m;
+}
+
+Mesh* RenderSceneCache::createMeshFromRVG(const std::string& path, EngineResources& resources)
+{
+    uint32_t assetIndex = RVGRegistry::Get().LoadAsset(resources, path);
+    if (assetIndex == UINT32_MAX) {
+        ::Logger::Log(::LogLevel::Error, "Failed to load RVG asset: " + path);
+        return nullptr;
+    }
+
+    const RVGAsset* asset = RVGRegistry::Get().GetAsset(assetIndex);
+    const auto& vertices = asset->GetFallbackVertices();
+    const auto& indices = asset->GetFallbackIndices();
+
+    Mesh* m = createMesh();
+    m->minBounds = asset->GetBoundsMin();
+    m->maxBounds = asset->GetBoundsMax();
+    m->bounds.localCenter = (m->minBounds + m->maxBounds) * 0.5f;
+    m->bounds.localRadius = glm::length(m->maxBounds - m->minBounds) * 0.5f;
+    m->bounds.localMin = m->minBounds;
+    m->bounds.localMax = m->maxBounds;
+
+    if (!m->init(vertices.data(), vertices.size(), indices.data(), indices.size(), resources)) {
+        destroyMesh(m);
+        return nullptr;
+    }
+
+    m->isVirtualGeometry = true;
+    m->rvgAssetIndex = assetIndex;
+
+    m->hasNormals = true;
+    m->hasUVs = true;
+    m->hasTangents = false;
+    m->normalsGenerated = false;
+    m->tangentsGenerated = false;
+
     return m;
 }
 

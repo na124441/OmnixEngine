@@ -7,7 +7,7 @@
             "importedPath": "",
             "isDirty": true,
             "isImported": false,
-            "sourceMissing": false,
+            "sourceMissing": true,
             "sourcePath": "Assets/Textures/brick_albedo.png",
             "type": "Texture"
         },
@@ -62,9 +62,20 @@
             "importedPath": "",
             "isDirty": true,
             "isImported": false,
-            "sourceMissing": false,
+            "sourceMissing": true,
             "sourcePath": "Assets/Textures/wood_albedo.png",
             "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 519101999989861967,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Meshes/mount.blend1.obj",
+            "type": "Mesh"
         },
         {
             "dependencies": [],
@@ -76,6 +87,17 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Models/sphere.obj",
             "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 16699927540305262433,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/default.omnixmat",
+            "type": "Material"
         },
         {
             "dependencies": [],
@@ -98,6 +120,39 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Materials/metal_test.omnixmat",
             "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 12263849492606865895,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/golden_reference.png",
+            "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 207868223522761647,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/Texturelabs_Concrete_129S.jpg",
+            "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 18070330976811234723,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/Texturelabs_Concrete_129S.png",
+            "type": "Texture"
         }
     ]
 }

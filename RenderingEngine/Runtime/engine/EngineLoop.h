@@ -45,7 +45,6 @@ namespace eng::rhi {
 }
 
 namespace eng::renderer {
-    class PyramidRenderer;
 }
 
 namespace eng::runtime {
@@ -69,8 +68,10 @@ namespace eng::runtime {
         void BeginFrame(double deltaTime) override;
         void Render() override;
         void EndFrame() override;
-        void RequestExit();
+        void RequestExit(const char* reason = "unspecified");
         bool IsRunning() const;
+        bool HasExitRequest() const { return m_ExitRequested.load(std::memory_order_relaxed); }
+        bool HasStarted() const { return m_Running.load(std::memory_order_relaxed); }
 
         void SetExternalWorld(eng::runtime::World* externalWorld) noexcept override {
             m_ExternalWorld = externalWorld;
@@ -126,7 +127,6 @@ namespace eng::runtime {
         std::unique_ptr<eng::rhi::Device> m_RHI;
         std::unique_ptr<eng::vulkan::VulkanSwapChain> m_SwapChain;
         std::unique_ptr<eng::renderer::Renderer> m_Renderer;
-        std::unique_ptr<eng::renderer::PyramidRenderer> m_PyramidRenderer;
         std::unique_ptr<eng::renderer::Renderer> m_SceneRenderer;
         eng::renderer::EngineResources m_SharedResources;
 
@@ -170,7 +170,7 @@ namespace eng::runtime {
         RenderCallback m_RenderCallback;                // optional per-frame user renderer
     };
 
-    inline void EngineLoop::RequestExit() { m_ExitRequested.store(true, std::memory_order_relaxed); }
+    inline void EngineLoop::RequestExit(const char* reason) { m_ExitRequested.store(true, std::memory_order_relaxed); }
     inline bool EngineLoop::IsRunning() const { return m_Running.load(std::memory_order_relaxed) && !m_ExitRequested.load(std::memory_order_relaxed); }
 
 } // namespace eng::runtime

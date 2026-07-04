@@ -17,7 +17,8 @@ namespace eng::renderer {
             VkCommandBuffer cmd,
             VkPipelineLayout pipelineLayout,
             const RenderQueue& renderQueue,
-            VkPipeline overridePipeline
+            VkPipeline overridePipeline,
+            const class GPUScene* gpuScene = nullptr
         );
     };
 

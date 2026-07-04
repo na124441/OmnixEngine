@@ -59,6 +59,10 @@ namespace eng::vulkan {
             extent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, extent.width));
             extent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, extent.height));
         }
+        if (extent.width == 0 || extent.height == 0) {
+            ENG_LOG_WARN("Skipping swapchain creation for zero-sized surface extent: {}x{}", extent.width, extent.height);
+            return eng::core::Result(eng::core::ResultCode::Failure);
+        }
 
         uint32_t imageCount = capabilities.minImageCount + 1;
         if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {

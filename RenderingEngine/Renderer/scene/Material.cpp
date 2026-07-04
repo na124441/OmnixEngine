@@ -2,6 +2,7 @@
 #include "Material.h"
 #include "Mesh.h"
 #include "Core/types/Vertex.h"
+#include "Rendering/Core/Renderer.h"
 #include <cstddef>
 #include <cstring>
 
@@ -98,7 +99,7 @@ bool Material::createPBR(const std::string& vertPath,
     
     if (!albedoPath.empty()) {
         albedoTexture = std::make_shared<Texture>();
-        if (albedoTexture->loadFromFile(albedoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Albedo)) {
+        if (albedoTexture->loadFromFile(albedoPath, res, TextureUsage::Albedo)) {
             uboData.hasAlbedoMap = 1.0f;
         } else {
             LOG_WARN("Failed to load albedo texture: " + albedoPath + " - using fallback white.");
@@ -111,7 +112,7 @@ bool Material::createPBR(const std::string& vertPath,
 
     if (!normalPath.empty()) {
         normalTexture = std::make_shared<Texture>();
-        if (normalTexture->loadFromFile(normalPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Normal)) {
+        if (normalTexture->loadFromFile(normalPath, res, TextureUsage::Normal)) {
             uboData.useNormalMap = 1.0f;
         } else {
             LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback flat normal.");
@@ -124,7 +125,7 @@ bool Material::createPBR(const std::string& vertPath,
 
     if (!metallicRoughnessPath.empty()) {
         metallicRoughnessTexture = std::make_shared<Texture>();
-        if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::MetallicRoughness)) {
+        if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res, TextureUsage::MetallicRoughness)) {
             uboData.hasMetallicRoughnessMap = 1.0f;
         } else {
             LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback metallic=0, roughness=0.6.");
@@ -137,7 +138,7 @@ bool Material::createPBR(const std::string& vertPath,
 
     if (!aoPath.empty()) {
         aoTexture = std::make_shared<Texture>();
-        if (aoTexture->loadFromFile(aoPath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::AO)) {
+        if (aoTexture->loadFromFile(aoPath, res, TextureUsage::AO)) {
             uboData.hasAOMap = 1.0f;
         } else {
             LOG_WARN("Failed to load AO texture: " + aoPath + " - using fallback white.");
@@ -150,7 +151,7 @@ bool Material::createPBR(const std::string& vertPath,
 
     if (!emissivePath.empty()) {
         emissiveTexture = std::make_shared<Texture>();
-        if (emissiveTexture->loadFromFile(emissivePath, res.device, res.allocator, res.commandPools[0], res.graphicsQueue, TextureUsage::Emissive)) {
+        if (emissiveTexture->loadFromFile(emissivePath, res, TextureUsage::Emissive)) {
             uboData.hasEmissiveMap = 1.0f;
         } else {
             LOG_WARN("Failed to load emissive texture: " + emissivePath + " - using fallback black.");
@@ -220,24 +221,8 @@ bool Material::createPipeline(const EngineResources& resources)
     stages[1].module = shader.fragModule();
     stages[1].pName  = "main";
 
-    VkVertexInputBindingDescription bindingDescription{};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(PbrVertex);
-    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(3);
-    attributeDescriptions[0].binding = 0;
-    attributeDescriptions[0].location = 0;
-    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(PbrVertex, pos);
-    attributeDescriptions[1].binding = 0;
-    attributeDescriptions[1].location = 1;
-    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(PbrVertex, normal);
-    attributeDescriptions[2].binding = 0;
-    attributeDescriptions[2].location = 2;
-    attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[2].offset = offsetof(PbrVertex, uv);
+    VkVertexInputBindingDescription bindingDescription = PbrVertex::GetBindingDescription();
+    auto attributeDescriptions = PbrVertex::GetAttributeDescriptions();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -262,8 +247,12 @@ bool Material::createPipeline(const EngineResources& resources)
     raster.rasterizerDiscardEnable = VK_FALSE;
     raster.polygonMode = VK_POLYGON_MODE_FILL;
     raster.lineWidth = 1.0f;
-    raster.cullMode = VK_CULL_MODE_BACK_BIT;
-    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    if (resources.debugConfig && resources.debugConfig->disableBackfaceCulling) {
+        raster.cullMode = VK_CULL_MODE_NONE;
+    } else {
+        raster.cullMode = RasterConvention::CullMode;
+    }
+    raster.frontFace = RasterConvention::FrontFace;
     raster.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
@@ -334,7 +323,8 @@ bool Material::createPipeline(const EngineResources& resources)
     pipelineInfo.pColorBlendState    = &colourBlendInfo;
     pipelineInfo.pDynamicState       = &dynamicInfo;
     pipelineInfo.layout              = resources.pipelineLayout;   // includes set 0 + set 1
-    pipelineInfo.renderPass          = (assetData.blendMode == MaterialBlendMode::Blend) ? resources.transparentRenderPass : resources.renderPass;
+    VkRenderPass opaquePass = resources.gbufferRenderPass != VK_NULL_HANDLE ? resources.gbufferRenderPass : resources.renderPass;
+    pipelineInfo.renderPass          = (assetData.blendMode == MaterialBlendMode::Blend) ? resources.transparentRenderPass : opaquePass;
     pipelineInfo.subpass             = 0;
 
     VkResult result = vkCreateGraphicsPipelines(resources.device,
