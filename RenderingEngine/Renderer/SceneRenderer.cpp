@@ -571,8 +571,9 @@ void SceneRenderer::buildRenderQueue()
                         const auto& rm = coordinator.GetComponent<RenderableMeshComponent>(entity);
                         if (rm.meshAssetHandle.IsValid()) {
                             uint64_t handleVal = rm.meshAssetHandle.value;
-                            if (m_EcsMeshCache.find(handleVal) != m_EcsMeshCache.end()) {
-                                item.mesh = m_EcsMeshCache[handleVal];
+                            auto meshIt = m_EcsMeshCache.find(handleVal);
+                            if (meshIt != m_EcsMeshCache.end()) {
+                                item.mesh = meshIt->second;
                             } else if (m_EcsWarningHandles.find(handleVal) == m_EcsWarningHandles.end()) {
                                 if (m_AssetRegistry) {
                                     const auto* meta = m_AssetRegistry->GetMetadata(rm.meshAssetHandle);
@@ -608,8 +609,9 @@ void SceneRenderer::buildRenderQueue()
                         const auto& mc = coordinator.GetComponent<MaterialComponent>(entity);
                         if (mc.materialAssetHandle.IsValid()) {
                             uint64_t handleVal = mc.materialAssetHandle.value;
-                            if (m_EcsMaterialCache.find(handleVal) != m_EcsMaterialCache.end()) {
-                                item.material = m_EcsMaterialCache[handleVal];
+                            auto matIt = m_EcsMaterialCache.find(handleVal);
+                            if (matIt != m_EcsMaterialCache.end()) {
+                                item.material = matIt->second;
                             } else if (m_EcsWarningHandles.find(handleVal) == m_EcsWarningHandles.end()) {
                                 if (m_AssetRegistry) {
                                     const auto* meta = m_AssetRegistry->GetMetadata(mc.materialAssetHandle);
