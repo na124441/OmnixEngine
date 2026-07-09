@@ -1,0 +1,15 @@
+[submodule "ThirdParty/imgui"]
+	path = ThirdParty/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "ThirdParty/ImGuizmo"]
+	path = ThirdParty/ImGuizmo
+	url = https://github.com/CedricGuillemet/ImGuizmo.git
+[submodule "ThirdParty/miniaudio"]
+	path = ThirdParty/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+[submodule "ThirdParty/nlohmann"]
+	path = ThirdParty/nlohmann
+	url = https://github.com/nlohmann/json.git
+[submodule "ThirdParty/rapidjson-master"]
+	path = ThirdParty/rapidjson-master
+	url = https://github.com/Tencent/rapidjson.git
