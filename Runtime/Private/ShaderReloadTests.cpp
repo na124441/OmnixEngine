@@ -37,11 +37,17 @@ namespace eng::runtime {
             uint32_t m_UnloadCount = 0;
         };
 
+        static bool IsSafePath(const std::string& path)
+        {
+            const std::string unsafeChars = "&|;<>$\"`\n\r";
+            return path.find_first_of(unsafeChars) == std::string::npos;
+        }
+
         bool CheckGlslc()
         {
             std::string glslcCmd = "glslc";
             const char* vulkanSdk = std::getenv("VULKAN_SDK");
-            if (vulkanSdk) {
+            if (vulkanSdk && IsSafePath(vulkanSdk)) {
                 glslcCmd = std::string("\"") + vulkanSdk + "/bin/glslc.exe\"";
             }
             std::string command = glslcCmd + " --version >nul 2>&1";
