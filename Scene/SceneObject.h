@@ -265,6 +265,9 @@ public:
     bool m_HasSpotLight = false;
     SpotLightComponent m_SpotLight;
 
+    bool m_HasReflectionProbe = false;
+    ReflectionProbeComponent m_ReflectionProbe;
+
     void SetRenderableMesh(AssetHandle handle) { m_MeshAssetHandle = handle; m_HasRenderableMesh = true; }
     void ClearRenderableMesh() { m_HasRenderableMesh = false; }
 
@@ -330,6 +333,9 @@ public:
 
     void SetSpotLight(const SpotLightComponent& comp) { m_SpotLight = comp; m_HasSpotLight = true; }
     void ClearSpotLight() { m_HasSpotLight = false; }
+
+    void SetReflectionProbe(const ReflectionProbeComponent& comp) { m_ReflectionProbe = comp; m_HasReflectionProbe = true; }
+    void ClearReflectionProbe() { m_HasReflectionProbe = false; }
 
 private:
     //========================================================================

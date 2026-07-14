@@ -15,6 +15,7 @@
 #include "Core/Vulkan/VkUtils.h"
 #include "Core/Engine/EngineResources.h"
 
+#include "Rendering/Lighting/ShadowAtlas.h"
 #include "Rendering/Core/RenderScene.h"
 #include "Rendering/GPUScene/GPUScene.h"
 #include "Rendering/Visibility/FrustumCullPass.h"
@@ -71,6 +72,22 @@ namespace eng::renderer {
         bool enableTonemapping = true;
         bool enableGammaCorrection = true;
         bool debugBeforePostProcess = false;
+
+        // Color Grading
+        float contrast = 1.0f;
+        float saturation = 1.0f;
+        float whiteBalanceTemp = 0.0f;
+        float whiteBalanceTint = 0.0f;
+        glm::vec3 lift = glm::vec3(0.0f);
+        glm::vec3 gammaVal = glm::vec3(1.0f);
+        glm::vec3 gain = glm::vec3(1.0f);
+
+        // Fog Settings
+        uint32_t enableFog = 0;
+        float fogDensity = 0.015f;
+        float fogHeightFalloff = 0.05f;
+        float fogBaseHeight = 0.0f;
+        glm::vec3 fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
     };
 
     struct SSAOSettings {
@@ -81,19 +98,19 @@ namespace eng::renderer {
     };
 
     struct RenderDebugConfig {
-        bool enableShadowPass = false;
-        bool enableDepthPrepass = false;
-        bool enableSSAO = false;
-        bool enableLightCulling = false;
-        bool enableDeferredLighting = false;
-        bool enableTransparentPass = false;
-        bool enablePostProcessing = false;
-        bool enableEditorOverlay = false;
+        bool enableShadowPass         = true;   // Shadow atlas / cascade maps
+        bool enableDepthPrepass       = true;   // Depth pre-pass before GBuffer
+        bool enableSSAO               = false;  // SSAO — enable when SSAO resources are allocated
+        bool enableLightCulling       = true;   // Tiled/clustered light culling
+        bool enableDeferredLighting   = true;   // Main deferred shading pass
+        bool enableTransparentPass    = true;   // Forward-transparent geometry
+        bool enablePostProcessing     = true;   // Tonemapping, color grading, fog
+        bool enableEditorOverlay      = true;   // Editor gizmos / grid overlay
 
-        bool disableBackfaceCulling = false;
-        bool forceDefaultMaterial = true;
-        bool showGBufferAlbedo = true;
-        bool disableFallback = true;
+        bool disableBackfaceCulling   = false;
+        bool forceDefaultMaterial     = false;
+        bool showGBufferAlbedo        = false;
+        bool disableFallback          = true;
     };
 
     class Renderer {
@@ -168,6 +185,9 @@ namespace eng::renderer {
         // Viewport Offscreen Rendering API
         void SetOffscreenRenderingEnabled(bool enabled);
         bool IsOffscreenRenderingEnabled() const { return m_ViewportRenderer.isOffscreenRenderingEnabled(); }
+        void BakeReflectionProbes(eng::runtime::IECSWorld& world);
+        void RenderSceneOffscreen(eng::runtime::IECSWorld& world, const glm::mat4& customView, const glm::mat4& customProj, const glm::vec3& customCamPos);
+        void CopyImageToCPU(VkImage image, uint32_t width, uint32_t height, std::vector<float>& outPixels);
         void CreateOffscreenResources(uint32_t width, uint32_t height);
         void DestroyOffscreenResources() { m_ViewportRenderer.destroyOffscreenResources(); }
         VkDescriptorSet GetOffscreenTexture(uint32_t frameIdx) const { return m_ViewportRenderer.getOffscreenTexture(frameIdx); }
@@ -374,6 +394,11 @@ namespace eng::renderer {
         std::vector<VkFramebuffer>  m_GBufferFramebuffers;
         std::vector<VkFramebuffer>  m_OffscreenGBufferFramebuffers;
 
+        // ViewportColor resources
+        VkRenderPass                    m_ViewportColorRenderPass = VK_NULL_HANDLE;
+        std::vector<FramebufferHandle>  m_ViewportColorFbHandles;
+        std::vector<VkFramebuffer>      m_ViewportColorFramebuffers;
+
         // G10: Visibility Buffer rendering resources
         VkRenderPass                m_VisibilityRenderPass = VK_NULL_HANDLE;
         std::vector<VkFramebuffer>  m_VisibilityFramebuffers;
@@ -446,6 +471,12 @@ namespace eng::renderer {
         std::vector<VmaAllocation>      m_ObjectIDAllocations;
         std::vector<VkImageView>        m_ObjectIDImageViews;
 
+        // GBufferVelocity resources
+        std::vector<RenderTargetHandle> m_GBufferVelocityHandles;
+        std::vector<VkImage>            m_GBufferVelocityImages;
+        std::vector<VmaAllocation>      m_GBufferVelocityAllocations;
+        std::vector<VkImageView>        m_GBufferVelocityImageViews;
+
         // Offscreen viewport rendering resources
         VkRenderPass                    m_OffscreenViewportRenderPass = VK_NULL_HANDLE;
         std::vector<VkFramebuffer>      m_OffscreenViewportFramebuffers;
@@ -470,10 +501,20 @@ namespace eng::renderer {
         VkPipelineLayout            m_LightCullingPipelineLayout = VK_NULL_HANDLE;
         VkPipeline                  m_LightCullingPipeline       = VK_NULL_HANDLE;
 
+        // SSR compute pipeline
+        VkDescriptorSetLayout       m_SSRDescriptorSetLayout     = VK_NULL_HANDLE;
+        VkDescriptorPool            m_SSRDescriptorPool          = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_SSRDescriptorSets;
+        VkPipelineLayout            m_SSRPipelineLayout          = VK_NULL_HANDLE;
+        VkPipeline                  m_SSRPipeline                = VK_NULL_HANDLE;
+
         // HDR Color target resources
         std::vector<VkImage>        m_HDRColorImages;
         std::vector<VmaAllocation>  m_HDRColorAllocations;
         std::vector<VkImageView>    m_HDRColorImageViews;
+        std::vector<VkImage>        m_HDRColorComposedImages;
+        std::vector<VmaAllocation>  m_HDRColorComposedAllocations;
+        std::vector<VkImageView>    m_HDRColorComposedImageViews;
         std::vector<VkFramebuffer>  m_HDRColorFramebuffers;
         VkRenderPass                m_HDRRenderPass = VK_NULL_HANDLE;
 
@@ -484,6 +525,37 @@ namespace eng::renderer {
         VkPipelineLayout            m_PostProcessPipelineLayout      = VK_NULL_HANDLE;
         VkPipeline                  m_PostProcessPipeline            = VK_NULL_HANDLE;
         VkPipeline                  m_OffscreenPostProcessPipeline   = VK_NULL_HANDLE;
+
+        // Auto Exposure compute resources
+        VkDescriptorSetLayout       m_ExposureDescriptorSetLayout   = VK_NULL_HANDLE;
+        VkDescriptorPool            m_ExposureDescriptorPool        = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_ExposureDescriptorSets;
+        VkPipelineLayout            m_ExposurePipelineLayout        = VK_NULL_HANDLE;
+        VkPipeline                  m_ExposurePipeline              = VK_NULL_HANDLE;
+        VkBuffer                    m_ExposureBuffer                = VK_NULL_HANDLE;
+        VmaAllocation               m_ExposureBufferAllocation      = VK_NULL_HANDLE;
+
+        void initExposurePipeline();
+        void destroyExposurePipeline();
+        void updateExposureDescriptorSets();
+
+        // TAA Compute resources
+        VkDescriptorSetLayout       m_TAADescriptorSetLayout        = VK_NULL_HANDLE;
+        VkDescriptorPool            m_TAADescriptorPool            = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_TAADescriptorSets;
+        VkPipelineLayout            m_TAAPipelineLayout            = VK_NULL_HANDLE;
+        VkPipeline                  m_TAAPipeline                  = VK_NULL_HANDLE;
+
+        VkImage                     m_TAAHistoryImages[2]          = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+        VmaAllocation               m_TAAHistoryAllocations[2]     = { nullptr, nullptr };
+        VkImageView                 m_TAAHistoryImageViews[2]      = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+        uint32_t                    m_TAAHistoryIndex              = 0;
+        bool                        m_TAAInitialized               = false; ///< true after the first TAA frame completes
+
+        void initTAAPipeline();
+        void destroyTAAPipeline();
+        void recreateTAAResources(uint32_t width, uint32_t height);
+        void updateTAADescriptorSets();
 
         EditorViewportRenderer m_ViewportRenderer;
         VkRenderPass                m_SwapchainRenderPass = VK_NULL_HANDLE;
@@ -504,9 +576,18 @@ namespace eng::renderer {
         std::vector<VkImageView>    m_ShadowImageViewsCascades[4];
         std::vector<VkFramebuffer>  m_ShadowFramebuffersCascades[4];
         std::vector<RenderTargetHandle> m_ShadowHandlesCascades[4];
+        std::vector<FramebufferHandle> m_ShadowFbHandlesCascades[4];
         glm::mat4                   m_LastLightSpaceMatrices[4];
         glm::vec4                   m_CascadeSplits;
         VkSampler                   m_ShadowSampler = VK_NULL_HANDLE;
+
+        // Shadow Atlas
+        std::vector<VkImage>            m_ShadowAtlasImages;
+        std::vector<VmaAllocation>      m_ShadowAtlasAllocations;
+        std::vector<VkImageView>        m_ShadowAtlasImageViews;
+        std::vector<VkFramebuffer>      m_ShadowAtlasFramebuffers;
+        std::vector<RenderTargetHandle> m_ShadowAtlasHandles;
+        std::vector<FramebufferHandle>  m_ShadowAtlasFbHandles;
         uint32_t                    m_CurrentShadowResolution = 2048;
         glm::mat4                   m_LastLightSpaceMatrix{1.0f};
         mutable std::vector<VkDescriptorSet> m_ShadowImGuiTextures;
@@ -514,6 +595,8 @@ namespace eng::renderer {
         VkPipeline                  m_GridPipeline = VK_NULL_HANDLE;
         VkPipelineLayout            m_GridPipelineLayout = VK_NULL_HANDLE;
         void initGridPipeline();
+        void initSSRPipeline();
+        void destroySSRPipeline();
         void destroyGridPipeline();
 
         void createShadowResources();
@@ -528,6 +611,7 @@ namespace eng::renderer {
         std::vector<RenderTargetHandle> m_GBufferCHandles;
         std::vector<RenderTargetHandle> m_GBufferDHandles;
         std::vector<RenderTargetHandle> m_HDRColorHandles;
+        std::vector<RenderTargetHandle> m_HDRColorComposedHandles;
         std::vector<RenderTargetHandle> m_ShadowHandles;
         std::vector<RenderTargetHandle> m_LDRColorHandles;
         std::vector<RenderTargetHandle> m_ViewportColorHandles;
@@ -590,6 +674,13 @@ namespace eng::renderer {
 
         Omnix::Radiance::RadianceSettings m_RadianceSettings;
         RenderDebugConfig m_DebugConfig;
+        std::string m_LastEnvironmentPath = "";
+
+        // TAA Jitter state
+        uint32_t m_JitterIndex = 0;
+        glm::vec2 m_CurrentJitter = glm::vec2(0.0f);
+        glm::mat4 m_PrevViewProjection = glm::mat4(1.0f);
+        glm::mat4 m_CurrentViewProjection = glm::mat4(1.0f);
     };
 
 } // namespace eng::renderer

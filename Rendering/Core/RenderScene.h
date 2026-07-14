@@ -24,6 +24,7 @@ namespace eng::renderer {
         uint32_t entityID = 0;
         uint32_t flags = 0;
         bool castShadows = true;
+        uint32_t layerMask = 1;
     };
 
     struct DirectionalLightGPU {
@@ -39,6 +40,10 @@ namespace eng::renderer {
         int shadowResolution = 2048;
         int pcfKernelSize = 3;
         float shadowDistance = 75.0f;
+        float temperature = 6500.0f;
+        uint32_t layerMask = 0xFFFFFFFF;
+        glm::mat4 directionalLightProjViews[4];
+        glm::vec4 cascadeSplitDepths;
     };
 
     struct PointLightGPU {
@@ -46,6 +51,10 @@ namespace eng::renderer {
         float radius = 0.0f;
         glm::vec3 color{1.0f, 1.0f, 1.0f};
         float intensity = 0.0f;
+        float temperature = 6500.0f;
+        uint32_t layerMask = 0xFFFFFFFF;
+        float sourceRadius = 0.0f;
+        bool castShadows = true;
     };
 
     struct SpotLightGPU {
@@ -57,11 +66,21 @@ namespace eng::renderer {
         float innerConeAngle = 0.0f;
         float outerConeAngle = 0.0f;
         float padding = 0.0f;
+        float temperature = 6500.0f;
+        uint32_t layerMask = 0xFFFFFFFF;
+        float sourceRadius = 0.0f;
+        bool castShadows = true;
     };
 
     struct SkyLightData {
         glm::vec3 color{1.0f, 1.0f, 1.0f};
         float intensity = 0.0f;
+        std::string environmentPath = "";
+        float rotation = 0.0f;
+        float diffuseIntensity = 1.0f;
+        float specularIntensity = 1.0f;
+        float exposureOffset = 0.0f;
+        int mode = 0; // 0 = Procedural, 1 = HDR Cubemap
     };
 
     struct CameraData {
@@ -85,11 +104,24 @@ namespace eng::renderer {
 
     using MaterialGPUData = MaterialGPU;
 
+    struct ReflectionProbeData {
+        bool enabled = true;
+        glm::vec3 position{0.0f};
+        glm::vec3 boxMin{-10.0f};
+        glm::vec3 boxMax{10.0f};
+        float blendDistance = 1.0f;
+        float intensity = 1.0f;
+        uint32_t priority = 0;
+        bool isBox = true;
+        std::string capturePath = "";
+    };
+
     struct RenderScene {
         std::vector<RenderMeshInstance> meshInstances;
         std::vector<DirectionalLightGPU> directionalLights;
         std::vector<PointLightGPU> pointLights;
         std::vector<SpotLightGPU> spotLights;
+        std::vector<ReflectionProbeData> reflectionProbes;
         CameraData camera;
         SkyLightData skyLight;
         bool sceneHasValidLights = false;

@@ -48,6 +48,7 @@ GPUScene::~GPUScene() {
 void GPUScene::Initialize(EngineResources& resources) {
     std::lock_guard<std::mutex> lock(m_SceneMutex);
 
+    m_ShadowAtlasAllocator = std::make_unique<ShadowAtlasAllocator>(2048);
     m_InstanceSlots.clear();
     m_FreeInstanceSlots.clear();
     m_EntityToInstance.clear();
@@ -301,6 +302,7 @@ void GPUScene::UpdateFrame(
         }
     }
     glm::mat4 proj = glm::perspective(glm::radians(renderScene.camera.fov), aspect, renderScene.camera.nearPlane, renderScene.camera.farPlane);
+    proj[1][1] *= -1.0f;
     glm::mat4 view = renderScene.camera.viewMatrix;
     glm::mat4 vp = proj * view;
     GPUFrustum frustum = ExtractFrustumPlanes(vp);
@@ -317,8 +319,12 @@ void GPUScene::UpdateFrame(
     if (!renderScene.directionalLights.empty()) {
         const auto& dirLight = renderScene.directionalLights[0];
         lightUboData.directionalDirectionIntensity = glm::vec4(dirLight.direction, dirLight.intensity);
-        lightUboData.directionalColor = glm::vec4(dirLight.color, 1.0f);
+        lightUboData.directionalColor = glm::vec4(dirLight.color, dirLight.temperature);
         lightUboData.directionalLightProjView = dirLight.lightSpaceMatrix;
+        for (int c = 0; c < 4; ++c) {
+            lightUboData.directionalLightProjViews[c] = dirLight.directionalLightProjViews[c];
+        }
+        lightUboData.cascadeSplitDepths = dirLight.cascadeSplitDepths;
         lightUboData.shadowBias = dirLight.shadowBias;
         lightUboData.shadowNormalBias = dirLight.shadowNormalBias;
         lightUboData.shadowSlopeBias = dirLight.shadowSlopeBias;
@@ -326,16 +332,126 @@ void GPUScene::UpdateFrame(
         lightUboData.shadowLightCast = dirLight.castShadows > 0.0f ? 1 : 0;
         lightUboData.pcfKernelSize = dirLight.pcfKernelSize;
         lightUboData.shadowResolution = dirLight.shadowResolution;
-        lightUboData.shadowSettings.shadowParams = glm::vec4(1.0f, 0.003f, 0.01f, 1.0f);
-        lightUboData.shadowSettings.shadowFlags = glm::uvec4(3, 0, 0, 0);
+        lightUboData.shadowSettings.shadowParams = glm::vec4(dirLight.shadowStrength, dirLight.shadowBias, dirLight.shadowSlopeBias, 1.0f);
+        lightUboData.shadowSettings.shadowFlags = glm::uvec4(dirLight.pcfKernelSize, 0, 0, 0);
+    } else {
+        lightUboData.directionalColor = glm::vec4(1.0f, 1.0f, 1.0f, 6500.0f);
     }
     lightUboData.ambientColorIntensity = glm::vec4(renderScene.skyLight.color, renderScene.skyLight.intensity);
+    lightUboData.skyLightMode = renderScene.skyLight.mode;
+    lightUboData.skyLightRotation = glm::radians(renderScene.skyLight.rotation);
+    lightUboData.skyLightDiffuseIntensity = renderScene.skyLight.diffuseIntensity;
+    lightUboData.skyLightSpecularIntensity = renderScene.skyLight.specularIntensity;
+    lightUboData.skyLightExposureOffset = renderScene.skyLight.exposureOffset;
+    // -------------------------------------------------------------
+    // Local Shadow Scheduling & Allocations
+    // -------------------------------------------------------------
+    m_ScheduledShadows.clear();
+
+    // Check if any dynamic casters moved this frame
+    bool dynamicCastersMoved = false;
+    for (const auto& item : renderQueueItems) {
+        if (item.transform != item.previousTransform) {
+            dynamicCastersMoved = true;
+            break;
+        }
+    }
+
+    // Reset allocator every frame to allow simple and robust re-allocation of needed tiles
+    m_ShadowAtlasAllocator->Reset();
+
+    // Set point lights
     lightUboData.pointLightCount = std::min(static_cast<uint32_t>(renderScene.pointLights.size()), 16u);
     for (uint32_t i = 0; i < lightUboData.pointLightCount; ++i) {
         const auto& pt = renderScene.pointLights[i];
         lightUboData.pointPositionsRadius[i] = glm::vec4(pt.position, pt.radius);
         lightUboData.pointColorsIntensity[i] = glm::vec4(pt.color, pt.intensity);
+        lightUboData.pointLayerMasks[i] = glm::vec4(static_cast<float>(pt.layerMask), pt.temperature, pt.sourceRadius, 0.0f);
+
+        // Point light shadow setup
+        uint32_t lightHash = std::hash<float>()(pt.position.x) ^ std::hash<float>()(pt.position.y) ^ std::hash<float>()(pt.position.z);
+        bool shouldShadow = pt.castShadows && (i < 8u); // Budget limit: max 8 shadowed point lights
+        
+        // Check cache validity
+        auto& cacheEntry = m_PointLightCache[lightHash];
+        bool cacheValid = shouldShadow && !dynamicCastersMoved && cacheEntry[0].valid;
+        if (cacheValid) {
+            for (int f = 0; f < 6; ++f) {
+                if (cacheEntry[f].lastPos != pt.position) {
+                    cacheValid = false;
+                    break;
+                }
+            }
+        }
+
+        if (shouldShadow) {
+            uint32_t x[6]{}, y[6]{};
+            bool allocated = true;
+            for (int f = 0; f < 6; ++f) {
+                allocated &= m_ShadowAtlasAllocator->Allocate(256, lightHash + f, frameIndex, x[f], y[f]);
+            }
+
+            if (allocated) {
+                // Setup point light viewports
+                const glm::vec3 targets[6] = {
+                    glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(-1.0f, 0.0f, 0.0f),
+                    glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f),
+                    glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, -1.0f)
+                };
+                const glm::vec3 ups[6] = {
+                    glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f),
+                    glm::vec3(0.0f, 0.0f, 1.0f),  glm::vec3(0.0f, 0.0f, -1.0f),
+                    glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)
+                };
+                glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.05f, pt.radius);
+
+                for (int f = 0; f < 6; ++f) {
+                    glm::mat4 view = glm::lookAt(pt.position, pt.position + targets[f], ups[f]);
+                    
+                    auto& shadowGPU = lightUboData.pointLightShadows[i][f];
+                    shadowGPU.lightSpaceMatrix = proj * view;
+                    shadowGPU.atlasViewport = glm::vec4(static_cast<float>(x[f]), static_cast<float>(y[f]), 256.0f, 256.0f) / 2048.0f;
+                    shadowGPU.bias = 0.005f;
+                    shadowGPU.normalBias = 0.05f;
+                    shadowGPU.farPlane = pt.radius;
+                    shadowGPU.shadowEnabled = 1.0f;
+
+                    // If cache was not valid or casters moved, schedule render!
+                    if (!cacheValid) {
+                        ScheduledLocalLightShadow sched{};
+                        sched.lightIndex = i; // Point index
+                        sched.faceIndex = f;
+                        sched.tileX = x[f];
+                        sched.tileY = y[f];
+                        sched.tileSize = 256;
+                        sched.viewMatrix = view;
+                        sched.projMatrix = proj;
+                        sched.isSpot = false;
+                        m_ScheduledShadows.push_back(sched);
+
+                        // Save in cache
+                        cacheEntry[f].x = x[f];
+                        cacheEntry[f].y = y[f];
+                        cacheEntry[f].size = 256;
+                        cacheEntry[f].lastPos = pt.position;
+                        cacheEntry[f].valid = true;
+                    }
+                }
+            } else {
+                // Denied shadow path
+                for (int f = 0; f < 6; ++f) {
+                    lightUboData.pointLightShadows[i][f].shadowEnabled = 0.0f;
+                }
+            }
+        } else {
+            // Disabled shadows
+            for (int f = 0; f < 6; ++f) {
+                lightUboData.pointLightShadows[i][f].shadowEnabled = 0.0f;
+            }
+        }
     }
+
+    // Set spot lights
     lightUboData.spotLightCount = std::min(static_cast<uint32_t>(renderScene.spotLights.size()), 16u);
     for (uint32_t i = 0; i < lightUboData.spotLightCount; ++i) {
         const auto& sl = renderScene.spotLights[i];
@@ -343,13 +459,247 @@ void GPUScene::UpdateFrame(
         lightUboData.spotDirectionsIntensity[i] = glm::vec4(sl.direction, sl.intensity);
         lightUboData.spotColors[i] = glm::vec4(sl.color, std::cos(glm::radians(sl.innerConeAngle)));
         lightUboData.spotAngles[i] = glm::vec4(std::cos(glm::radians(sl.outerConeAngle)), 0.0f, 0.0f, 0.0f);
+        lightUboData.spotLayerMasks[i] = glm::vec4(static_cast<float>(sl.layerMask), sl.temperature, sl.sourceRadius, 0.0f);
+
+        // Spot light shadow setup
+        uint32_t lightHash = std::hash<float>()(sl.position.x) ^ std::hash<float>()(sl.position.y) ^ std::hash<float>()(sl.position.z);
+        bool shouldShadow = sl.castShadows && (i < 8u); // Budget limit: max 8 shadowed spot lights
+
+        auto& cacheEntry = m_SpotLightCache[lightHash];
+        bool cacheValid = shouldShadow && !dynamicCastersMoved && cacheEntry.valid && 
+                          (cacheEntry.lastPos == sl.position) && (cacheEntry.lastDir == sl.direction);
+
+        if (shouldShadow) {
+            uint32_t x = 0, y = 0;
+            if (m_ShadowAtlasAllocator->Allocate(512, lightHash, frameIndex, x, y)) {
+                glm::vec3 up = (std::abs(sl.direction.y) > 0.99f) ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::mat4 view = glm::lookAt(sl.position, sl.position + sl.direction, up);
+                glm::mat4 proj = glm::perspective(glm::radians(2.0f * sl.outerConeAngle), 1.0f, 0.05f, sl.range);
+
+                auto& shadowGPU = lightUboData.spotLightShadows[i];
+                shadowGPU.lightSpaceMatrix = proj * view;
+                shadowGPU.atlasViewport = glm::vec4(static_cast<float>(x), static_cast<float>(y), 512.0f, 512.0f) / 2048.0f;
+                shadowGPU.bias = 0.0015f;
+                shadowGPU.normalBias = 0.05f;
+                shadowGPU.farPlane = sl.range;
+                shadowGPU.shadowEnabled = 1.0f;
+
+                if (!cacheValid) {
+                    ScheduledLocalLightShadow sched{};
+                    sched.lightIndex = i; // Spot index
+                    sched.faceIndex = 0;
+                    sched.tileX = x;
+                    sched.tileY = y;
+                    sched.tileSize = 512;
+                    sched.viewMatrix = view;
+                    sched.projMatrix = proj;
+                    sched.isSpot = true;
+                    m_ScheduledShadows.push_back(sched);
+
+                    cacheEntry.x = x;
+                    cacheEntry.y = y;
+                    cacheEntry.size = 512;
+                    cacheEntry.lastPos = sl.position;
+                    cacheEntry.lastDir = sl.direction;
+                    cacheEntry.valid = true;
+                }
+            } else {
+                lightUboData.spotLightShadows[i].shadowEnabled = 0.0f;
+            }
+        } else {
+            lightUboData.spotLightShadows[i].shadowEnabled = 0.0f;
+        }
     }
+
+    // Set reflection probes
+    lightUboData.reflectionProbeCount = std::min(static_cast<uint32_t>(renderScene.reflectionProbes.size()), 4u);
+    for (uint32_t i = 0; i < lightUboData.reflectionProbeCount; ++i) {
+        const auto& probe = renderScene.reflectionProbes[i];
+        auto& gpu = lightUboData.reflectionProbes[i];
+        gpu.positionIntensity = glm::vec4(probe.position, probe.intensity);
+        gpu.boxMinPriority = glm::vec4(probe.boxMin, static_cast<float>(probe.priority));
+        gpu.boxMaxBlend = glm::vec4(probe.boxMax, probe.blendDistance);
+        gpu.flags = glm::uvec4(probe.isBox ? 1u : 0u, 1u, 0u, 0u);
+    }
+    for (uint32_t i = lightUboData.reflectionProbeCount; i < 4u; ++i) {
+        lightUboData.reflectionProbes[i].flags = glm::uvec4(0u, 0u, 0u, 0u);
+    }
+
     lightUboData.shadingMode = shadingMode;
 
     void* lightDst = nullptr;
     VK_CHECK(vmaMapMemory(resources.allocator, frameRes.lightAlloc, &lightDst));
     std::memcpy(lightDst, &lightUboData, sizeof(lightUboData));
     vmaUnmapMemory(resources.allocator, frameRes.lightAlloc);
+
+    // -------------------------------------------------------------------------
+    // 2b. Clustered Lighting Local Lights & Bounds Upload
+    // -------------------------------------------------------------------------
+    std::vector<Omnix::Radiance::LocalLightGPU> localLightsList;
+    localLightsList.reserve(renderScene.pointLights.size() + renderScene.spotLights.size());
+
+    for (const auto& pt : renderScene.pointLights) {
+        Omnix::Radiance::LocalLightGPU gpu{};
+        gpu.positionRange = glm::vec4(pt.position, pt.radius);
+        gpu.colorIntensity = glm::vec4(pt.color, pt.intensity);
+        gpu.directionType = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f); // Point
+        gpu.spotAngles = glm::vec4(0.0f, 0.0f, static_cast<float>(pt.layerMask), pt.sourceRadius);
+        localLightsList.push_back(gpu);
+    }
+
+    for (const auto& sl : renderScene.spotLights) {
+        Omnix::Radiance::LocalLightGPU gpu{};
+        gpu.positionRange = glm::vec4(sl.position, sl.range);
+        gpu.colorIntensity = glm::vec4(sl.color, sl.intensity);
+        gpu.directionType = glm::vec4(sl.direction, 1.0f); // Spot
+        gpu.spotAngles = glm::vec4(glm::radians(sl.innerConeAngle), glm::radians(sl.outerConeAngle), static_cast<float>(sl.layerMask), sl.sourceRadius);
+        localLightsList.push_back(gpu);
+    }
+
+    if (localLightsList.empty()) {
+        Omnix::Radiance::LocalLightGPU dummy{};
+        dummy.positionRange = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        dummy.colorIntensity = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        dummy.directionType = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        dummy.spotAngles = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+        localLightsList.push_back(dummy);
+    }
+
+    size_t neededLocalLightSize = localLightsList.size() * sizeof(Omnix::Radiance::LocalLightGPU);
+    if (neededLocalLightSize > frameRes.localLightBuffer.size) {
+        needsDescriptorUpdate = true;
+    }
+
+    frameRes.localLightBuffer.Upload(localLightsList.data(), neededLocalLightSize);
+    frameRes.localLightBuffer.size = neededLocalLightSize;
+
+    uint32_t viewportWidth = static_cast<uint32_t>(radianceUBO.viewportSize.x);
+    uint32_t viewportHeight = static_cast<uint32_t>(radianceUBO.viewportSize.y);
+    if (viewportWidth == 0) viewportWidth = 1280;
+    if (viewportHeight == 0) viewportHeight = 720;
+
+    Omnix::Radiance::ClusterSettings clusterSettings{};
+    uint32_t tileCountX = (viewportWidth + clusterSettings.tileSizeX - 1) / clusterSettings.tileSizeX;
+    uint32_t tileCountY = (viewportHeight + clusterSettings.tileSizeY - 1) / clusterSettings.tileSizeY;
+    uint32_t depthSliceCount = clusterSettings.depthSliceCount;
+    uint32_t clusterCount = tileCountX * tileCountY * depthSliceCount;
+
+    // Resize cluster bounds buffer if needed
+    uint32_t prevClusterBoundsCapacity = frameRes.clusterBoundsCapacity;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterBoundsBuffer,
+        frameRes.clusterBoundsAlloc,
+        frameRes.clusterBoundsBufferSize,
+        frameRes.clusterBoundsCapacity,
+        clusterCount,
+        sizeof(Omnix::Radiance::ClusterBoundsGPU),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterBoundsCapacity != prevClusterBoundsCapacity) {
+        needsDescriptorUpdate = true;
+    }
+
+    // Resize cluster range buffer
+    uint32_t prevClusterRangeCapacity = frameRes.clusterRangeCapacity;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterRangeBuffer,
+        frameRes.clusterRangeAlloc,
+        frameRes.clusterRangeBufferSize,
+        frameRes.clusterRangeCapacity,
+        clusterCount,
+        sizeof(Omnix::Radiance::ClusterRangeGPU),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterRangeCapacity != prevClusterRangeCapacity) {
+        needsDescriptorUpdate = true;
+    }
+
+    // Resize cluster light index buffer
+    uint32_t totalLightIndices = clusterCount * clusterSettings.maxLightsPerCluster;
+    uint32_t prevClusterLightIndexCapacity = frameRes.clusterLightIndexCapacity;
+    resizeBufferIfNeeded(
+        resources,
+        frameRes.clusterLightIndexBuffer,
+        frameRes.clusterLightIndexAlloc,
+        frameRes.clusterLightIndexBufferSize,
+        frameRes.clusterLightIndexCapacity,
+        totalLightIndices,
+        sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    );
+    if (frameRes.clusterLightIndexCapacity != prevClusterLightIndexCapacity) {
+        needsDescriptorUpdate = true;
+    }
+
+    // Generate view-space bounds on CPU
+    std::vector<Omnix::Radiance::ClusterBoundsGPU> clusterBounds(clusterCount);
+    float nearPlane = renderScene.camera.nearPlane;
+    float farPlane = renderScene.camera.farPlane;
+    if (nearPlane <= 0.001f) nearPlane = 0.1f;
+    if (farPlane <= nearPlane) farPlane = 1000.0f;
+
+    float proj00 = radianceUBO.projection[0][0];
+    float proj11 = radianceUBO.projection[1][1];
+    if (std::abs(proj00) < 0.001f) proj00 = 1.0f;
+    if (std::abs(proj11) < 0.001f) proj11 = 1.0f;
+
+    for (uint32_t z = 0; z < depthSliceCount; ++z) {
+        float zNear = nearPlane * std::pow(farPlane / nearPlane, static_cast<float>(z) / static_cast<float>(depthSliceCount));
+        float zFar = nearPlane * std::pow(farPlane / nearPlane, static_cast<float>(z + 1) / static_cast<float>(depthSliceCount));
+
+        for (uint32_t y = 0; y < tileCountY; ++y) {
+            float ndc_yMin = (static_cast<float>(y * clusterSettings.tileSizeY) / static_cast<float>(viewportHeight)) * 2.0f - 1.0f;
+            float ndc_yMax = (static_cast<float>((y + 1) * clusterSettings.tileSizeY) / static_cast<float>(viewportHeight)) * 2.0f - 1.0f;
+
+            for (uint32_t x = 0; x < tileCountX; ++x) {
+                float ndc_xMin = (static_cast<float>(x * clusterSettings.tileSizeX) / static_cast<float>(viewportWidth)) * 2.0f - 1.0f;
+                float ndc_xMax = (static_cast<float>((x + 1) * clusterSettings.tileSizeX) / static_cast<float>(viewportWidth)) * 2.0f - 1.0f;
+
+                float x_near_min = ndc_xMin * zNear / proj00;
+                float x_near_max = ndc_xMax * zNear / proj00;
+                float x_far_min = ndc_xMin * zFar / proj00;
+                float x_far_max = ndc_xMax * zFar / proj00;
+
+                float y_near_min = ndc_yMin * zNear / proj11;
+                float y_near_max = ndc_yMax * zNear / proj11;
+                float y_far_min = ndc_yMin * zFar / proj11;
+                float y_far_max = ndc_yMax * zFar / proj11;
+
+                float minX = std::min({ x_near_min, x_near_max, x_far_min, x_far_max });
+                float maxX = std::max({ x_near_min, x_near_max, x_far_min, x_far_max });
+                float minY = std::min({ y_near_min, y_near_max, y_far_min, y_far_max });
+                float maxY = std::max({ y_near_min, y_near_max, y_far_min, y_far_max });
+
+                uint32_t clusterIdx = x + y * tileCountX + z * tileCountX * tileCountY;
+                clusterBounds[clusterIdx].minPoint = glm::vec4(minX, minY, -zFar, 0.0f);
+                clusterBounds[clusterIdx].maxPoint = glm::vec4(maxX, maxY, -zNear, 0.0f);
+            }
+        }
+    }
+
+    void* boundsDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.clusterBoundsAlloc, &boundsDst));
+    std::memcpy(boundsDst, clusterBounds.data(), clusterBounds.size() * sizeof(Omnix::Radiance::ClusterBoundsGPU));
+    vmaUnmapMemory(resources.allocator, frameRes.clusterBoundsAlloc);
+
+    // Upload cluster settings
+    Omnix::Radiance::ClusterSettingsGPU settingsGPU{};
+    settingsGPU.viewMatrix = radianceUBO.view;
+    settingsGPU.tileCountX = tileCountX;
+    settingsGPU.tileCountY = tileCountY;
+    settingsGPU.depthSliceCount = depthSliceCount;
+    settingsGPU.maxLightsPerCluster = clusterSettings.maxLightsPerCluster;
+    settingsGPU.clusterCount = clusterCount;
+    settingsGPU.lightCount = static_cast<uint32_t>(localLightsList.size());
+    settingsGPU.nearPlane = nearPlane;
+    settingsGPU.farPlane = farPlane;
+
+    void* settingsDst = nullptr;
+    VK_CHECK(vmaMapMemory(resources.allocator, frameRes.clusterSettingsAlloc, &settingsDst));
+    std::memcpy(settingsDst, &settingsGPU, sizeof(settingsGPU));
+    vmaUnmapMemory(resources.allocator, frameRes.clusterSettingsAlloc);
 
     // -------------------------------------------------------------------------
     // 3. Populate Unique Materials & Build Material Array
@@ -468,6 +818,7 @@ void GPUScene::UpdateFrame(
         data.materialTableOffset = matIdx;
         data.objectID = entityID;
         data.flags = GPUInstanceFlags_Visible | GPUInstanceFlags_CastShadow;
+        data.flags |= (item.layerMask & 0xFF) << GPUInstanceFlags_RenderLayerShift;
         if (item.mesh->isVirtualGeometry) {
             data.flags |= GPUInstanceFlags_VirtualGeometry;
         }

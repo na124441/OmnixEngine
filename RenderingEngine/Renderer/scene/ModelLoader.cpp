@@ -87,14 +87,69 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
                 return false;
             }
 
-            indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i1], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
+            glm::vec3 p1 = temp_positions[i1];
+            glm::vec3 p2 = temp_positions[i2];
+            glm::vec3 p3 = temp_positions[i3];
+
+            glm::vec3 e1 = p2 - p1;
+            glm::vec3 e2 = p3 - p1;
+            glm::vec3 faceNormal = { 0.0f, 0.0f, 1.0f };
+            if (glm::length(e1) > 0.0001f && glm::length(e2) > 0.0001f) {
+                faceNormal = glm::normalize(glm::cross(e1, e2));
+            }
+
+            // Determine dominant axis of normal for planar projection
+            float absX = std::abs(faceNormal.x);
+            float absY = std::abs(faceNormal.y);
+            float absZ = std::abs(faceNormal.z);
+
+            glm::vec2 uv1, uv2, uv3;
+            if (absX >= absY && absX >= absZ) {
+                uv1 = { p1.z, p1.y };
+                uv2 = { p2.z, p2.y };
+                uv3 = { p3.z, p3.y };
+            } else if (absY >= absX && absY >= absZ) {
+                uv1 = { p1.x, p1.z };
+                uv2 = { p2.x, p2.z };
+                uv3 = { p3.x, p3.z };
+            } else {
+                uv1 = { p1.x, p1.y };
+                uv2 = { p2.x, p2.y };
+                uv3 = { p3.x, p3.y };
+            }
+
+            // Scale UV coordinates slightly to fit nicely on standard geometries
+            float uvScale = 2.0f;
+            uv1 *= uvScale;
+            uv2 *= uvScale;
+            uv3 *= uvScale;
+
+            // Compute tangent vectors for proper normal map perturbation
+            glm::vec3 tangent{1.0f, 0.0f, 0.0f};
+            glm::vec2 duv1 = uv2 - uv1;
+            glm::vec2 duv2 = uv3 - uv1;
+            float denom = (duv1.x * duv2.y - duv2.x * duv1.y);
+            if (std::abs(denom) > 0.00001f) {
+                float f = 1.0f / denom;
+                tangent.x = f * (duv2.y * e1.x - duv1.y * e2.x);
+                tangent.y = f * (duv2.y * e1.y - duv1.y * e2.y);
+                tangent.z = f * (duv2.y * e1.z - duv1.y * e2.z);
+                if (glm::length(tangent) > 0.0001f) {
+                    tangent = glm::normalize(tangent);
+                } else {
+                    tangent = {1.0f, 0.0f, 0.0f};
+                }
+            }
+            glm::vec4 tVal = glm::vec4(tangent, 1.0f);
 
             indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i2], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
+            vertices.push_back({p1, faceNormal, uv1, tVal});
 
             indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({temp_positions[i3], {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}});
+            vertices.push_back({p2, faceNormal, uv2, tVal});
+
+            indices.push_back(static_cast<uint32_t>(vertices.size()));
+            vertices.push_back({p3, faceNormal, uv3, tVal});
         }
     }
 
@@ -109,6 +164,10 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
 
     ::Logger::Log(::LogLevel::Info, "Loaded OBJ: " + path + " (" + std::to_string(vertices.size()) + " vertices)");
     ::Logger::Log(::LogLevel::Info, "Model Bounds: Min(" + std::to_string(outMesh.minBounds.x) + "," + std::to_string(outMesh.minBounds.y) + "," + std::to_string(outMesh.minBounds.z) + ") Max(" + std::to_string(outMesh.maxBounds.x) + "," + std::to_string(outMesh.maxBounds.y) + "," + std::to_string(outMesh.maxBounds.z) + ")");
+
+    outMesh.hasNormals = true;
+    outMesh.hasUVs = true;
+    outMesh.hasTangents = true;
 
     return outMesh.init(vertices.data(), vertices.size(), indices.data(), indices.size(), resources);
 }

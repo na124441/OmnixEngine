@@ -13,6 +13,24 @@ struct alignas(16) ShadowGPUSettings
     // x = PCF kernel size
 };
 
+struct alignas(16) LocalLightShadowGPU
+{
+    glm::mat4 lightSpaceMatrix;
+    glm::vec4 atlasViewport; // x=u, y=v, z=size_u, w=size_v in [0, 1]
+    float bias;
+    float normalBias;
+    float farPlane;
+    float shadowEnabled;
+};
+
+struct alignas(16) ReflectionProbeGPU
+{
+    glm::vec4 positionIntensity;  // xyz = position, w = intensity
+    glm::vec4 boxMinPriority;     // xyz = boxMin, w = priority
+    glm::vec4 boxMaxBlend;        // xyz = boxMax, w = blendDistance
+    glm::uvec4 flags;             // x = isBox, y = valid, zw = unused
+};
+
 /* Matches the layout in the fragment shader (set = 2, binding = 0) */
 struct LightData
 {
@@ -29,6 +47,8 @@ struct LightData
     alignas(16) glm::vec4 spotDirectionsIntensity[16];
     alignas(16) glm::vec4 spotColors[16];
     alignas(16) glm::vec4 spotAngles[16];
+    alignas(16) glm::vec4 pointLayerMasks[16];
+    alignas(16) glm::vec4 spotLayerMasks[16];
 
     // Shadow mapping uniform data
     alignas(16) glm::mat4 directionalLightProjView;
@@ -44,4 +64,17 @@ struct LightData
     uint32_t paddingVal2;
 
     alignas(16) ShadowGPUSettings shadowSettings;
+
+    alignas(16) uint32_t skyLightMode;
+    float skyLightRotation;
+    float skyLightDiffuseIntensity;
+    float skyLightSpecularIntensity;
+    alignas(16) float skyLightExposureOffset;
+
+    alignas(16) LocalLightShadowGPU spotLightShadows[16];
+    alignas(16) LocalLightShadowGPU pointLightShadows[16][6];
+
+    alignas(16) uint32_t reflectionProbeCount;
+    uint32_t padProbe0, padProbe1, padProbe2;
+    alignas(16) ReflectionProbeGPU reflectionProbes[4];
 };

@@ -123,6 +123,7 @@ namespace eng::runtime {
         GameplayValidator m_GameplayValidator;
         std::vector<ValidationResult> m_LastValidationResults;
         bool m_ShowGameplayValidatorWindow = false;
+        bool m_ShowRadiancePanel = false;
     };
 
 } // namespace eng::runtime

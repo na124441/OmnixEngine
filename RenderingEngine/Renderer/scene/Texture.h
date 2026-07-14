@@ -35,6 +35,20 @@ public:
                       const struct EngineResources& res,
                       TextureUsage usage = TextureUsage::Albedo);
 
+    bool createCubemapFromData(
+        const std::vector<std::vector<std::vector<float>>>& mipFacePixels,
+        uint32_t width,
+        uint32_t height,
+        uint32_t mips,
+        const struct EngineResources& res);
+
+    bool create2DTextureFromData(
+        const std::vector<float>& pixels,
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        const struct EngineResources& res);
+
     VkImageView view()   const { return imageView; }
     VkSampler   sampler() const { return samplerHandle; }
 
@@ -49,6 +63,12 @@ public:
 
     /** Returns a fallback 1x1 metallic-roughness texture (metallic=0, roughness=0.6: G=153, B=0) */
     static Texture* getMetallicRoughnessFallbackTexture(const struct EngineResources& res);
+
+    /** Returns a fallback 1x1x6 white cubemap (cached, survives until shutdown). */
+    static Texture* getWhiteCubemap(const struct EngineResources& res);
+
+    /** Returns a fallback 2x2 magenta/black checkerboard texture for invalid references */
+    static Texture* getErrorCheckerTexture(const struct EngineResources& res);
 
     static void cleanupFallbackTextures();
 

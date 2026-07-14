@@ -2,6 +2,7 @@
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
+layout(location = 3) in vec4 inTangent;
 
 // Push Constant for the instance index
 layout(push_constant) uniform PushConstants {
@@ -15,6 +16,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -51,6 +53,7 @@ layout(location = 2) out vec2 vUV;
 layout(location = 3) out vec3 vCameraPos;
 layout(location = 4) flat out uint vMaterialIndex;
 layout(location = 5) flat out uint vEntityID;
+layout(location = 7) out vec4 vTangent;
 
 void main()
 {
@@ -62,6 +65,8 @@ void main()
 
     mat3 normalMat = transpose(inverse(mat3(worldMatrix)));
     vNormal = normalize(normalMat * inNormal);
+    vTangent.xyz = normalize(normalMat * inTangent.xyz);
+    vTangent.w = inTangent.w;
 
     vUV = inUV;
     vCameraPos = frame.cameraPosition.xyz;

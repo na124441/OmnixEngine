@@ -27,9 +27,9 @@ namespace eng::renderer {
             return binding;
         }
 
-        static inline std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescriptions()
+        static inline std::array<VkVertexInputAttributeDescription, 4> GetAttributeDescriptions()
         {
-            std::array<VkVertexInputAttributeDescription, 3> attributes{};
+            std::array<VkVertexInputAttributeDescription, 4> attributes{};
 
             attributes[0] = {
                 0,
@@ -50,6 +50,13 @@ namespace eng::renderer {
                 0,
                 VK_FORMAT_R32G32_SFLOAT,
                 offsetof(PbrVertex, uv)
+            };
+
+            attributes[3] = {
+                3,
+                0,
+                VK_FORMAT_R32G32B32A32_SFLOAT,
+                offsetof(PbrVertex, tangent)
             };
 
             return attributes;

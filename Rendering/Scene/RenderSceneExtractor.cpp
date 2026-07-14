@@ -48,6 +48,7 @@ void RenderSceneExtractor::ExtractScene(
     auto renderableMeshType = coordinator.GetComponentType<RenderableMeshComponent>();
     auto materialType = coordinator.GetComponentType<MaterialComponent>();
     auto boundsType = coordinator.GetComponentType<BoundsComponent>();
+    auto layerType = coordinator.GetComponentType<LayerComponent>();
 
     // 1. Loop over entities and extract render mesh instances
     for (Entity entity : entities) {
@@ -78,6 +79,11 @@ void RenderSceneExtractor::ExtractScene(
                 inst.entityID = static_cast<uint32_t>(entity);
                 inst.flags = 0;
                 inst.castShadows = meshRenderer.castShadows;
+                if (sig.test(layerType)) {
+                    inst.layerMask = 1 << coordinator.GetComponent<LayerComponent>(entity).layer;
+                } else {
+                    inst.layerMask = 1;
+                }
 
                 // Copy transform matrix
                 glm::mat4 m(1.0f);
@@ -151,9 +157,11 @@ void RenderSceneExtractor::ExtractScene(
         activeCamera.nearPlane,
         activeCamera.farPlane
     );
+    outRenderScene.camera.projectionMatrix[1][1] *= -1.0f;
 
     // 3. Extract lights
     bool sceneHasLights = false;
+    float sceneLightEnergy = 0.0f;
     auto directionalLightType = coordinator.GetComponentType<DirectionalLightComponent>();
     auto pointLightType = coordinator.GetComponentType<PointLightComponent>();
     auto skyLightType = coordinator.GetComponentType<SkyLightComponent>();
@@ -167,26 +175,33 @@ void RenderSceneExtractor::ExtractScene(
             const auto& light = coordinator.GetComponent<DirectionalLightComponent>(ent);
             if (light.enabled && light.intensity > 0.0f) {
                 sceneHasLights = true;
-                break;
+                sceneLightEnergy += light.intensity;
             }
         }
         if (sig.test(pointLightType)) {
             const auto& light = coordinator.GetComponent<PointLightComponent>(ent);
             if (light.enabled && light.intensity > 0.0f && light.radius > 0.0f) {
                 sceneHasLights = true;
-                break;
+                sceneLightEnergy += light.intensity;
             }
         }
         if (sig.test(spotLightType)) {
             const auto& light = coordinator.GetComponent<SpotLightComponent>(ent);
             if (light.enabled && light.intensity > 0.0f && light.range > 0.0f) {
                 sceneHasLights = true;
-                break;
+                sceneLightEnergy += light.intensity;
+            }
+        }
+        if (sig.test(skyLightType)) {
+            const auto& light = coordinator.GetComponent<SkyLightComponent>(ent);
+            if (light.enabled && light.intensity > 0.0f) {
+                sceneHasLights = true;
+                sceneLightEnergy += light.intensity;
             }
         }
     }
 
-    const bool previewLightingActive = usePreviewLighting || !sceneHasLights;
+    const bool previewLightingActive = usePreviewLighting || !sceneHasLights || sceneLightEnergy < 0.15f;
     outRenderScene.sceneHasValidLights = sceneHasLights;
     outRenderScene.previewLightingActive = previewLightingActive;
 
@@ -235,6 +250,8 @@ void RenderSceneExtractor::ExtractScene(
                     dirLight.shadowResolution = dirComp.shadowResolution;
                     dirLight.pcfKernelSize = dirComp.pcfKernelSize;
                     dirLight.shadowDistance = dirComp.shadowDistance;
+                    dirLight.temperature = dirComp.temperature;
+                    dirLight.layerMask = dirComp.layerMask;
                     outRenderScene.directionalLights.push_back(dirLight);
                 }
             }
@@ -249,6 +266,12 @@ void RenderSceneExtractor::ExtractScene(
                 if (skyComp.enabled) {
                     outRenderScene.skyLight.color = glm::vec3(skyComp.color.x, skyComp.color.y, skyComp.color.z);
                     outRenderScene.skyLight.intensity = skyComp.intensity;
+                    outRenderScene.skyLight.environmentPath = skyComp.environmentPath;
+                    outRenderScene.skyLight.rotation = skyComp.rotation;
+                    outRenderScene.skyLight.diffuseIntensity = skyComp.diffuseIntensity;
+                    outRenderScene.skyLight.specularIntensity = skyComp.specularIntensity;
+                    outRenderScene.skyLight.exposureOffset = skyComp.exposureOffset;
+                    outRenderScene.skyLight.mode = skyComp.mode;
                     break;
                 }
             }
@@ -265,6 +288,10 @@ void RenderSceneExtractor::ExtractScene(
                     pt.color = glm::vec3(ptComp.color.x, ptComp.color.y, ptComp.color.z);
                     pt.intensity = ptComp.intensity;
                     pt.radius = ptComp.radius;
+                    pt.temperature = ptComp.temperature;
+                    pt.layerMask = ptComp.layerMask;
+                    pt.sourceRadius = ptComp.sourceRadius;
+                    pt.castShadows = ptComp.castShadows;
                     pt.position = glm::vec3(0.0f);
                     if (sig.test(transformType)) {
                         const auto& tc = coordinator.GetComponent<TransformComponent>(ent);
@@ -288,6 +315,10 @@ void RenderSceneExtractor::ExtractScene(
                     spot.range = spotComp.range;
                     spot.innerConeAngle = spotComp.innerConeAngle;
                     spot.outerConeAngle = spotComp.outerConeAngle;
+                    spot.temperature = spotComp.temperature;
+                    spot.layerMask = spotComp.layerMask;
+                    spot.sourceRadius = spotComp.sourceRadius;
+                    spot.castShadows = spotComp.castShadows;
                     spot.position = glm::vec3(0.0f);
                     spot.direction = glm::vec3(0.0f, 0.0f, -1.0f);
                     if (sig.test(transformType)) {
@@ -297,6 +328,34 @@ void RenderSceneExtractor::ExtractScene(
                         spot.direction = glm::normalize(q * glm::vec3(0.0f, 0.0f, -1.0f));
                     }
                     outRenderScene.spotLights.push_back(spot);
+                }
+            }
+        }
+
+        // Reflection Probes
+        auto reflectionProbeType = coordinator.GetComponentType<ReflectionProbeComponent>();
+        for (Entity ent : coordinator.GetActiveEntities()) {
+            if (!coordinator.IsEntityAlive(ent)) continue;
+            auto sig = coordinator.GetSignature(ent);
+            if (sig.test(reflectionProbeType)) {
+                const auto& probeComp = coordinator.GetComponent<ReflectionProbeComponent>(ent);
+                if (probeComp.enabled) {
+                    ReflectionProbeData probe{};
+                    probe.enabled = probeComp.enabled;
+                    probe.position = glm::vec3(probeComp.position.x, probeComp.position.y, probeComp.position.z);
+                    probe.boxMin = glm::vec3(probeComp.boxMin.x, probeComp.boxMin.y, probeComp.boxMin.z);
+                    probe.boxMax = glm::vec3(probeComp.boxMax.x, probeComp.boxMax.y, probeComp.boxMax.z);
+                    probe.blendDistance = probeComp.blendDistance;
+                    probe.intensity = probeComp.intensity;
+                    probe.priority = probeComp.priority;
+                    probe.isBox = probeComp.isBox;
+                    probe.capturePath = probeComp.capturePath;
+                    
+                    if (sig.test(transformType)) {
+                        const auto& tc = coordinator.GetComponent<TransformComponent>(ent);
+                        probe.position += glm::vec3(tc.position.x, tc.position.y, tc.position.z);
+                    }
+                    outRenderScene.reflectionProbes.push_back(probe);
                 }
             }
         }
@@ -393,7 +452,16 @@ void RenderSceneExtractor::ExtractLighting(
         }
     }
 
-    const bool previewLightingActive = usePreviewLighting || !world || !sceneHasLights;
+    float estimatedSceneLight = std::max(uboData.ambientColorIntensity.w, 0.0f);
+    estimatedSceneLight += std::max(uboData.directionalDirectionIntensity.w, 0.0f);
+    for (uint32_t i = 0; i < uboData.pointLightCount && i < 16; ++i) {
+        estimatedSceneLight += std::max(uboData.pointColorsIntensity[i].w, 0.0f);
+    }
+    for (uint32_t i = 0; i < uboData.spotLightCount && i < 16; ++i) {
+        estimatedSceneLight += std::max(uboData.spotDirectionsIntensity[i].w, 0.0f);
+    }
+
+    const bool previewLightingActive = usePreviewLighting || !world || !sceneHasLights || estimatedSceneLight < 0.05f;
 
     if (!previewLightingActive && world && sceneHasLights) {
         auto& coordinator = world->getCoordinator();
@@ -496,3 +564,7 @@ void RenderSceneExtractor::ExtractLocalLights(
 }
 
 } // namespace eng::renderer
+
+
+
+

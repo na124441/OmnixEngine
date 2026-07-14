@@ -18,6 +18,8 @@ namespace eng::runtime {
         float intensity;
         glm::vec3 color;
         bool enabled;
+        float temperature;
+        uint32_t layerMask;
     };
 
     struct RuntimePointLight {
@@ -26,12 +28,21 @@ namespace eng::runtime {
         glm::vec3 color;
         float intensity;
         bool enabled;
+        float temperature;
+        uint32_t layerMask;
+        float sourceRadius;
     };
 
     struct RuntimeSkyLight {
         glm::vec3 color;
         float intensity;
         bool enabled;
+        std::string environmentPath = "";
+        float rotation = 0.0f;
+        float diffuseIntensity = 1.0f;
+        float specularIntensity = 1.0f;
+        float exposureOffset = 0.0f;
+        int mode = 0; // 0 = Procedural, 1 = HDR Cubemap
     };
 
     struct RuntimeSpotLight {
@@ -43,6 +54,9 @@ namespace eng::runtime {
         float innerConeAngle;
         float outerConeAngle;
         bool enabled;
+        float temperature;
+        uint32_t layerMask;
+        float sourceRadius;
     };
 
     struct SceneLightData {
@@ -62,6 +76,8 @@ namespace eng::runtime {
             data.directionalLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
             data.directionalLight.intensity = 1.0f;
             data.directionalLight.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+            data.directionalLight.temperature = 6500.0f;
+            data.directionalLight.layerMask = 0xFFFFFFFF;
             
             data.skyLight.enabled = false;
             data.skyLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -78,6 +94,8 @@ namespace eng::runtime {
                         data.directionalLight.enabled = true;
                         data.directionalLight.color = glm::vec3(dirComp.color.x, dirComp.color.y, dirComp.color.z);
                         data.directionalLight.intensity = dirComp.intensity;
+                        data.directionalLight.temperature = dirComp.temperature;
+                        data.directionalLight.layerMask = dirComp.layerMask;
                         
                         if (signature.test(coordinator.GetComponentType<TransformComponent>())) {
                             const auto& tc = coordinator.GetComponent<TransformComponent>(entity);
@@ -103,6 +121,12 @@ namespace eng::runtime {
                         data.skyLight.enabled = true;
                         data.skyLight.color = glm::vec3(skyComp.color.x, skyComp.color.y, skyComp.color.z);
                         data.skyLight.intensity = skyComp.intensity;
+                        data.skyLight.environmentPath = skyComp.environmentPath;
+                        data.skyLight.rotation = skyComp.rotation;
+                        data.skyLight.diffuseIntensity = skyComp.diffuseIntensity;
+                        data.skyLight.specularIntensity = skyComp.specularIntensity;
+                        data.skyLight.exposureOffset = skyComp.exposureOffset;
+                        data.skyLight.mode = skyComp.mode;
                         break;
                     }
                 }
@@ -124,6 +148,9 @@ namespace eng::runtime {
                         pt.color = glm::vec3(ptComp.color.x, ptComp.color.y, ptComp.color.z);
                         pt.intensity = ptComp.intensity;
                         pt.radius = ptComp.radius;
+                        pt.temperature = ptComp.temperature;
+                        pt.layerMask = ptComp.layerMask;
+                        pt.sourceRadius = ptComp.sourceRadius;
                         
                         pt.position = glm::vec3(0.0f);
                         if (signature.test(coordinator.GetComponentType<TransformComponent>())) {
@@ -153,6 +180,9 @@ namespace eng::runtime {
                         spot.range = spotComp.range;
                         spot.innerConeAngle = spotComp.innerConeAngle;
                         spot.outerConeAngle = spotComp.outerConeAngle;
+                        spot.temperature = spotComp.temperature;
+                        spot.layerMask = spotComp.layerMask;
+                        spot.sourceRadius = spotComp.sourceRadius;
                         
                         spot.position = glm::vec3(0.0f);
                         spot.direction = glm::vec3(0.0f, 0.0f, -1.0f);

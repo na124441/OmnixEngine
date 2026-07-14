@@ -14,7 +14,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-add_definitions(-DNOMINMAX -DENG_ENABLE_LOG -DENG_ENABLE_PROFILE)
+add_definitions(-DNOMINMAX -DENG_ENABLE_LOG -DENG_ENABLE_PROFILE -DGLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 option(OMNIX_WITH_PHYSX "Enable NVIDIA PhysX Physics System Support" ON)
 if(OMNIX_WITH_PHYSX)
@@ -199,6 +199,7 @@ add_library(RenderingEngine
     Rendering/Lighting/DeferredLightingPass.cpp
     Rendering/Lighting/ShadowRenderer.cpp
     Rendering/Lighting/SkyLightRenderer.cpp
+    Rendering/Lighting/EnvironmentSystem.cpp
     Rendering/PostProcess/TonemapPass.cpp
     Rendering/PostProcess/ExposurePass.cpp
     Rendering/Editor/EditorViewportRenderer.cpp

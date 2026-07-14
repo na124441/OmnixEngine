@@ -1148,6 +1148,53 @@ namespace eng::runtime {
             changed = true;
         }
 
+        const char* modes[] = { "Procedural", "HDR Cubemap" };
+        int currentMode = component.mode;
+        if (ImGui::Combo("Mode##SkyLight", &currentMode, modes, IM_ARRAYSIZE(modes))) {
+            component.mode = currentMode;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        if (component.mode == 1) {
+            char envBuf[512];
+            strncpy(envBuf, component.environmentPath.c_str(), sizeof(envBuf));
+            envBuf[sizeof(envBuf) - 1] = '\0';
+            if (ImGui::InputText("HDR File Path##SkyLight", envBuf, sizeof(envBuf))) {
+                component.environmentPath = envBuf;
+                dirtyState.MarkSceneDirty();
+                changed = true;
+            }
+        }
+
+        float rot = component.rotation;
+        if (ImGui::SliderFloat("Rotation##SkyLight", &rot, 0.0f, 360.0f)) {
+            component.rotation = rot;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float diffInt = component.diffuseIntensity;
+        if (ImGui::SliderFloat("Diffuse Intensity##SkyLight", &diffInt, 0.0f, 10.0f)) {
+            component.diffuseIntensity = diffInt;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float specInt = component.specularIntensity;
+        if (ImGui::SliderFloat("Specular Intensity##SkyLight", &specInt, 0.0f, 10.0f)) {
+            component.specularIntensity = specInt;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
+        float expOffset = component.exposureOffset;
+        if (ImGui::SliderFloat("Exposure Offset##SkyLight", &expOffset, -10.0f, 10.0f)) {
+            component.exposureOffset = expOffset;
+            dirtyState.MarkSceneDirty();
+            changed = true;
+        }
+
         return changed;
     }
 

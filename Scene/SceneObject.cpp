@@ -147,6 +147,11 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
         coordinator.AddComponent(m_ECSEntity, m_SpotLight);
     }
 
+    // 20. Add ReflectionProbeComponent if assigned
+    if (m_HasReflectionProbe) {
+        coordinator.AddComponent(m_ECSEntity, m_ReflectionProbe);
+    }
+
     std::cout << "[SceneObject] '" << name_
               << "' registered (ECS Entity: " << m_ECSEntity << ")" << std::endl;
 }

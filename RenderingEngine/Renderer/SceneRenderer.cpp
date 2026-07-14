@@ -23,6 +23,23 @@
 
 namespace eng::renderer {
 
+static std::string ResolveTexturePath(const std::string& path) {
+    if (path.empty()) return "";
+    if (std::filesystem::exists(path)) {
+        return path;
+    }
+    std::filesystem::path p(path);
+    std::string filename = p.filename().string();
+    std::string resolved = "Assets/Textures/" + filename;
+    if (std::filesystem::exists(resolved)) {
+        return resolved;
+    }
+    if (filename == "brick_albedo.png" || filename == "wood_albedo.png" || filename == "brick_normal.png") {
+        return "";
+    }
+    return path;
+}
+
 static std::vector<char> ReadFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -80,8 +97,8 @@ void SceneRenderer::init()
     m_DefaultMaterial = scene.createMaterial();
     bool ok = m_DefaultMaterial->create("shaders/gbuffer_vert.spv", 
                                         "shaders/gbuffer_frag.spv", 
-                                        "textures/brick_albedo.png", 
-                                        "textures/brick_normal.png", 
+                                        "Assets/Textures/Texturelabs_Concrete_129S.png", 
+                                        "", 
                                         resources);
     if (!ok) {
         ::Logger::Log(::LogLevel::Error, "Failed to create default material. Falling back to geometry pipeline.");
@@ -622,20 +639,13 @@ void SceneRenderer::buildRenderQueue()
                                         std::string normalPath;
 
                                         if (DeserializeMaterial(omnixMat, meta->sourcePath)) {
-                                            albedoPath = omnixMat.albedoTexturePath;
-                                            normalPath = omnixMat.normalTexturePath;
-                                        }
+                                             albedoPath = ResolveTexturePath(omnixMat.albedoTexturePath);
+                                             normalPath = ResolveTexturePath(omnixMat.normalTexturePath);
+                                         }
 
-                                        // Legacy fallback: if the material has no texture paths set,
-                                        // use the old name-based heuristic so existing scenes still work
-                                        if (albedoPath.empty()) {
-                                            if (meta->sourcePath.find("wood") != std::string::npos) {
-                                                albedoPath = "textures/wood_albedo.png";
-                                            } else {
-                                                albedoPath = "textures/brick_albedo.png";
-                                                normalPath = "textures/brick_normal.png";
-                                            }
-                                        }
+                                         if (albedoPath.empty()) {
+                                             albedoPath = "Assets/Textures/Texturelabs_Concrete_129S.png";
+                                         }
 
                                         Material* loadedMat = scene.createMaterial();
                                         bool ok = loadedMat->create("shaders/gbuffer_vert.spv", 
@@ -708,8 +718,8 @@ void SceneRenderer::loadModel(const std::string& path)
         Material* mat = scene.createMaterial();
         bool ok = mat->create("shaders/gbuffer_vert.spv", 
                               "shaders/gbuffer_frag.spv", 
-                              "textures/brick_albedo.png", 
-                              "textures/brick_normal.png", 
+                              "Assets/Textures/Texturelabs_Concrete_129S.png", 
+                              "", 
                               resources);
         if (!ok) {
             ::Logger::Log(::LogLevel::Error, "Failed to create material for loaded model. Falling back to geometry pipeline.");
@@ -782,6 +792,11 @@ void SceneRenderer::updateLightingUBO()
             
             // Map sky light
             uboData.ambientColorIntensity = glm::vec4(lightData.skyLight.color, lightData.skyLight.intensity);
+            uboData.skyLightMode = lightData.skyLight.mode;
+            uboData.skyLightRotation = glm::radians(lightData.skyLight.rotation);
+            uboData.skyLightDiffuseIntensity = lightData.skyLight.diffuseIntensity;
+            uboData.skyLightSpecularIntensity = lightData.skyLight.specularIntensity;
+            uboData.skyLightExposureOffset = lightData.skyLight.exposureOffset;
             
             // Map point lights
             uboData.pointLightCount = static_cast<uint32_t>(lightData.pointLights.size());

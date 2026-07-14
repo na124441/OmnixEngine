@@ -102,9 +102,9 @@ bool Material::createPBR(const std::string& vertPath,
         if (albedoTexture->loadFromFile(albedoPath, res, TextureUsage::Albedo)) {
             uboData.hasAlbedoMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load albedo texture: " + albedoPath + " - using fallback white.");
-            albedoTexture.reset(); 
-            uboData.hasAlbedoMap = 0.0f;
+            LOG_WARN("Failed to load albedo texture: " + albedoPath + " - using fallback error checkerboard.");
+            albedoTexture = std::shared_ptr<Texture>(Texture::getErrorCheckerTexture(res), [](Texture*){});
+            uboData.hasAlbedoMap = 1.0f;
         }
     } else {
         uboData.hasAlbedoMap = albedoTexture ? 1.0f : 0.0f;
@@ -115,9 +115,9 @@ bool Material::createPBR(const std::string& vertPath,
         if (normalTexture->loadFromFile(normalPath, res, TextureUsage::Normal)) {
             uboData.useNormalMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback flat normal.");
-            normalTexture.reset();
-            uboData.useNormalMap = 0.0f;
+            LOG_WARN("Failed to load normal texture: " + normalPath + " - using fallback error checkerboard.");
+            normalTexture = std::shared_ptr<Texture>(Texture::getErrorCheckerTexture(res), [](Texture*){});
+            uboData.useNormalMap = 1.0f;
         }
     } else {
         uboData.useNormalMap = normalTexture ? 1.0f : 0.0f;
@@ -128,9 +128,9 @@ bool Material::createPBR(const std::string& vertPath,
         if (metallicRoughnessTexture->loadFromFile(metallicRoughnessPath, res, TextureUsage::MetallicRoughness)) {
             uboData.hasMetallicRoughnessMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback metallic=0, roughness=0.6.");
-            metallicRoughnessTexture.reset();
-            uboData.hasMetallicRoughnessMap = 0.0f;
+            LOG_WARN("Failed to load metallic-roughness texture: " + metallicRoughnessPath + " - using fallback error checkerboard.");
+            metallicRoughnessTexture = std::shared_ptr<Texture>(Texture::getErrorCheckerTexture(res), [](Texture*){});
+            uboData.hasMetallicRoughnessMap = 1.0f;
         }
     } else {
         uboData.hasMetallicRoughnessMap = metallicRoughnessTexture ? 1.0f : 0.0f;
@@ -141,9 +141,9 @@ bool Material::createPBR(const std::string& vertPath,
         if (aoTexture->loadFromFile(aoPath, res, TextureUsage::AO)) {
             uboData.hasAOMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load AO texture: " + aoPath + " - using fallback white.");
-            aoTexture.reset();
-            uboData.hasAOMap = 0.0f;
+            LOG_WARN("Failed to load AO texture: " + aoPath + " - using fallback error checkerboard.");
+            aoTexture = std::shared_ptr<Texture>(Texture::getErrorCheckerTexture(res), [](Texture*){});
+            uboData.hasAOMap = 1.0f;
         }
     } else {
         uboData.hasAOMap = aoTexture ? 1.0f : 0.0f;
@@ -154,9 +154,9 @@ bool Material::createPBR(const std::string& vertPath,
         if (emissiveTexture->loadFromFile(emissivePath, res, TextureUsage::Emissive)) {
             uboData.hasEmissiveMap = 1.0f;
         } else {
-            LOG_WARN("Failed to load emissive texture: " + emissivePath + " - using fallback black.");
-            emissiveTexture.reset();
-            uboData.hasEmissiveMap = 0.0f;
+            LOG_WARN("Failed to load emissive texture: " + emissivePath + " - using fallback error checkerboard.");
+            emissiveTexture = std::shared_ptr<Texture>(Texture::getErrorCheckerTexture(res), [](Texture*){});
+            uboData.hasEmissiveMap = 1.0f;
         }
     } else {
         uboData.hasEmissiveMap = emissiveTexture ? 1.0f : 0.0f;
@@ -268,8 +268,8 @@ bool Material::createPipeline(const EngineResources& resources)
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachments{};
-    uint32_t attachmentCount = 4;
+    std::array<VkPipelineColorBlendAttachmentState, 6> blendAttachments{};
+    uint32_t attachmentCount = 6;
 
     if (assetData.blendMode == MaterialBlendMode::Blend) {
         attachmentCount = 1;
@@ -285,8 +285,8 @@ bool Material::createPipeline(const EngineResources& resources)
         blendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
         blendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
     } else {
-        attachmentCount = 4;
-        for (uint32_t i = 0; i < 4; ++i) {
+        attachmentCount = 6;
+        for (uint32_t i = 0; i < 6; ++i) {
             blendAttachments[i].colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
                                                  VK_COLOR_COMPONENT_G_BIT |
                                                  VK_COLOR_COMPONENT_B_BIT |

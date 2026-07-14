@@ -9,6 +9,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;

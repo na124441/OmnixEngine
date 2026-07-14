@@ -70,5 +70,6 @@ namespace Omnix::Radiance
         bool showGrid = true;
         float gridOpacity = 0.35f;
         float gridFadeDistance = 120.0f;
+        bool forceReferenceLighting = false;
     };
 }

@@ -726,7 +726,11 @@ namespace eng::runtime {
             "Light Complexity",
             "Tangent",
             "LightingOnly",
-            "LitNoOverlays"
+            "LitNoOverlays",
+            "UV",
+            "F0",
+            "Direct Diffuse",
+            "Direct Specular"
         };
         auto applyRenderMode = [&](int mode) {
             m_RenderMode = mode;
@@ -761,6 +765,10 @@ namespace eng::runtime {
                     selection.Clear();
                     break;
                 }
+                case 16: renderer->m_ShadingMode = 15; break; // UV
+                case 17: renderer->m_ShadingMode = 16; break; // F0
+                case 18: renderer->m_ShadingMode = 17; break; // Direct Diffuse
+                case 19: renderer->m_ShadingMode = 18; break; // Direct Specular
                 default: renderer->m_ShadingMode = 0; break;
             }
         };
@@ -878,6 +886,52 @@ namespace eng::runtime {
             }
             ImGui::SameLine();
             ImGui::Checkbox("Before", &renderer->GetPostProcessSettings().debugBeforePostProcess);
+            ImGui::SameLine();
+            if (ImGui::Button("Color Grading...")) {
+                ImGui::OpenPopup("ColorGradingPopup");
+            }
+            if (ImGui::BeginPopup("ColorGradingPopup")) {
+                auto& postSettings = renderer->GetPostProcessSettings();
+                ImGui::Text("Color Grading Settings");
+                ImGui::Separator();
+                ImGui::SliderFloat("Contrast", &postSettings.contrast, 0.5f, 1.5f);
+                ImGui::SliderFloat("Saturation", &postSettings.saturation, 0.0f, 2.0f);
+                ImGui::SliderFloat("Temp", &postSettings.whiteBalanceTemp, -1.0f, 1.0f);
+                ImGui::SliderFloat("Tint", &postSettings.whiteBalanceTint, -1.0f, 1.0f);
+                ImGui::ColorEdit3("Lift", &postSettings.lift[0]);
+                ImGui::ColorEdit3("Gamma", &postSettings.gammaVal[0]);
+                ImGui::ColorEdit3("Gain", &postSettings.gain[0]);
+                if (ImGui::Button("Reset Color Grading")) {
+                    postSettings.contrast = 1.0f;
+                    postSettings.saturation = 1.0f;
+                    postSettings.whiteBalanceTemp = 0.0f;
+                    postSettings.whiteBalanceTint = 0.0f;
+                    postSettings.lift = glm::vec3(0.0f);
+                    postSettings.gammaVal = glm::vec3(1.0f);
+                    postSettings.gain = glm::vec3(1.0f);
+                }
+
+                ImGui::Separator();
+                ImGui::Text("Fog Settings");
+                ImGui::Separator();
+                bool fogEnabled = postSettings.enableFog == 1u;
+                if (ImGui::Checkbox("Enable Fog", &fogEnabled)) {
+                    postSettings.enableFog = fogEnabled ? 1u : 0u;
+                }
+                ImGui::SliderFloat("Density", &postSettings.fogDensity, 0.0f, 0.1f, "%.4f");
+                ImGui::SliderFloat("Height Falloff", &postSettings.fogHeightFalloff, 0.0f, 0.5f, "%.4f");
+                ImGui::SliderFloat("Base Height", &postSettings.fogBaseHeight, -50.0f, 50.0f, "%.2f");
+                ImGui::ColorEdit3("Fog Color", &postSettings.fogColor[0]);
+
+                if (ImGui::Button("Reset Fog")) {
+                    postSettings.enableFog = 0u;
+                    postSettings.fogDensity = 0.015f;
+                    postSettings.fogHeightFalloff = 0.05f;
+                    postSettings.fogBaseHeight = 0.0f;
+                    postSettings.fogColor = glm::vec3(0.5f, 0.6f, 0.7f);
+                }
+                ImGui::EndPopup();
+            }
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
             ImGui::Text("Queue Count: %u", renderer->m_TotalRenderCount);
             ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();

@@ -395,6 +395,8 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("shadowResolution") && comp["shadowResolution"].IsInt()) dlc.shadowResolution = comp["shadowResolution"].GetInt();
                     if (comp.HasMember("pcfKernelSize") && comp["pcfKernelSize"].IsInt()) dlc.pcfKernelSize = comp["pcfKernelSize"].GetInt();
                     if (comp.HasMember("shadowDistance") && comp["shadowDistance"].IsNumber()) dlc.shadowDistance = comp["shadowDistance"].GetFloat();
+                    if (comp.HasMember("temperature") && comp["temperature"].IsNumber()) dlc.temperature = comp["temperature"].GetFloat();
+                    if (comp.HasMember("layerMask") && comp["layerMask"].IsUint()) dlc.layerMask = comp["layerMask"].GetUint();
                     sceneObject->SetDirectionalLight(dlc);
                 } else if (compType == "PointLight") {
                     PointLightComponent plc;
@@ -408,6 +410,9 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) plc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
                     if (comp.HasMember("radius") && comp["radius"].IsNumber()) plc.radius = std::max(0.01f, comp["radius"].GetFloat());
                     if (comp.HasMember("castShadows") && comp["castShadows"].IsBool()) plc.castShadows = comp["castShadows"].GetBool();
+                    if (comp.HasMember("temperature") && comp["temperature"].IsNumber()) plc.temperature = comp["temperature"].GetFloat();
+                    if (comp.HasMember("layerMask") && comp["layerMask"].IsUint()) plc.layerMask = comp["layerMask"].GetUint();
+                    if (comp.HasMember("sourceRadius") && comp["sourceRadius"].IsNumber()) plc.sourceRadius = comp["sourceRadius"].GetFloat();
                     sceneObject->SetPointLight(plc);
                 } else if (compType == "SkyLight" || compType == "AmbientLight") {
                     SkyLightComponent slc;
@@ -419,6 +424,12 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                         if (colorObj.HasMember("z") && colorObj["z"].IsNumber()) slc.color.z = std::clamp(colorObj["z"].GetFloat(), 0.0f, 1.0f);
                     }
                     if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) slc.intensity = std::max(0.0f, comp["intensity"].GetFloat());
+                    if (comp.HasMember("environmentPath") && comp["environmentPath"].IsString()) slc.environmentPath = comp["environmentPath"].GetString();
+                    if (comp.HasMember("rotation") && comp["rotation"].IsNumber()) slc.rotation = comp["rotation"].GetFloat();
+                    if (comp.HasMember("diffuseIntensity") && comp["diffuseIntensity"].IsNumber()) slc.diffuseIntensity = comp["diffuseIntensity"].GetFloat();
+                    if (comp.HasMember("specularIntensity") && comp["specularIntensity"].IsNumber()) slc.specularIntensity = comp["specularIntensity"].GetFloat();
+                    if (comp.HasMember("exposureOffset") && comp["exposureOffset"].IsNumber()) slc.exposureOffset = comp["exposureOffset"].GetFloat();
+                    if (comp.HasMember("mode") && comp["mode"].IsInt()) slc.mode = comp["mode"].GetInt();
                     sceneObject->SetSkyLight(slc);
                 } else if (compType == "SpotLight") {
                     SpotLightComponent slc;
@@ -434,7 +445,37 @@ std::shared_ptr<SceneObject> SceneLoader::CreateObjectFromData(const Value& obje
                     if (comp.HasMember("innerConeAngle") && comp["innerConeAngle"].IsNumber()) slc.innerConeAngle = comp["innerConeAngle"].GetFloat();
                     if (comp.HasMember("outerConeAngle") && comp["outerConeAngle"].IsNumber()) slc.outerConeAngle = comp["outerConeAngle"].GetFloat();
                     if (comp.HasMember("castShadows") && comp["castShadows"].IsBool()) slc.castShadows = comp["castShadows"].GetBool();
+                    if (comp.HasMember("temperature") && comp["temperature"].IsNumber()) slc.temperature = comp["temperature"].GetFloat();
+                    if (comp.HasMember("layerMask") && comp["layerMask"].IsUint()) slc.layerMask = comp["layerMask"].GetUint();
+                    if (comp.HasMember("sourceRadius") && comp["sourceRadius"].IsNumber()) slc.sourceRadius = comp["sourceRadius"].GetFloat();
                     sceneObject->SetSpotLight(slc);
+                } else if (compType == "ReflectionProbe") {
+                    ReflectionProbeComponent rpc;
+                    if (comp.HasMember("enabled") && comp["enabled"].IsBool()) rpc.enabled = comp["enabled"].GetBool();
+                    if (comp.HasMember("position") && comp["position"].IsObject()) {
+                        const auto& posObj = comp["position"];
+                        if (posObj.HasMember("x") && posObj["x"].IsNumber()) rpc.position.x = posObj["x"].GetFloat();
+                        if (posObj.HasMember("y") && posObj["y"].IsNumber()) rpc.position.y = posObj["y"].GetFloat();
+                        if (posObj.HasMember("z") && posObj["z"].IsNumber()) rpc.position.z = posObj["z"].GetFloat();
+                    }
+                    if (comp.HasMember("boxMin") && comp["boxMin"].IsObject()) {
+                        const auto& minObj = comp["boxMin"];
+                        if (minObj.HasMember("x") && minObj["x"].IsNumber()) rpc.boxMin.x = minObj["x"].GetFloat();
+                        if (minObj.HasMember("y") && minObj["y"].IsNumber()) rpc.boxMin.y = minObj["y"].GetFloat();
+                        if (minObj.HasMember("z") && minObj["z"].IsNumber()) rpc.boxMin.z = minObj["z"].GetFloat();
+                    }
+                    if (comp.HasMember("boxMax") && comp["boxMax"].IsObject()) {
+                        const auto& maxObj = comp["boxMax"];
+                        if (maxObj.HasMember("x") && maxObj["x"].IsNumber()) rpc.boxMax.x = maxObj["x"].GetFloat();
+                        if (maxObj.HasMember("y") && maxObj["y"].IsNumber()) rpc.boxMax.y = maxObj["y"].GetFloat();
+                        if (maxObj.HasMember("z") && maxObj["z"].IsNumber()) rpc.boxMax.z = maxObj["z"].GetFloat();
+                    }
+                    if (comp.HasMember("blendDistance") && comp["blendDistance"].IsNumber()) rpc.blendDistance = comp["blendDistance"].GetFloat();
+                    if (comp.HasMember("intensity") && comp["intensity"].IsNumber()) rpc.intensity = comp["intensity"].GetFloat();
+                    if (comp.HasMember("priority") && comp["priority"].IsUint()) rpc.priority = comp["priority"].GetUint();
+                    if (comp.HasMember("isBox") && comp["isBox"].IsBool()) rpc.isBox = comp["isBox"].GetBool();
+                    if (comp.HasMember("capturePath") && comp["capturePath"].IsString()) rpc.capturePath = comp["capturePath"].GetString();
+                    sceneObject->SetReflectionProbe(rpc);
                 }
             }
         }

@@ -10,6 +10,7 @@
 #include "Rendering/Radiance/RadianceGPUData.h"
 #include "Rendering/Lighting/LocalLightGPU.h"
 #include "Rendering/Lighting/ClusteredLightingTypes.h"
+#include "Rendering/Lighting/ShadowAtlas.h"
 #include "GPUInstance.h"
 #include "GPUMeshDrawData.h"
 #include "GPUVisibilityTypes.h"
@@ -18,6 +19,17 @@
 class Scene;
 
 namespace eng::renderer {
+
+    struct ScheduledLocalLightShadow {
+        uint32_t lightIndex;      // Index in localLightsList
+        uint32_t faceIndex;       // 0 for spot lights, 0-5 for point lights
+        uint32_t tileX;
+        uint32_t tileY;
+        uint32_t tileSize;
+        glm::mat4 viewMatrix;
+        glm::mat4 projMatrix;
+        bool isSpot;
+    };
 
     struct GPUSceneFrameResources {
         VkBuffer cameraBuffer = VK_NULL_HANDLE;
@@ -155,6 +167,7 @@ namespace eng::renderer {
         const std::vector<GPUMeshDrawData>& GetGPUMeshDrawData() const { return m_GPUMeshDrawData; }
 
         GPUSceneDiagnostics GetDiagnostics() const;
+        const std::vector<ScheduledLocalLightShadow>& GetScheduledShadows() const { return m_ScheduledShadows; }
 
     private:
         void createDescriptorSetLayout(EngineResources& resources);
@@ -213,6 +226,21 @@ namespace eng::renderer {
         std::vector<GPUInstance> m_GPUInstances;
         std::vector<GPUMeshDrawData> m_GPUMeshDrawData;
 
+        // Shadow Atlas Allocation
+        std::unique_ptr<ShadowAtlasAllocator> m_ShadowAtlasAllocator;
+        std::vector<ScheduledLocalLightShadow> m_ScheduledShadows;
+
+        struct LightCacheEntry {
+            uint32_t x = 0;
+            uint32_t y = 0;
+            uint32_t size = 0;
+            glm::vec3 lastPos{0.0f};
+            glm::vec3 lastDir{0.0f};
+            bool valid = false;
+        };
+        std::unordered_map<uint32_t, LightCacheEntry> m_SpotLightCache;
+        std::unordered_map<uint32_t, std::array<LightCacheEntry, 6>> m_PointLightCache;
+
         // Stats
         uint64_t m_UploadBytesThisFrame = 0;
         uint32_t m_StaleHandleErrors = 0;
@@ -220,5 +248,7 @@ namespace eng::renderer {
 
         mutable std::mutex m_SceneMutex;
     };
+
+
 
 } // namespace eng::renderer

@@ -3,6 +3,8 @@ layout(location = 0) out vec4 outGBufferA; // Albedo + Material Flags
 layout(location = 1) out vec4 outGBufferB; // Normal + Roughness
 layout(location = 2) out vec4 outGBufferC; // Metallic + Ambient Occlusion
 layout(location = 3) out vec4 outGBufferD; // Emissive + Shading Model
+layout(location = 4) out uint outObjectID;  // ObjectID (uint32)
+layout(location = 5) out vec2 outVelocity;  // Velocity (vec2)
 
 // GPUSceneBindings
 #define GPUSCENE_BINDING_CAMERA 0
@@ -17,6 +19,7 @@ layout(set = 0, binding = GPUSCENE_BINDING_CAMERA) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -83,27 +86,37 @@ layout(location = 3) in vec3 vCameraPos;
 layout(location = 4) flat in uint vMaterialIndex;
 layout(location = 5) flat in uint vEntityID;
 layout(location = 6) in vec3 vDebugColor;
+layout(location = 7) in vec4 vTangent;
+layout(location = 8) flat in uint vLayerMask;
 
 // TBN frame formulation for normal perturbation
-vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
+vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale, vec4 tangent)
 {
     vec3 tangentNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
     tangentNormal.xy *= normalScale; // Scale normal perturbation
 
-    vec3 dp1 = dFdx(vWorldPos);
-    vec3 dp2 = dFdy(vWorldPos);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
+    if (length(tangent.xyz) > 1e-4) {
+        vec3 T = normalize(tangent.xyz);
+        T = normalize(T - dot(T, N) * N);
+        vec3 B = cross(N, T) * tangent.w;
+        mat3 TBN = mat3(T, B, N);
+        return normalize(TBN * tangentNormal);
+    } else {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(uv);
+        vec2 duv2 = dFdy(uv);
 
-    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
-    vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
-    vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
+        float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
+        vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+        vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
 
-    T = normalize(T - dot(T, N) * N);
-    B = cross(N, T);
+        T = normalize(T - dot(T, N) * N);
+        B = cross(N, T);
 
-    mat3 TBN = mat3(T, B, N);
-    return normalize(TBN * tangentNormal);
+        mat3 TBN = mat3(T, B, N);
+        return normalize(TBN * tangentNormal);
+    }
 }
 
 void main()
@@ -134,7 +147,7 @@ void main()
 
     vec3 N = normalize(vNormal);
     if (useNormalMap > 0.5) {
-        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
+        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale, vTangent);
     }
 
     float roughness = roughnessFactor;
@@ -165,6 +178,8 @@ void main()
     // belongs in the lighting path, not in the G-buffer albedo.
     outGBufferA = vec4(albedo.rgb, 1.0);
     outGBufferB = vec4(N, roughness);
-    outGBufferC = vec4(metallic, ao, 0.0, 1.0); // Metallic, AO, 0.0, 1.0
+    outGBufferC = vec4(metallic, ao, float(vLayerMask) / 255.0, 1.0); // Metallic, AO, LayerMask, 1.0
     outGBufferD = vec4(emissive, float(shadingModel) / 255.0); // Emissive (RGB) + Shading Model (A)
+    outObjectID = vEntityID;
+    outVelocity = vec2(0.0);
 }

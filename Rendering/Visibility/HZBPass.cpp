@@ -322,7 +322,7 @@ namespace eng::renderer {
         // Set 0: Copy Depth to HZB mip 0
         {
             VkDescriptorImageInfo inputInfo{};
-            inputInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            inputInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             inputInfo.imageView = depthImageView;
             inputInfo.sampler = m_HZBSampler;
 

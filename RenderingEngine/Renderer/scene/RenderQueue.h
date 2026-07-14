@@ -22,6 +22,7 @@ struct RenderItem {
     glm::vec3   maxBounds{0.0f};
     uint32_t    entityID = 0;
     bool        castShadows = true;
+    uint32_t    layerMask = 1;
 
     // Standardized RVG v0.5 Fields
     GeometryHandle geometry;

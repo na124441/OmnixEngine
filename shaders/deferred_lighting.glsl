@@ -9,6 +9,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -31,6 +32,24 @@ struct DirectionalLightData
     vec4 color;
 };
 
+struct LocalLightShadowGPU
+{
+    mat4 lightSpaceMatrix;
+    vec4 atlasViewport;
+    float bias;
+    float normalBias;
+    float farPlane;
+    float shadowEnabled;
+};
+
+struct ReflectionProbeGPU
+{
+    vec4 positionIntensity;  // xyz = position, w = intensity
+    vec4 boxMinPriority;     // xyz = boxMin, w = priority
+    vec4 boxMaxBlend;        // xyz = boxMax, w = blendDistance
+    uvec4 flags;             // x = isBox, y = valid, zw = unused
+};
+
 // Binding 3: Light Storage Buffer
 layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 ambientColorIntensity; // rgb = color, w = intensity
@@ -45,6 +64,8 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 spotDirectionsIntensity[16];
     vec4 spotColors[16];
     vec4 spotAngles[16];
+    vec4 pointLayerMasks[16];
+    vec4 spotLayerMasks[16];
     
     // Shadow mapping settings
     mat4 directionalLightProjView;
@@ -61,6 +82,21 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
 
     vec4 shadowParams;
     uvec4 shadowFlags;
+
+    uint skyLightMode;
+    float skyLightRotation;
+    float skyLightDiffuseIntensity;
+    float skyLightSpecularIntensity;
+    float skyLightExposureOffset;
+
+    LocalLightShadowGPU spotLightShadows[16];
+    LocalLightShadowGPU pointLightShadows[16][6];
+
+    uint reflectionProbeCount;
+    uint padProbe0;
+    uint padProbe1;
+    uint padProbe2;
+    ReflectionProbeGPU reflectionProbes[4];
 } lighting;
 
 #define light lighting

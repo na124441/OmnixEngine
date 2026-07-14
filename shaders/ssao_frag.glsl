@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -39,7 +40,7 @@ layout(set = 1, binding = 3) uniform SSAOConstants {
 
 vec3 reconstructViewPos(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 viewPos = inverse(ssao.projection) * ndc;
+    vec4 viewPos = frame.inverseProjection * ndc;
     return viewPos.xyz / viewPos.w;
 }
 
@@ -58,7 +59,7 @@ void main() {
     vec3 viewPos = reconstructViewPos(inUV, depth);
 
     // Get normal in view space
-    vec3 worldNormal = texture(normalTex, inUV).xyz * 2.0 - 1.0;
+    vec3 worldNormal = texture(normalTex, inUV).xyz;
     vec3 viewNormal = normalize(mat3(frame.view) * worldNormal);
 
     // Get noise rotation vector

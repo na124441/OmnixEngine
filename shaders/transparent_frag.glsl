@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -61,11 +62,35 @@ layout(std430, set = 0, binding = 2) readonly buffer MaterialBuffer {
     MaterialData materials[];
 } mat;
 
+struct DirectionalLightData
+{
+    vec3 direction;
+    float intensity;
+    vec4 color;
+};
+
+struct LocalLightShadowGPU
+{
+    mat4 lightSpaceMatrix;
+    vec4 atlasViewport;
+    float bias;
+    float normalBias;
+    float farPlane;
+    float shadowEnabled;
+};
+
+struct ReflectionProbeGPU
+{
+    vec4 positionIntensity;  // xyz = position, w = intensity
+    vec4 boxMinPriority;     // xyz = boxMin, w = priority
+    vec4 boxMaxBlend;        // xyz = boxMax, w = blendDistance
+    uvec4 flags;             // x = isBox, y = valid, zw = unused
+};
+
 // Binding 3: Light Storage Buffer
 layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 ambientColorIntensity; // rgb = color, w = intensity
-    vec4 directionalDirectionIntensity; // xyz = direction, w = intensity
-    vec4 directionalColor; // rgb = color, w = unused
+    DirectionalLightData directional;
     vec4 pointPositionsRadius[16]; // xyz = pos, w = radius
     vec4 pointColorsIntensity[16]; // rgb = color, w = intensity
     uint pointLightCount;
@@ -76,9 +101,13 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 spotDirectionsIntensity[16];
     vec4 spotColors[16];
     vec4 spotAngles[16];
+    vec4 pointLayerMasks[16];
+    vec4 spotLayerMasks[16];
     
-    // Shadow mapping settings (not used by transparent shader)
+    // Shadow mapping settings
     mat4 directionalLightProjView;
+    mat4 directionalLightProjViews[4];
+    vec4 cascadeSplitDepths;
     float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -90,6 +119,21 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
 
     vec4 shadowParams;
     uvec4 shadowFlags;
+
+    uint skyLightMode;
+    float skyLightRotation;
+    float skyLightDiffuseIntensity;
+    float skyLightSpecularIntensity;
+    float skyLightExposureOffset;
+
+    LocalLightShadowGPU spotLightShadows[16];
+    LocalLightShadowGPU pointLightShadows[16][6];
+
+    uint reflectionProbeCount;
+    uint padProbe0;
+    uint padProbe1;
+    uint padProbe2;
+    ReflectionProbeGPU reflectionProbes[4];
 } light;
 
 // Set 1: Material textures
@@ -105,60 +149,36 @@ layout(location = 2) in vec2 vUV;
 layout(location = 3) in vec3 vCameraPos;
 layout(location = 4) flat in uint vMaterialIndex;
 layout(location = 5) flat in uint vEntityID;
+layout(location = 7) in vec4 vTangent;
 
-const float PI = 3.14159265359;
+#include "brdf.glsl"
 
-// Cotangent frame formulation for normal perturbation
-vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
+// TBN frame formulation for normal perturbation
+vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale, vec4 tangent)
 {
-    vec3 mapNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
-    mapNormal.xy *= normalScale;
+    vec3 tangentNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    tangentNormal.xy *= normalScale; // Scale normal perturbation
 
-    vec3 dp1 = dFdx(vWorldPos);
-    vec3 dp2 = dFdy(vWorldPos);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
+    if (length(tangent.xyz) > 1e-4) {
+        vec3 T = normalize(tangent.xyz);
+        T = normalize(T - dot(T, N) * N);
+        vec3 B = cross(N, T) * tangent.w;
+        mat3 TBN = mat3(T, B, N);
+        return normalize(TBN * tangentNormal);
+    } else {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(uv);
+        vec2 duv2 = dFdy(uv);
 
-    vec3 dp2perp = cross(dp2, N);
-    vec3 dp1perp = cross(N, dp1);
-    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+        vec3 dp2perp = cross(dp2, N);
+        vec3 dp1perp = cross(N, dp1);
+        vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+        vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
 
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-    return normalize(T * (mapNormal.x * invmax) + B * (mapNormal.y * invmax) + N * mapNormal.z);
-}
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-float distributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-    return a2 / max(denom, 0.0001);
-}
-
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx1 = geometrySchlickGGX(NdotV, roughness);
-    float ggx2 = geometrySchlickGGX(NdotL, roughness);
-    return ggx1 * ggx2;
+        float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+        return normalize(T * (tangentNormal.x * invmax) + B * (tangentNormal.y * invmax) + N * tangentNormal.z);
+    }
 }
 
 void main()
@@ -184,7 +204,7 @@ void main()
 
     vec3 N = normalize(vNormal);
     if (useNormalMap > 0.5) {
-        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
+        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale, vTangent);
     }
 
     float roughness = roughnessFactor;
@@ -210,33 +230,83 @@ void main()
 
     // Direct lighting computation (PBR Cook-Torrance)
     vec3 V = normalize(vCameraPos - vWorldPos);
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo.rgb, metallic);
+    vec3 F0 = mix(vec3(0.04), albedo.rgb, metallic);
+
+    // ----- Shading Modes Check -----
+    if (light.shadingMode == 10) {
+        outColor = vec4(albedo.rgb, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 1 || shadingModel == 1) {
+        vec3 color = albedo.rgb + emissive;
+        color = color / (color + vec3(1.0));
+        color = pow(color, vec3(1.0/2.2));
+        outColor = vec4(color, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 2) {
+        float z = gl_FragCoord.z;
+        float near = frame.projection[3][2] / frame.projection[2][2];
+        float far = frame.projection[3][2] / (1.0 + frame.projection[2][2]);
+        float linear = (near * far) / (far - z * (far - near));
+        float maxDepthVis = min(far, 100.0);
+        float d = clamp((linear - near) / (maxDepthVis - near), 0.0, 1.0);
+        outColor = vec4(vec3(d), albedo.a);
+        return;
+    }
+    if (light.shadingMode == 3) {
+        outColor = vec4(normalize(N) * 0.5 + 0.5, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 4) {
+        outColor = vec4(vec3(roughness), albedo.a);
+        return;
+    }
+    if (light.shadingMode == 5) {
+        outColor = vec4(vec3(metallic), albedo.a);
+        return;
+    }
+    if (light.shadingMode == 6) {
+        outColor = vec4(vec3(AO), albedo.a);
+        return;
+    }
+    if (light.shadingMode == 7) {
+        float id = float(vEntityID);
+        vec3 hashColor = vec3(
+            fract(sin(id * 12.9898) * 43758.5453),
+            fract(sin(id * 78.233) * 43758.5453),
+            fract(sin(id * 45.164) * 43758.5453)
+        );
+        if (id == 0.0) hashColor = vec3(0.0);
+        outColor = vec4(hashColor, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 8) {
+        outColor = vec4(emissive, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 13) {
+        outColor = vec4(normalize(vTangent.xyz) * 0.5 + 0.5, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 15) {
+        outColor = vec4(vUV, 0.0, albedo.a);
+        return;
+    }
+    if (light.shadingMode == 16) {
+        outColor = vec4(F0, albedo.a);
+        return;
+    }
 
     vec3 Lo = vec3(0.0);
 
     // 1. Directional Light
-    if (light.directionalDirectionIntensity.w > 0.0) {
-        vec3 L = normalize(light.directionalDirectionIntensity.xyz);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
-        if (NdotL > 0.0) {
-            vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-            float NDF = distributionGGX(N, H, roughness);
-            float G = geometrySmith(N, V, L, roughness);
-
-            vec3 numerator = NDF * G * F;
-            float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-            vec3 specular = numerator / denominator;
-
-            vec3 kS = F;
-            vec3 kD = vec3(1.0) - kS;
-            kD *= 1.0 - metallic;
-
-            vec3 radiance = light.directionalColor.rgb * light.directionalDirectionIntensity.w;
-            Lo += (kD * albedo.rgb / PI + specular) * radiance * NdotL;
-        }
+    if (light.directional.intensity > 0.0) {
+        vec3 L = normalize(light.directional.direction);
+        vec3 radiance = light.directional.color.rgb * light.directional.intensity;
+        vec3 diffVal, specVal;
+        vec3 brdf = EvaluateDirectBRDF(albedo.rgb, N, V, L, metallic, roughness, true, diffVal, specVal);
+        Lo += brdf * radiance;
     }
 
     // 2. Point Lights
@@ -251,28 +321,14 @@ void main()
         if (distance > radius) continue;
 
         vec3 L = normalize(diff);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
         float x = distance / radius;
         float attenuation = clamp(1.0 - x * x, 0.0, 1.0);
         attenuation = attenuation * attenuation;
 
         vec3 radiance = lightColor * intensity * attenuation;
-
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        Lo += (kD * albedo.rgb / PI + specular) * radiance * NdotL;
+        vec3 diffVal, specVal;
+        vec3 brdf = EvaluateDirectBRDF(albedo.rgb, N, V, L, metallic, roughness, true, diffVal, specVal);
+        Lo += brdf * radiance;
     }
 
     // 3. Spot Lights
@@ -297,28 +353,14 @@ void main()
         cone = cone * cone;
         if (cone <= 0.0) continue;
 
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
         float x = distance / range;
         float distAttenuation = clamp(1.0 - x * x, 0.0, 1.0);
         distAttenuation = distAttenuation * distAttenuation;
 
         vec3 radiance = lightColor * intensity * distAttenuation * cone;
-
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        Lo += (kD * albedo.rgb / PI + specular) * radiance * NdotL;
+        vec3 diffVal, specVal;
+        vec3 brdf = EvaluateDirectBRDF(albedo.rgb, N, V, L, metallic, roughness, true, diffVal, specVal);
+        Lo += brdf * radiance;
     }
 
     // Ambient lighting

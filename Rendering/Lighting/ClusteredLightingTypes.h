@@ -25,6 +25,7 @@ namespace Omnix::Radiance
 
     struct ClusterSettingsGPU
     {
+        glm::mat4 viewMatrix;
         uint32_t tileCountX;
         uint32_t tileCountY;
         uint32_t depthSliceCount;

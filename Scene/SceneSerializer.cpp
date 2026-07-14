@@ -315,6 +315,8 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("shadowResolution", object->m_DirectionalLight.shadowResolution, allocator);
             comp.AddMember("pcfKernelSize", object->m_DirectionalLight.pcfKernelSize, allocator);
             comp.AddMember("shadowDistance", object->m_DirectionalLight.shadowDistance, allocator);
+            comp.AddMember("temperature", object->m_DirectionalLight.temperature, allocator);
+            comp.AddMember("layerMask", object->m_DirectionalLight.layerMask, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasPointLight) {
@@ -331,6 +333,9 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("intensity", object->m_PointLight.intensity, allocator);
             comp.AddMember("radius", object->m_PointLight.radius, allocator);
             comp.AddMember("castShadows", object->m_PointLight.castShadows, allocator);
+            comp.AddMember("temperature", object->m_PointLight.temperature, allocator);
+            comp.AddMember("layerMask", object->m_PointLight.layerMask, allocator);
+            comp.AddMember("sourceRadius", object->m_PointLight.sourceRadius, allocator);
             components.PushBack(comp, allocator);
         }
         if (object->m_HasSkyLight) {
@@ -345,6 +350,15 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("color", colorVal, allocator);
             
             comp.AddMember("intensity", object->m_SkyLight.intensity, allocator);
+            
+            Value envPathVal(object->m_SkyLight.environmentPath.c_str(), allocator);
+            comp.AddMember("environmentPath", envPathVal, allocator);
+            comp.AddMember("rotation", object->m_SkyLight.rotation, allocator);
+            comp.AddMember("diffuseIntensity", object->m_SkyLight.diffuseIntensity, allocator);
+            comp.AddMember("specularIntensity", object->m_SkyLight.specularIntensity, allocator);
+            comp.AddMember("exposureOffset", object->m_SkyLight.exposureOffset, allocator);
+            comp.AddMember("mode", object->m_SkyLight.mode, allocator);
+            
             components.PushBack(comp, allocator);
         }
         if (object->m_HasSpotLight) {
@@ -363,6 +377,42 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
             comp.AddMember("innerConeAngle", object->m_SpotLight.innerConeAngle, allocator);
             comp.AddMember("outerConeAngle", object->m_SpotLight.outerConeAngle, allocator);
             comp.AddMember("castShadows", object->m_SpotLight.castShadows, allocator);
+            comp.AddMember("temperature", object->m_SpotLight.temperature, allocator);
+            comp.AddMember("layerMask", object->m_SpotLight.layerMask, allocator);
+            comp.AddMember("sourceRadius", object->m_SpotLight.sourceRadius, allocator);
+            components.PushBack(comp, allocator);
+        }
+        if (object->m_HasReflectionProbe) {
+            Value comp(kObjectType);
+            comp.AddMember("type", "ReflectionProbe", allocator);
+            comp.AddMember("enabled", object->m_ReflectionProbe.enabled, allocator);
+            
+            Value posVal(kObjectType);
+            posVal.AddMember("x", object->m_ReflectionProbe.position.x, allocator);
+            posVal.AddMember("y", object->m_ReflectionProbe.position.y, allocator);
+            posVal.AddMember("z", object->m_ReflectionProbe.position.z, allocator);
+            comp.AddMember("position", posVal, allocator);
+
+            Value minVal(kObjectType);
+            minVal.AddMember("x", object->m_ReflectionProbe.boxMin.x, allocator);
+            minVal.AddMember("y", object->m_ReflectionProbe.boxMin.y, allocator);
+            minVal.AddMember("z", object->m_ReflectionProbe.boxMin.z, allocator);
+            comp.AddMember("boxMin", minVal, allocator);
+
+            Value maxVal(kObjectType);
+            maxVal.AddMember("x", object->m_ReflectionProbe.boxMax.x, allocator);
+            maxVal.AddMember("y", object->m_ReflectionProbe.boxMax.y, allocator);
+            maxVal.AddMember("z", object->m_ReflectionProbe.boxMax.z, allocator);
+            comp.AddMember("boxMax", maxVal, allocator);
+
+            comp.AddMember("blendDistance", object->m_ReflectionProbe.blendDistance, allocator);
+            comp.AddMember("intensity", object->m_ReflectionProbe.intensity, allocator);
+            comp.AddMember("priority", object->m_ReflectionProbe.priority, allocator);
+            comp.AddMember("isBox", object->m_ReflectionProbe.isBox, allocator);
+
+            Value capturePathVal(object->m_ReflectionProbe.capturePath.c_str(), allocator);
+            comp.AddMember("capturePath", capturePathVal, allocator);
+
             components.PushBack(comp, allocator);
         }
         objValue.AddMember("components", components, allocator);

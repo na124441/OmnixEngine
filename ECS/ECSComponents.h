@@ -445,6 +445,8 @@ struct DirectionalLightComponent
     int shadowResolution = 2048;
     int pcfKernelSize = 3;
     float shadowDistance = 75.0f;
+    float temperature = 6500.0f;
+    uint32_t layerMask = 0xFFFFFFFF;
 };
 
 struct PointLightComponent
@@ -454,6 +456,9 @@ struct PointLightComponent
     float intensity = 5.0f;
     float radius = 10.0f;
     bool castShadows = false;
+    float temperature = 6500.0f;
+    uint32_t layerMask = 0xFFFFFFFF;
+    float sourceRadius = 0.0f;
 };
 
 struct SkyLightComponent
@@ -461,6 +466,12 @@ struct SkyLightComponent
     bool enabled = true;
     Vector3 color = {0.45f, 0.50f, 0.58f};
     float intensity = 0.55f;
+    std::string environmentPath = "";
+    float rotation = 0.0f;
+    float diffuseIntensity = 1.0f;
+    float specularIntensity = 1.0f;
+    float exposureOffset = 0.0f;
+    int mode = 0; // 0 = Procedural, 1 = HDR Cubemap
 };
 
 struct SpotLightComponent
@@ -472,6 +483,22 @@ struct SpotLightComponent
     float innerConeAngle = 15.0f;
     float outerConeAngle = 30.0f;
     bool castShadows = false;
+    float temperature = 6500.0f;
+    uint32_t layerMask = 0xFFFFFFFF;
+    float sourceRadius = 0.0f;
+};
+
+struct ReflectionProbeComponent
+{
+    bool enabled = true;
+    Vector3 position = {0.0f, 0.0f, 0.0f};
+    Vector3 boxMin = {-10.0f, -10.0f, -10.0f};
+    Vector3 boxMax = {10.0f, 10.0f, 10.0f};
+    float blendDistance = 1.0f;
+    float intensity = 1.0f;
+    uint32_t priority = 0;
+    bool isBox = true;
+    std::string capturePath = "";
 };
 
 //============================================================================
