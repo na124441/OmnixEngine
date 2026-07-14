@@ -80,6 +80,11 @@ public:
     void AddSceneObject(std::shared_ptr<SceneObject> obj);
 
     /**
+     * @brief Rebuilds the root objects list from the flat list of objects.
+     */
+    void RebuildRootObjects();
+
+    /**
      * @brief Update - Main scene update loop
      *
      * Algorithm (from specification):

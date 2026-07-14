@@ -88,6 +88,8 @@ Scene* SceneLoader::LoadFromFile(const std::string& filePath) {
             BuildHierarchy(allObjects, root["hierarchy"]);
         }
  
+        scene->RebuildRootObjects();
+
         std::cout << "[SceneLoader] ==== SCENE LOADED SUCCESSFULLY ====" << std::endl;
         return scene;
  

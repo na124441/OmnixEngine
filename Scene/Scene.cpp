@@ -82,6 +82,15 @@ void Scene::AddSceneObject(std::shared_ptr<SceneObject> obj) {
     RegisterObjectWithECS(obj);
 }
 
+void Scene::RebuildRootObjects() {
+    rootObjects_.clear();
+    for (const auto& obj : allObjects_) {
+        if (obj && obj->GetParent() == nullptr) {
+            rootObjects_.push_back(obj);
+        }
+    }
+}
+
 //============================================================================
 // CORE ALGORITHM: Update
 //============================================================================
