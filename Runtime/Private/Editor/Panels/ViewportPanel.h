@@ -66,6 +66,10 @@ namespace eng::runtime {
         int m_GizmoType = 7; // ImGuizmo::TRANSLATE
         const char* m_InputOwnerLabel = "None";
         bool m_CursorCaptured = false;
+        bool m_EnableSnapping = false;
+        float m_TranslationSnapValue = 0.5f;
+        float m_RotationSnapValue = 15.0f;
+        float m_ScaleSnapValue = 0.1f;
     };
 
 } // namespace eng::runtime

@@ -14,6 +14,7 @@
 #include "Runtime/Public/AssetRegistry.h"
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorDirtyState.h"
+#include "Runtime/Public/Editor/EditorSceneService.h"
 #include "Runtime/Public/Editor/EditorMath.h"
 #include "Core/World.h"
 #include <algorithm>
@@ -184,6 +185,29 @@ namespace eng::runtime {
                 m_GizmoType = ImGuizmo::ROTATE;
             } else if (ImGui::IsKeyPressed(ImGuiKey_R)) {
                 m_GizmoType = ImGuizmo::SCALE;
+            } else if (ImGui::IsKeyPressed(ImGuiKey_G)) {
+                m_EnableSnapping = !m_EnableSnapping;
+            }
+
+            bool hasSelection = selection.HasSelection();
+            Entity selectedEntity = selection.GetSelectedEntity();
+            if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+                if (hasSelection) {
+                    if (m_Context->physicsWorld) {
+                        m_Context->physicsWorld->UnregisterEntity(selectedEntity);
+                    }
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DeleteObject(selectedEntity);
+                    selection.Clear();
+                }
+            }
+            if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_D)) {
+                if (hasSelection) {
+                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                    EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DuplicateObject(selectedEntity);
+                }
             }
         }
 
@@ -400,9 +424,26 @@ namespace eng::runtime {
                                                 glm::scale(glm::mat4(1.0f), glmScale);
 
                         // Manipulate matrix using ImGuizmo
+                        float snapValues[3] = { 0.0f, 0.0f, 0.0f };
+                        if (m_EnableSnapping) {
+                            if (m_GizmoType == ImGuizmo::TRANSLATE) {
+                                snapValues[0] = m_TranslationSnapValue;
+                                snapValues[1] = m_TranslationSnapValue;
+                                snapValues[2] = m_TranslationSnapValue;
+                            } else if (m_GizmoType == ImGuizmo::ROTATE) {
+                                snapValues[0] = m_RotationSnapValue;
+                                snapValues[1] = m_RotationSnapValue;
+                                snapValues[2] = m_RotationSnapValue;
+                            } else if (m_GizmoType == ImGuizmo::SCALE) {
+                                snapValues[0] = m_ScaleSnapValue;
+                                snapValues[1] = m_ScaleSnapValue;
+                                snapValues[2] = m_ScaleSnapValue;
+                            }
+                        }
+
                         if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj),
                                                  (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL,
-                                                 glm::value_ptr(modelMatrix))) {
+                                                 glm::value_ptr(modelMatrix), nullptr, m_EnableSnapping ? snapValues : nullptr)) {
                             float matrixTranslation[3], matrixRotation[3], matrixScale[3];
                             ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(modelMatrix),
                                                                   matrixTranslation,
@@ -815,6 +856,23 @@ namespace eng::runtime {
                 m_GizmoType = ImGuizmo::SCALE;
             }
             if (isScale) ImGui::PopStyleColor();
+        }
+
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        
+        {
+            ImGui::Checkbox("Snap", &m_EnableSnapping);
+            if (m_EnableSnapping) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(75.0f);
+                if (m_GizmoType == ImGuizmo::TRANSLATE) {
+                    ImGui::DragFloat("##SnapPos", &m_TranslationSnapValue, 0.05f, 0.05f, 10.0f, "%.2f m");
+                } else if (m_GizmoType == ImGuizmo::ROTATE) {
+                    ImGui::DragFloat("##SnapRot", &m_RotationSnapValue, 1.0f, 1.0f, 180.0f, "%.0f deg");
+                } else if (m_GizmoType == ImGuizmo::SCALE) {
+                    ImGui::DragFloat("##SnapScale", &m_ScaleSnapValue, 0.05f, 0.01f, 5.0f, "%.2f");
+                }
+            }
         }
 
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
