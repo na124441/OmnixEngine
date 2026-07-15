@@ -61,7 +61,7 @@ namespace eng::runtime {
         std::vector<std::string> GetAutoCompleteSuggestions(const std::string& prefix) const;
         int HandleInputCallback(ImGuiInputTextCallbackData* data);
 
-        mutable std::mutex m_Mutex;
+        mutable std::recursive_mutex m_Mutex;
         CVarSystem* m_CVarSystem = nullptr;
 
         std::unordered_map<std::string, ConsoleCommand> m_Commands;

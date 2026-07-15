@@ -8,7 +8,7 @@
 namespace eng::memory {
 
     // Global guard switches for operator new recursion prevention
-    extern thread_local bool s_InsideGuard;
+    extern thread_local int s_InsideGuardCount;
     extern bool s_AllocationHookEnabled;
 
     struct AllocationInfo {

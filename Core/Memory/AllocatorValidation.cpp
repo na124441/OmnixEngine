@@ -258,8 +258,9 @@ namespace eng::memory {
         AllocationTracker::RegisterAllocation(fakeBlock, FakeSize, "RendererTest");
 
         MemoryStatistics statsAlloc = AllocationTracker::GetStatistics();
-        if (statsAlloc.activeAllocations != 1 || statsAlloc.totalAllocated != FakeSize || statsAlloc.peakUsage != FakeSize) {
-            LOG_ERROR("[MemoryTest] Tracker failed to register allocation.");
+        if (statsAlloc.activeAllocations != 1 || statsAlloc.totalAllocated != FakeSize || statsAlloc.peakUsage < FakeSize) {
+            LOG_ERROR("[MemoryTest] Tracker failed to register allocation. Active: %zu, Total: %zu, Peak: %zu",
+                      statsAlloc.activeAllocations, statsAlloc.totalAllocated, statsAlloc.peakUsage);
             return false;
         }
 

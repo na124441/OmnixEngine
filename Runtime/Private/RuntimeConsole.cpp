@@ -31,12 +31,12 @@ namespace eng::runtime {
     }
 
     void RuntimeConsole::Initialize(CVarSystem* cvarSystem) {
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         m_CVarSystem = cvarSystem;
 
         // Register default commands (T1.1.16)
         RegisterCommand("help", [this](const std::vector<std::string>& args) {
-            std::lock_guard<std::mutex> innerLock(m_Mutex);
+            std::lock_guard<std::recursive_mutex> innerLock(m_Mutex);
             AddLog("=== Available Commands ===");
             for (const auto& [name, cmd] : m_Commands) {
                 AddLog("  " + name + " - " + cmd.description);
@@ -50,7 +50,7 @@ namespace eng::runtime {
         }, "Prints all commands and CVars.");
 
         RegisterCommand("clear", [this](const std::vector<std::string>& args) {
-            std::lock_guard<std::mutex> innerLock(m_Mutex);
+            std::lock_guard<std::recursive_mutex> innerLock(m_Mutex);
             m_Logs.clear();
         }, "Clears the console log window.");
 
@@ -58,19 +58,19 @@ namespace eng::runtime {
     }
 
     void RuntimeConsole::Shutdown() {
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         m_Commands.clear();
         m_Logs.clear();
         m_History.clear();
     }
 
     void RuntimeConsole::RegisterCommand(const std::string& name, CommandCallback callback, const std::string& desc) {
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         m_Commands[name] = ConsoleCommand{ name, callback, desc };
     }
 
     void RuntimeConsole::ExecuteCommand(const std::string& cmdLine) {
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         if (cmdLine.empty()) return;
 
         AddLog("> " + cmdLine);
@@ -144,7 +144,7 @@ namespace eng::runtime {
     }
 
     int RuntimeConsole::HandleInputCallback(ImGuiInputTextCallbackData* data) {
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         switch (data->EventFlag) {
             case ImGuiInputTextFlags_CallbackCompletion: {
                 std::string currentText(data->Buf);
@@ -203,7 +203,7 @@ namespace eng::runtime {
         const float footerHeightToReserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
         ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footerHeightToReserve), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-        std::lock_guard<std::mutex> lock(m_Mutex);
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1));
         for (const auto& log : m_Logs) {

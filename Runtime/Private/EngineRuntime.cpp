@@ -15,6 +15,7 @@
 #include "Core/Diagnostics/Diagnostics.h"
 #include "Core/Diagnostics/Assert.h"
 #include "Core/Diagnostics/Validation.h"
+#include "Core/Memory/AllocationTracker.h"
 #include "Core/Memory/AllocatorValidation.h"
 #include "Core/Diagnostics/StressTest.h"
 #include "Runtime/Public/AssetRegistryTests.h"
@@ -138,16 +139,21 @@ namespace eng::runtime {
             }
         }
 
+        auto ExitTest = [](bool success) {
+            eng::memory::s_AllocationHookEnabled = false;
+            std::exit(success ? 0 : 1);
+        };
+
         if (testMemory) {
             // Run stress tests
             bool success = eng::memory::RunMemoryValidationTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testStress) {
             // Run runtime stress tests
             bool success = eng::diagnostics::RunRuntimeStressTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testAssets) {
@@ -156,37 +162,37 @@ namespace eng::runtime {
             if (success) {
                 success = eng::renderer::RunGeometryHandleTests();
             }
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testGolden) {
             // Run golden-image comparison test
             bool success = eng::renderer::RunGoldenImageTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testFormats) {
             // Run format validation tests
             bool success = eng::runtime::RunFormatTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testTextures) {
             // Run texture import tests
             bool success = eng::runtime::RunTextureImportTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testMeshes) {
             // Run mesh import tests
             bool success = eng::runtime::RunMeshImportTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testLoad) {
             // Run asset loading cache and stress tests
             bool success = eng::runtime::RunAssetCacheTests() && eng::runtime::RunAssetLoadingStressTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testReload) {
@@ -195,13 +201,13 @@ namespace eng::runtime {
                            eng::runtime::RunShaderReloadTests() &&
                            eng::runtime::RunMeshReloadTests() &&
                            eng::runtime::RunHotReloadStressTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (testPackage) {
             // Run package pipeline validation tests
             bool success = eng::runtime::RunPackageTests();
-            std::exit(success ? 0 : 1);
+            ExitTest(success);
         }
 
         if (failECS) {
@@ -882,6 +888,10 @@ namespace eng::runtime {
         // Run validation and leak checks
         ValidateExecutionSequence();
         ReportMemoryLeaks();
+        eng::memory::AllocationTracker::DumpLeakReport();
+
+        // Disable global tracking hooks to avoid deadlock during static/global variable destruction
+        eng::memory::s_AllocationHookEnabled = false;
 
         m_State.store(RuntimeState::Uninitialized, std::memory_order_relaxed);
     }

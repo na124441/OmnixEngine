@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
                     fprintf(stderr, "FATAL ERROR: Unknown exception inside runtime.Run()\n");
                     fflush(stderr);
                 }
-                runtime.Shutdown();
+                                runtime.Shutdown();
             } else {
                 fprintf(stderr, "FATAL ERROR: Failed to initialize EngineRuntime\n");
             }

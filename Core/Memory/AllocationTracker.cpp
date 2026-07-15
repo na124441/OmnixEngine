@@ -11,7 +11,7 @@
 
 namespace eng::memory {
 
-    thread_local bool s_InsideGuard = false;
+    thread_local int s_InsideGuardCount = 0;
     bool s_AllocationHookEnabled = true;
 
     static uint64_t CaptureCallstackHash() {
@@ -56,11 +56,7 @@ namespace eng::memory {
     void AllocationTracker::RegisterAllocation(void* ptr, size_t size, MemoryCategory category, const char* file, int line) {
         if (!ptr) return;
 
-        // Prevent recursion from within map and string allocation calls
-        bool expected = false;
-        if (s_InsideGuard) return;
-        s_InsideGuard = true;
-
+        s_InsideGuardCount++;
         {
             std::lock_guard<std::mutex> lock(GetMutex());
             auto& allocations = GetAllocationsMap();
@@ -94,20 +90,17 @@ namespace eng::memory {
             // Budget assertion check (T1.2.10)
             MemoryBudget budget = GetBudgets()[catIdx];
             if (budget.limitBytes > 0 && catStats.currentBytes > budget.limitBytes) {
-                s_InsideGuard = false;
+                s_InsideGuardCount--;
                 OMNIX_FATAL_ASSERT(false, "Memory allocation failed: Budget limit exceeded for category!");
             }
         }
-
-        s_InsideGuard = false;
+        s_InsideGuardCount--;
     }
 
     void AllocationTracker::RegisterDeallocation(void* ptr) {
         if (!ptr) return;
 
-        if (s_InsideGuard) return;
-        s_InsideGuard = true;
-
+        s_InsideGuardCount++;
         {
             std::lock_guard<std::mutex> lock(GetMutex());
             auto& allocations = GetAllocationsMap();
@@ -126,44 +119,56 @@ namespace eng::memory {
                 stats.categories[catIdx].currentBytes -= size;
             }
         }
-
-        s_InsideGuard = false;
+        s_InsideGuardCount--;
     }
 
     MemoryStatistics AllocationTracker::GetStatistics() {
-        std::lock_guard<std::mutex> lock(GetMutex());
-        return GetStats();
+        s_InsideGuardCount++;
+        MemoryStatistics stats;
+        {
+            std::lock_guard<std::mutex> lock(GetMutex());
+            stats = GetStats();
+        }
+        s_InsideGuardCount--;
+        return stats;
     }
 
     void AllocationTracker::Reset() {
-        std::lock_guard<std::mutex> lock(GetMutex());
-        GetAllocationsMap().clear();
-        GetStats() = MemoryStatistics();
+        s_InsideGuardCount++;
+        {
+            std::lock_guard<std::mutex> lock(GetMutex());
+            GetAllocationsMap().clear();
+            GetStats() = MemoryStatistics();
+        }
+        s_InsideGuardCount--;
     }
 
     void AllocationTracker::DumpLeakReport() {
-        std::lock_guard<std::mutex> lock(GetMutex());
-        auto& allocations = GetAllocationsMap();
+        s_InsideGuardCount++;
+        
+        struct CallsiteInfo {
+            size_t totalBytes = 0;
+            size_t allocCount = 0;
+        };
+        std::map<std::pair<std::string, int>, CallsiteInfo> groupedLeaks;
+        size_t totalLeaked = 0;
+        size_t activeCount = 0;
 
-        LOG_INFO("[Memory] Leak check: %zu active allocations at shutdown.", allocations.size());
-        if (!allocations.empty()) {
-            LOG_ERROR("!!! MEMORY LEAKS DETECTED !!!");
-            
-            // Group leaks by callsite: (file, line) (T1.2.8)
-            struct CallsiteInfo {
-                size_t totalBytes = 0;
-                size_t allocCount = 0;
-            };
-            std::map<std::pair<std::string, int>, CallsiteInfo> groupedLeaks;
-            size_t totalLeaked = 0;
-
+        {
+            std::lock_guard<std::mutex> lock(GetMutex());
+            auto& allocations = GetAllocationsMap();
+            activeCount = allocations.size();
             for (const auto& [ptr, info] : allocations) {
                 std::pair<std::string, int> callsite = { info.file, info.line };
                 groupedLeaks[callsite].totalBytes += info.size;
                 groupedLeaks[callsite].allocCount++;
                 totalLeaked += info.size;
             }
+        } // Release GetMutex() lock here to prevent lock-order inversion deadlock with stdout/stderr stream locks
 
+        LOG_INFO("[Memory] Leak check: %zu active allocations at shutdown.", activeCount);
+        if (!groupedLeaks.empty()) {
+            LOG_ERROR("!!! MEMORY LEAKS DETECTED !!!");
             for (const auto& [callsite, cinfo] : groupedLeaks) {
                 LOG_ERROR("  Callsite: %s:%d | Leaked: %zu bytes across %zu allocations",
                           callsite.first.empty() ? "unknown" : callsite.first.c_str(),
@@ -173,38 +178,50 @@ namespace eng::memory {
         } else {
             LOG_INFO("[Memory] Leak check: 0 leaked allocations. Everything gets cleaned up cleanly!");
         }
+
+        s_InsideGuardCount--;
     }
 
     size_t AllocationTracker::GetActiveAllocationsCount() {
-        std::lock_guard<std::mutex> lock(GetMutex());
-        return GetAllocationsMap().size();
+        s_InsideGuardCount++;
+        size_t count = 0;
+        {
+            std::lock_guard<std::mutex> lock(GetMutex());
+            count = GetAllocationsMap().size();
+        }
+        s_InsideGuardCount--;
+        return count;
     }
 
     void AllocationTracker::SetCategoryBudget(MemoryCategory category, size_t limitBytes) {
-        std::lock_guard<std::mutex> lock(GetMutex());
-        GetBudgets()[static_cast<size_t>(category)].limitBytes = limitBytes;
+        s_InsideGuardCount++;
+        {
+            std::lock_guard<std::mutex> lock(GetMutex());
+            GetBudgets()[static_cast<size_t>(category)].limitBytes = limitBytes;
+        }
+        s_InsideGuardCount--;
     }
 
 } // namespace eng::memory
 
 // Global operator new/delete hooks wrapping the allocation tracker (T1.2.5)
 void* operator new(std::size_t size) {
-    if (eng::memory::s_AllocationHookEnabled && !eng::memory::s_InsideGuard) {
-        eng::memory::s_InsideGuard = true;
+    if (eng::memory::s_AllocationHookEnabled && eng::memory::s_InsideGuardCount == 0) {
+        eng::memory::s_InsideGuardCount++;
         void* ptr = std::malloc(size);
         eng::memory::AllocationTracker::RegisterAllocation(ptr, size, eng::memory::MemoryCategory::Unknown, "GlobalNew", 0);
-        eng::memory::s_InsideGuard = false;
+        eng::memory::s_InsideGuardCount--;
         return ptr;
     }
     return std::malloc(size);
 }
 
 void operator delete(void* ptr) noexcept {
-    if (eng::memory::s_AllocationHookEnabled && !eng::memory::s_InsideGuard) {
-        eng::memory::s_InsideGuard = true;
+    if (eng::memory::s_AllocationHookEnabled && eng::memory::s_InsideGuardCount == 0) {
+        eng::memory::s_InsideGuardCount++;
         eng::memory::AllocationTracker::RegisterDeallocation(ptr);
         std::free(ptr);
-        eng::memory::s_InsideGuard = false;
+        eng::memory::s_InsideGuardCount--;
         return;
     }
     std::free(ptr);
