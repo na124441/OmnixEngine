@@ -296,6 +296,13 @@ add_library(EngineRuntime
     Runtime/Private/Editor/Widgets/ComponentWidgets.cpp
     Runtime/Private/RuntimeDiagnostics.cpp
     Runtime/Private/AllocationDiagnostics.cpp
+    Runtime/Private/ModuleManager.cpp
+    Runtime/Private/PluginManager.cpp
+    Runtime/Private/ConfigSystem.cpp
+    Runtime/Private/UUIDSystem.cpp
+    Runtime/Private/CVarSystem.cpp
+    Runtime/Private/RuntimeConsole.cpp
+    Runtime/Private/TimeManager.cpp
     Runtime/Private/OwnershipValidation.cpp
     Core/Diagnostics/StressTest.cpp
     Runtime/Private/AssetRegistry.cpp

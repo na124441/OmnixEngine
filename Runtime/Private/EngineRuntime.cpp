@@ -33,6 +33,14 @@
 #include "Physics/Public/PhysicsDebugDraw.h"
 
 // Subsystem Concrete Headers
+#include "Runtime/Public/ModuleManager.h"
+#include "Runtime/Public/ServiceRegistry.h"
+#include "Runtime/Public/PluginManager.h"
+#include "Runtime/Public/ConfigSystem.h"
+#include "Runtime/Public/EventBus.h"
+#include "Runtime/Public/CVarSystem.h"
+#include "Runtime/Public/RuntimeConsole.h"
+#include "Runtime/Public/TimeManager.h"
 #include "Core/World.h"
 #include "Input/InputManager.h"
 #include "EventManagement/EventManager.h"
@@ -205,6 +213,23 @@ namespace eng::runtime {
         // 1. Core Services (Logger and Timer are static and already initialized)
         Timer::Init();
 
+        // Initialize Core Subsystems
+        m_ConfigSystem = std::make_unique<ConfigSystem>();
+        m_ConfigSystem->Initialize(argc, argv);
+
+        m_CVarSystem = std::make_unique<CVarSystem>();
+        
+        m_RuntimeConsole = std::make_unique<RuntimeConsole>();
+        m_RuntimeConsole->Initialize(m_CVarSystem.get());
+
+        m_TimeManager = std::make_unique<TimeManager>();
+        m_TimeManager->Initialize();
+
+        m_ModuleManager = std::make_unique<ModuleManager>();
+        m_ServiceRegistry = std::make_unique<ServiceRegistry>();
+        m_PluginManager = std::make_unique<PluginManager>();
+        m_EventBus = std::make_unique<EventBus>();
+
         // 2. Input System Initialization
         m_Input = std::make_unique<InputManager>();
         TrackAllocation("Input", sizeof(InputManager));
@@ -329,6 +354,14 @@ namespace eng::runtime {
         m_Context.audioSystem = m_AudioSystem.get();
         m_Context.saveSystem = m_GameplaySaveSystem.get();
         m_Context.worldManager = m_WorldManager.get();
+        m_Context.moduleManager = m_ModuleManager.get();
+        m_Context.serviceRegistry = m_ServiceRegistry.get();
+        m_Context.pluginManager = m_PluginManager.get();
+        m_Context.configSystem = m_ConfigSystem.get();
+        m_Context.eventBus = m_EventBus.get();
+        m_Context.cvarSystem = m_CVarSystem.get();
+        m_Context.runtimeConsole = m_RuntimeConsole.get();
+        m_Context.timeManager = m_TimeManager.get();
         m_GameplaySaveSystem->Initialize(&m_Context);
         m_Context.timing = &m_Timing;
         m_Context.currentStage = &m_CurrentStage;
@@ -355,6 +388,13 @@ namespace eng::runtime {
                 Shutdown();
                 return false;
             }
+        }
+
+        // Initialize dynamic modules registered so far
+        if (!m_ModuleManager->InitializeModules(m_Context)) {
+            LOG_ERROR("[Runtime] Module initialization failed!");
+            Shutdown();
+            return false;
         }
 
         auto endTime = std::chrono::high_resolution_clock::now();
@@ -386,6 +426,9 @@ namespace eng::runtime {
             double dt = std::chrono::duration<double>(frameStart - lastFrameTimePoint).count();
             lastFrameTimePoint = frameStart;
 
+            m_TimeManager->Update(static_cast<float>(dt));
+            float smoothDt = m_TimeManager->GetDeltaTime();
+
             // Track active scene changes for physics registrations
             static Scene* lastActiveScene = nullptr;
             static SceneManager::TransitionState lastTransitionState = SceneManager::TransitionState::Running;
@@ -407,11 +450,6 @@ namespace eng::runtime {
             if (rendererLoop && rendererLoop->GetSceneRenderer()) {
                 rendererLoop->GetSceneRenderer()->SetActiveScene(currentActiveScene);
             }
-            
-            // Limit delta time to avoid spiral of death in lag spikes
-            if (dt > 0.1) {
-                dt = 0.1;
-            }
 
             // Frame Begin Stage
             m_CurrentStage = FrameStage::FrameBegin;
@@ -419,6 +457,9 @@ namespace eng::runtime {
             {
                 OMNIX_PROFILE_SCOPE("FrameBegin");
                 eng::core::g_Profiler.BeginFrame(frameIdx++);
+                if (m_ConfigSystem) {
+                    m_ConfigSystem->CheckForHotReload();
+                }
             }
 
             if (m_Editor) {
@@ -443,6 +484,9 @@ namespace eng::runtime {
                 if (m_EventManager) {
                     m_EventManager->processQueue();
                 }
+                if (m_EventBus) {
+                    m_EventBus->ProcessQueue();
+                }
             }
 
             // PreUpdate Stage
@@ -462,13 +506,13 @@ namespace eng::runtime {
                     static_cast<SystemScheduler*>(m_Scheduler.get())->RunPending();
                 }
                 if (m_Scenes) {
-                    m_Scenes->Update(static_cast<float>(dt));
+                    m_Scenes->Update(smoothDt);
                 }
                 if (m_WorldManager) {
-                    m_WorldManager->Update(m_Context, static_cast<float>(dt));
+                    m_WorldManager->Update(m_Context, smoothDt);
                 }
                 if (m_ECS) {
-                    m_ECS->Update(static_cast<float>(dt));
+                    m_ECS->Update(smoothDt);
 
                     bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
                                           (m_Context.mode == RuntimeMode::Editor && 
@@ -479,16 +523,19 @@ namespace eng::runtime {
                         auto* world = dynamic_cast<World*>(m_ECS.get());
                         if (world) {
                             if (auto playerSys = world->GetSystem<PlayerSystem>()) {
-                                playerSys->Update(static_cast<float>(dt), coordinator, m_Input.get());
+                                playerSys->Update(smoothDt, coordinator, m_Input.get());
                             }
                             if (auto physicsSys = world->GetSystem<PhysicsSystem>()) {
-                                physicsSys->Update(static_cast<float>(dt), coordinator);
+                                physicsSys->Update(smoothDt, coordinator);
                             }
                         }
                     }
                 }
+                if (m_ModuleManager) {
+                    m_ModuleManager->TickModules(smoothDt);
+                }
                 if (m_AudioSystem) {
-                    m_AudioSystem->Update(static_cast<float>(dt));
+                    m_AudioSystem->Update(smoothDt);
                 }
             }
             auto updateEnd = Clock::now();
@@ -511,7 +558,7 @@ namespace eng::runtime {
                                        (m_Context.editorSimulationState == EditorSimulationState::Play ||
                                         m_Context.editorSimulationState == EditorSimulationState::Step));
                 if (shouldSimulate && m_PhysicsWorld) {
-                    m_PhysicsWorld->FixedUpdate(static_cast<float>(dt));
+                    m_PhysicsWorld->FixedUpdate(smoothDt);
                     auto& coordinator = m_ECS->getCoordinator();
                     auto* world = dynamic_cast<World*>(m_ECS.get());
                     if (world) {
@@ -803,6 +850,32 @@ namespace eng::runtime {
             m_EventManager.reset();
             TrackDeallocation("Events", sizeof(Omnix::EventManager));
         }
+
+        // Shutdown dynamic modules and custom core subsystems
+        if (m_ModuleManager) {
+            m_ModuleManager->ShutdownModules();
+            m_ModuleManager.reset();
+        }
+
+        if (m_PluginManager) {
+            m_PluginManager->UnloadAll();
+            m_PluginManager.reset();
+        }
+
+        if (m_RuntimeConsole) {
+            m_RuntimeConsole->Shutdown();
+            m_RuntimeConsole.reset();
+        }
+
+        if (m_ConfigSystem) {
+            m_ConfigSystem->Shutdown();
+            m_ConfigSystem.reset();
+        }
+
+        m_CVarSystem.reset();
+        m_TimeManager.reset();
+        m_ServiceRegistry.reset();
+        m_EventBus.reset();
 
         LOG_INFO("[Runtime] EngineRuntime Subsystem Shutdown Complete.");
 

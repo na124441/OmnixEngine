@@ -31,6 +31,14 @@ namespace eng::runtime {
     class EditorLayer;
     class AudioSystem;
     class GameplaySaveSystem;
+    class ModuleManager;
+    class ServiceRegistry;
+    class PluginManager;
+    class ConfigSystem;
+    class EventBus;
+    class CVarSystem;
+    class RuntimeConsole;
+    class TimeManager;
 }
 
 class InputManager;
@@ -77,6 +85,15 @@ namespace eng::runtime {
         std::unique_ptr<Omnix::WorldManager> m_WorldManager;
         std::unique_ptr<ComponentSchemaRegistry> m_SchemaRegistry;
         std::unique_ptr<EditorLayer> m_Editor;
+
+        std::unique_ptr<ModuleManager> m_ModuleManager;
+        std::unique_ptr<ServiceRegistry> m_ServiceRegistry;
+        std::unique_ptr<PluginManager> m_PluginManager;
+        std::unique_ptr<ConfigSystem> m_ConfigSystem;
+        std::unique_ptr<EventBus> m_EventBus;
+        std::unique_ptr<CVarSystem> m_CVarSystem;
+        std::unique_ptr<RuntimeConsole> m_RuntimeConsole;
+        std::unique_ptr<TimeManager> m_TimeManager;
 
         // Managed CLI input thread
         std::thread m_InputThread;

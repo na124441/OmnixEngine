@@ -41,6 +41,16 @@
 #include "Runtime/Public/Gameplay/GameplayEventBus.h"
 #include "ECS/PlayerControllerSystem.h"
 #include "Core/World.h"
+#include "Runtime/Public/ModuleManager.h"
+#include "Runtime/Public/ServiceRegistry.h"
+#include "Runtime/Public/PluginManager.h"
+#include "Runtime/Public/ConfigSystem.h"
+#include "Runtime/Public/Reflection.h"
+#include "Runtime/Public/EventBus.h"
+#include "Runtime/Public/UUIDSystem.h"
+#include "Runtime/Public/CVarSystem.h"
+#include "Runtime/Public/RuntimeConsole.h"
+#include "Runtime/Public/TimeManager.h"
 #include <iostream>
 #include <vector>
 #include <filesystem>
@@ -49,6 +59,16 @@
 #include <iterator>
 
 namespace eng::runtime {
+
+    struct TestReflectedStruct {
+        int health;
+        float speed;
+    };
+
+    REFLECT_STRUCT_BEGIN(TestReflectedStruct)
+    REFLECT_FIELD(TestReflectedStruct, int, health, PropertyFlags::Edit)
+    REFLECT_FIELD(TestReflectedStruct, float, speed, PropertyFlags::Edit | PropertyFlags::Save)
+    REFLECT_STRUCT_END(TestReflectedStruct)
 
     bool RunFormatTests() noexcept {
         LOG_INFO("================================================================================");
@@ -2108,6 +2128,152 @@ namespace eng::runtime {
             std::filesystem::remove(tempWorldPath);
 
             LOG_INFO("[FormatTest] Test 15 Passed: Zone Activation and Transition verified successfully.");
+        }
+
+        // -----------------------------------------------------------------------------
+        // Test 16 — Runtime Genesis Modular core systems Test (T1.1.2 - T1.1.19)
+        // -----------------------------------------------------------------------------
+        LOG_INFO("[FormatTest] Running Test 16: Runtime Genesis Modular Subsystems Validation...");
+        {
+            // 1. ModuleManager & ServiceRegistry
+            class TestModuleA : public IModule {
+            public:
+                bool Init(RuntimeContext& ctx) override { m_Init = true; return true; }
+                void Shutdown() override { m_Init = false; }
+                void Tick(float dt) override {}
+                std::string GetName() const override { return "TestModuleA"; }
+                std::vector<std::string> GetDependencies() const override { return {}; }
+                bool m_Init = false;
+            };
+
+            class TestModuleB : public IModule {
+            public:
+                bool Init(RuntimeContext& ctx) override { m_Init = true; return true; }
+                void Shutdown() override { m_Init = false; }
+                void Tick(float dt) override {}
+                std::string GetName() const override { return "TestModuleB"; }
+                std::vector<std::string> GetDependencies() const override { return {"TestModuleA"}; }
+                bool m_Init = false;
+            };
+
+            ModuleManager mm;
+            auto modA = std::make_shared<TestModuleA>();
+            auto modB = std::make_shared<TestModuleB>();
+            mm.RegisterModule(modA);
+            mm.RegisterModule(modB);
+
+            RuntimeContext dummyCtx{};
+            if (!mm.InitializeModules(dummyCtx)) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: ModuleManager topological init failed!");
+                return false;
+            }
+
+            const auto& sorted = mm.GetLoadedModulesSorted();
+            if (sorted.size() != 2 || sorted[0]->GetName() != "TestModuleA" || sorted[1]->GetName() != "TestModuleB") {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: ModuleManager dependency sorting incorrect!");
+                return false;
+            }
+
+            mm.ShutdownModules();
+
+            // ServiceRegistry test
+            ServiceRegistry sr;
+            struct ITestService { virtual ~ITestService() = default; virtual void Foo() = 0; };
+            struct TestServiceImpl : public ITestService { void Foo() override {} };
+            auto service = std::make_shared<TestServiceImpl>();
+            sr.RegisterService<ITestService>(service);
+            if (sr.GetService<ITestService>() != service) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: ServiceRegistry lookup failed!");
+                return false;
+            }
+
+            // 2. ConfigSystem layering
+            ConfigSystem config;
+            char* argv[] = { (char*)"Engine.exe", (char*)"--cvar_override", (char*)"99" };
+            config.Initialize(3, argv, "Config/engine_test.json", "Config/user_test.json");
+            config.SetDefault("cvar_default", "10");
+            if (config.GetInt("cvar_default") != 10) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: ConfigSystem default layer failed!");
+                return false;
+            }
+            if (config.GetInt("cvar_override") != 99) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: ConfigSystem command-line layer failed!");
+                return false;
+            }
+
+            // 3. Reflection
+            TestReflectedStruct testStruct{ 42, 3.14f };
+            if (GetProperty<TestReflectedStruct, int>(testStruct, "health") != 42) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: Reflection getter failed!");
+                return false;
+            }
+            SetProperty<TestReflectedStruct, float>(testStruct, "speed", 5.5f);
+            if (testStruct.speed != 5.5f) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: Reflection setter failed!");
+                return false;
+            }
+
+            // 4. EventBus
+            EventBus bus;
+            struct TestEvent { int value; };
+            int receivedVal = 0;
+            bus.Subscribe<TestEvent>([&receivedVal](const TestEvent& e) {
+                receivedVal = e.value;
+            });
+            bus.PublishImmediate(TestEvent{ 123 });
+            if (receivedVal != 123) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: EventBus synchronous publish failed!");
+                return false;
+            }
+
+            receivedVal = 0;
+            bus.PublishDeferred(TestEvent{ 456 });
+            if (receivedVal != 0) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: EventBus deferred publish was synchronous!");
+                return false;
+            }
+            bus.ProcessQueue();
+            if (receivedVal != 456) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: EventBus deferred queue processing failed!");
+                return false;
+            }
+
+            // 5. UUIDSystem
+            UUID uuid1 = UUID::GenerateV4();
+            std::string uuidStr = uuid1.ToString();
+            UUID uuid2 = UUID::FromString(uuidStr);
+            if (uuid1 != uuid2) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: UUID round-trip mismatch!");
+                return false;
+            }
+
+            // 6. CVarSystem
+            CVarSystem cvars;
+            cvars.RegisterInt("r_shadows", 1, CVarFlags::None, "Shadow toggle");
+            if (cvars.GetInt("r_shadows") != 1) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: CVar registration failed!");
+                return false;
+            }
+            cvars.SetValueFromString("r_shadows", "0");
+            if (cvars.GetInt("r_shadows") != 0) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: CVar string setter failed!");
+                return false;
+            }
+
+            // 7. TimeManager
+            TimeManager tm;
+            tm.Initialize(1.0f / 60.0f, 0.1f);
+            tm.Update(0.5f); // Spike duration (should clamp to 0.1f)
+            if (tm.GetRawDeltaTime() != 0.5f) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: TimeManager raw delta time incorrect!");
+                return false;
+            }
+            if (tm.GetDeltaTime() > 0.1f) {
+                LOG_ERROR("[FormatTest] Test 16 FAILED: TimeManager spike clamping failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 16 Passed: Runtime Genesis Modular Subsystems validated successfully.");
         }
 
         LOG_INFO("================================================================================");

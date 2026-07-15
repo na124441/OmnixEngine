@@ -30,6 +30,14 @@ namespace eng::runtime {
     class GameplaySaveSystem;
     enum class FrameStage : uint8_t;
     struct FrameTiming;
+    class ModuleManager;
+    class ServiceRegistry;
+    class PluginManager;
+    class ConfigSystem;
+    class EventBus;
+    class CVarSystem;
+    class RuntimeConsole;
+    class TimeManager;
 }
 
 class InputManager;
@@ -55,6 +63,14 @@ namespace eng::runtime {
         AudioSystem* audioSystem = nullptr;
         GameplaySaveSystem* saveSystem = nullptr;
         Omnix::WorldManager* worldManager = nullptr;
+        ModuleManager* moduleManager = nullptr;
+        ServiceRegistry* serviceRegistry = nullptr;
+        PluginManager* pluginManager = nullptr;
+        ConfigSystem* configSystem = nullptr;
+        EventBus* eventBus = nullptr;
+        CVarSystem* cvarSystem = nullptr;
+        RuntimeConsole* runtimeConsole = nullptr;
+        TimeManager* timeManager = nullptr;
         InteractionPromptData interactionPrompt;
         std::function<std::unique_ptr<eng::runtime::IECSWorld>(std::unique_ptr<eng::runtime::IECSWorld>)> swapECS;
 
