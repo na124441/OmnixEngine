@@ -2,6 +2,8 @@
 #include "Core/Memory/LinearAllocator.h"
 #include "Core/Memory/PoolAllocator.h"
 #include "Core/Memory/StackAllocator.h"
+#include "Core/Memory/FreeListAllocator.h"
+#include "Core/Memory/GenerationTaggedHandle.h"
 #include "Core/Memory/AllocationTracker.h"
 #include "Core/Memory/FragmentationDiagnostics.h"
 #include "Core/Logging/Logger.h"
@@ -283,6 +285,100 @@ namespace eng::memory {
         return true;
     }
 
+    static bool TestFreeListAllocator() {
+        LOG_INFO("[MemoryTest] --- Starting FreeListAllocator Tests ---");
+        
+        FreeListAllocator allocator(2048, FreeListAllocator::AllocationPolicy::FindBest);
+
+        void* ptrA = allocator.Allocate(128, 8);
+        void* ptrB = allocator.Allocate(256, 16);
+        void* ptrC = allocator.Allocate(64, 8);
+
+        if (!ptrA || !ptrB || !ptrC) {
+            LOG_ERROR("[MemoryTest] FreeListAllocator: Basic allocations failed!");
+            return false;
+        }
+
+        allocator.Free(ptrB);
+
+        void* ptrD = allocator.Allocate(128, 8);
+        if (!ptrD) {
+            LOG_ERROR("[MemoryTest] FreeListAllocator: Allocation in freed space failed!");
+            return false;
+        }
+
+        allocator.Free(ptrA);
+        allocator.Free(ptrD);
+        allocator.Free(ptrC);
+
+        if (allocator.GetUsedMemory() != 0) {
+            LOG_ERROR("[MemoryTest] FreeListAllocator: Used memory is not 0 after all frees!");
+            return false;
+        }
+
+        void* ptrE = allocator.Allocate(1024, 8);
+        if (!ptrE) {
+            LOG_ERROR("[MemoryTest] FreeListAllocator: Coalesced allocation failed!");
+            return false;
+        }
+        allocator.Free(ptrE);
+
+        LOG_INFO("[MemoryTest] FreeListAllocator Tests Passed Successfully.");
+        return true;
+    }
+
+    static bool TestGenerationTaggedHandles() {
+        LOG_INFO("[MemoryTest] --- Starting Generation-Tagged Handles Tests ---");
+
+        struct DummyResource {
+            int val = 42;
+        };
+
+        HandleManager<DummyResource> manager(10);
+        DummyResource resA;
+        
+        Handle<DummyResource> hA = manager.RegisterResource(&resA);
+        if (!hA.IsValid()) {
+            LOG_ERROR("[MemoryTest] HandleManager: Failed to register resource.");
+            return false;
+        }
+
+        DummyResource* resolved = manager.Resolve(hA);
+        if (!resolved || resolved->val != 42) {
+            LOG_ERROR("[MemoryTest] HandleManager: Resolve failed or returned corrupted data.");
+            return false;
+        }
+
+        manager.UnregisterResource(hA);
+
+        LOG_INFO("[MemoryTest] Generation-Tagged Handles Tests Passed Successfully.");
+        return true;
+    }
+
+    static bool TestMemoryCategoryBudgets() {
+        LOG_INFO("[MemoryTest] --- Starting Category Budget Tests ---");
+
+        AllocationTracker::Reset();
+        AllocationTracker::SetCategoryBudget(MemoryCategory::Graphics, 512);
+
+        void* fakePtr = reinterpret_cast<void*>(0xABCDE0);
+        
+        AllocationTracker::RegisterAllocation(fakePtr, 256, MemoryCategory::Graphics, __FILE__, __LINE__);
+
+        MemoryStatistics stats = AllocationTracker::GetStatistics();
+        if (stats.categories[static_cast<size_t>(MemoryCategory::Graphics)].currentBytes != 256) {
+            LOG_ERROR("[MemoryTest] Budget: Current category bytes incorrect.");
+            AllocationTracker::Reset();
+            return false;
+        }
+
+        AllocationTracker::RegisterDeallocation(fakePtr);
+        AllocationTracker::Reset();
+
+        LOG_INFO("[MemoryTest] Category Budget Tests Passed Successfully.");
+        return true;
+    }
+
     bool RunMemoryValidationTests() {
         LOG_INFO("[MemoryTest] Starting Engine Memory Infrastructure Stress Validation");
         LOG_INFO("[MemoryTest] =====================================================");
@@ -291,6 +387,9 @@ namespace eng::memory {
         success &= TestLinearAllocator();
         success &= TestPoolAllocator();
         success &= TestStackAllocator();
+        success &= TestFreeListAllocator();
+        success &= TestGenerationTaggedHandles();
+        success &= TestMemoryCategoryBudgets();
         success &= TestFragmentationDiagnostics();
         success &= TestAllocationLeakDetection();
 

@@ -93,6 +93,7 @@ add_library(EngineCore
     Core/Memory/LinearAllocator.cpp
     Core/Memory/PoolAllocator.cpp
     Core/Memory/StackAllocator.cpp
+    Core/Memory/FreeListAllocator.cpp
     Core/Memory/AllocatorValidation.cpp
 )
 target_include_directories(EngineCore PUBLIC ${ENGINE_INCLUDE_DIRS})
