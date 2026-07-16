@@ -1,0 +1,35 @@
+{
+    "bounds": {
+        "max": [
+            8.962207794189453,
+            1.7270430326461792,
+            9.209968566894531
+        ],
+        "min": [
+            -16.548749923706055,
+            -0.2069070041179657,
+            -16.300989151000977
+        ]
+    },
+    "handle": 14563795593874495022,
+    "hasNormals": true,
+    "hasSkeleton": false,
+    "hasTangents": true,
+    "hasUV0": true,
+    "hasUVs": true,
+    "importTimestamp": 13428613272,
+    "indexCount": 20892,
+    "normalsGenerated": true,
+    "sourceTimestamp": 13045364770,
+    "sphere": {
+        "center": [
+            -3.793271064758301,
+            0.7600679993629456,
+            -3.5455102920532227
+        ],
+        "radius": 18.064870834350586
+    },
+    "submeshCount": 1,
+    "tangentsGenerated": true,
+    "vertexCount": 3604
+}

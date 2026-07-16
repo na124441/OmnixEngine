@@ -55,6 +55,13 @@ namespace eng::renderer {
 
         size_t GetPassCount() const { return m_CompiledPasses.size(); }
 
+        void LogDeviceLostReport(uint32_t frameIndex) const;
+        const std::string& GetActivePassName() const { return m_ActivePassName; }
+        VkCommandBuffer GetActiveCommandBuffer() const { return m_ActiveCommandBuffer; }
+        const std::string& GetLastSuccessfulPassName() const { return m_LastSuccessfulPassName; }
+        const std::string& GetLastResourceTransitionLog() const { return m_LastResourceTransitionLog; }
+        const std::string& GetLastRenderPassStartedLog() const { return m_LastRenderPassStartedLog; }
+
     private:
         bool TopologicalSort();
         void CalculateResourceLifetimes();
@@ -62,6 +69,13 @@ namespace eng::renderer {
 
         std::vector<RenderPass> m_RegisteredPasses;
         std::unordered_map<std::string, RenderResource> m_Resources;
+
+        // Crash reporting tracking variables (Phase 5 & 6)
+        std::string m_ActivePassName = "None";
+        VkCommandBuffer m_ActiveCommandBuffer = VK_NULL_HANDLE;
+        std::string m_LastSuccessfulPassName = "None";
+        std::string m_LastResourceTransitionLog = "None";
+        std::string m_LastRenderPassStartedLog = "None";
 
         // Compiled execution order
         std::vector<RenderPass> m_CompiledPasses;

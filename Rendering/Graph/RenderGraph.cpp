@@ -263,6 +263,49 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
             cmdBufferBegun[slotIdx] = true;
         }
 
+        // Update tracking state for validation and crash reporting (Phase 4, 5, 6)
+        m_ActivePassName = pass.name;
+        m_ActiveCommandBuffer = cmd;
+        m_LastRenderPassStartedLog = "RenderPass: " + pass.name + ", Framebuffer: " + std::to_string((uintptr_t)pass.framebuffer);
+
+        // Notify RenderTargetManager of active cmd buffer & framebuffer for validations (Phase 3 & 4)
+        targetManager.SetActiveCommandBuffer(cmd);
+        targetManager.SetActiveFramebuffer(pass.framebuffer);
+
+        // Log Attachment & Pass Information before execution (Phase 2 part 1)
+        LOG_INFO("[RenderPass Verification] Name: " + pass.name + 
+                 ", Framebuffer: " + std::to_string((uintptr_t)pass.framebuffer));
+        for (size_t i = 0; i < pass.inputHandles.size() && i < pass.inputs.size(); ++i) {
+            const RenderTarget* target = targetManager.Get(pass.inputHandles[i]);
+            LOG_INFO("  Input: " + pass.inputs[i] + " (" + (target ? target->debugName : "Null") + 
+                     "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
+        }
+        for (size_t i = 0; i < pass.outputHandles.size() && i < pass.outputs.size(); ++i) {
+            const RenderTarget* target = targetManager.Get(pass.outputHandles[i]);
+            LOG_INFO("  Output: " + pass.outputs[i] + " (" + (target ? target->debugName : "Null") + 
+                     "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
+        }
+
+        // Consumer Validation before execution (Phase 5 part 2)
+        for (size_t i = 0; i < pass.inputHandles.size() && i < pass.inputs.size(); ++i) {
+            const RenderTarget* target = targetManager.Get(pass.inputHandles[i]);
+            if (target && target->IsValid()) {
+                VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                if (pass.inputs[i] == "DepthBuffer") {
+                    expectedLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                }
+                if (target->currentLayout != expectedLayout) {
+                    LOG_ERROR("[RenderGraph Validation Error]\nResource: " + pass.inputs[i] + 
+                              "\nProducer: (Previous Writer)\nConsumer: " + pass.name + 
+                              "\nExpected: " + LayoutToString(expectedLayout) + 
+                              "\nTracked:  " + LayoutToString(target->currentLayout));
+                    #ifndef NDEBUG
+                    assert(false && "RenderGraph Validation Error: Input layout mismatch");
+                    #endif
+                }
+            }
+        }
+
         // Perform automated resource layout transitions declared by this pass
         for (const auto& usage : pass.resourceUsages) {
             RenderTarget* target = targetManager.Get(usage.resource);
@@ -289,11 +332,12 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
                         srcStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
                     }
 
-                    LOG_INFO("[RenderGraphTransition] " + target->debugName + ":\n  " +
-                             LayoutToString(currentLayout) + " \xE2\x86\x92 " + LayoutToString(usage.requiredLayout) +
-                             "\n  src: " + AccessToString(srcAccess) + "\n  dst: " + AccessToString(usage.access));
+                    // Update last transition log for crash report (Phase 5 & 6)
+                    m_LastResourceTransitionLog = "Transitioning " + target->debugName + " from " + 
+                                                   LayoutToString(currentLayout) + " to " + 
+                                                   LayoutToString(usage.requiredLayout) + " in pass " + pass.name;
 
-                    targetManager.Transition(cmd, usage.resource, usage.requiredLayout, srcStage, usage.stage, srcAccess, usage.access);
+                    targetManager.Transition(cmd, usage.resource, usage.requiredLayout, srcStage, usage.stage, srcAccess, usage.access, currentLayout, pass.name, frameIndex);
                 }
             }
         }
@@ -332,6 +376,8 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
                 invalidTargets.insert(output.index);
             }
             outGraphExecutionFailed = true;
+        } else {
+            m_LastSuccessfulPassName = pass.name;
         }
 
         if (useTimestamp) {
@@ -342,6 +388,10 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
         if (pfnEndDebugLabel != nullptr) {
             pfnEndDebugLabel(cmd);
         }
+
+        // Reset active variables inside manager
+        targetManager.SetActiveCommandBuffer(VK_NULL_HANDLE);
+        targetManager.SetActiveFramebuffer(VK_NULL_HANDLE);
     }
 
     // End all command buffers that were begun
@@ -636,6 +686,17 @@ bool RenderGraph::ValidatePass(const RenderPass& pass, const RenderTargetManager
         return false;
     }
     return true;
+}
+
+void RenderGraph::LogDeviceLostReport(uint32_t frameIndex) const {
+    LOG_ERROR("================= VULKAN DEVICE LOST CRASH REPORT =================");
+    LOG_ERROR("Current frame:              " + std::to_string(frameIndex));
+    LOG_ERROR("Active pass:               " + m_ActivePassName);
+    LOG_ERROR("Current command buffer:    " + std::to_string((uintptr_t)m_ActiveCommandBuffer));
+    LOG_ERROR("Last successful pass:      " + m_LastSuccessfulPassName);
+    LOG_ERROR("Last resource transition:  " + m_LastResourceTransitionLog);
+    LOG_ERROR("Last render pass started:  " + m_LastRenderPassStartedLog);
+    LOG_ERROR("===================================================================");
 }
 
 } // namespace eng::renderer

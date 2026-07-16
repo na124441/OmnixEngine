@@ -5,10 +5,12 @@
 
 namespace eng::runtime {
 
+    class EditorCamera;
+
     class ViewportPanel {
     public:
         void Initialize(RuntimeContext* context);
-        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState, EditorSimulationState simulationState, float cameraSpeed);
+        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera);
 
         bool ShowCollidersEnabled() const { return m_ShowColliders; }
         void SetShowColliders(bool show) { m_ShowColliders = show; }

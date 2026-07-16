@@ -54,6 +54,7 @@ namespace eng::renderer {
         VkFramebuffer Get(FramebufferHandle handle);
         const FramebufferResource* GetResource(FramebufferHandle handle) const;
         bool IsValid(FramebufferHandle handle) const;
+        bool HasAttachment(VkFramebuffer fb, VkImageView view) const;
 
         void InvalidateByRenderTarget(RenderTargetHandle target);
         void RebuildInvalidated();

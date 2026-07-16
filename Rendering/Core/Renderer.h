@@ -72,6 +72,13 @@ namespace eng::renderer {
         bool enableTonemapping = true;
         bool enableGammaCorrection = true;
         bool debugBeforePostProcess = false;
+        uint32_t tonemappingMode = 1; // 0 = Reinhard, 1 = ACES, 2 = Filmic, 3 = AgX
+
+        // Depth of Field
+        bool enableDoF = false;
+        float dofFocusDistance = 10.0f;
+        float dofFocalLength = 50.0f;
+        float dofAperture = 2.8f;
 
         // Color Grading
         float contrast = 1.0f;
@@ -312,6 +319,13 @@ namespace eng::renderer {
         uint32_t     m_TotalInstanceCount = 0;
         GPUFrustum   m_CpuFrustum = {};
         uint32_t     m_ShadingMode = 0;
+        uint32_t m_ViewportShadingMode = 0; // 0 = Rendered, 1 = LookDev, 2 = Solid
+        uint32_t m_SolidColorType = 0;      // 0 = Material, 1 = Single, 2 = Random, 3 = MatCap
+        uint32_t m_MatCapPreset = 0;        // 0 = Clay, 1 = Red Wax, 2 = Zebra, 3 = NormalMap
+        uint32_t m_LookDevPreset = 0;       // 0 = Studio, 1 = Forest, 2 = Sunset, 3 = Night
+        float m_LookDevRotation = 0.0f;
+        float m_LookDevIntensity = 1.0f;
+        float m_LookDevBackgroundOpacity = 0.0f;
         glm::vec3    ambientColor = glm::vec3(0.10f, 0.12f, 0.16f);
         float        ambientIntensity = 0.35f;
 
@@ -507,6 +521,7 @@ namespace eng::renderer {
         std::vector<VkDescriptorSet> m_SSRDescriptorSets;
         VkPipelineLayout            m_SSRPipelineLayout          = VK_NULL_HANDLE;
         VkPipeline                  m_SSRPipeline                = VK_NULL_HANDLE;
+        void                        updateSSRDescriptorSet(uint32_t frameIndex);
 
         // HDR Color target resources
         std::vector<VkImage>        m_HDRColorImages;
@@ -612,6 +627,12 @@ namespace eng::renderer {
         std::vector<RenderTargetHandle> m_GBufferDHandles;
         std::vector<RenderTargetHandle> m_HDRColorHandles;
         std::vector<RenderTargetHandle> m_HDRColorComposedHandles;
+        std::vector<RenderTargetHandle> m_DoFColorHandles;
+        std::vector<VkImage>        m_DoFColorImages;
+        std::vector<VmaAllocation>  m_DoFColorAllocations;
+        std::vector<VkImageView>    m_DoFColorImageViews;
+        std::vector<FramebufferHandle> m_DoFFbHandles;
+        std::vector<VkFramebuffer>  m_DoFFramebuffers;
         std::vector<RenderTargetHandle> m_ShadowHandles;
         std::vector<RenderTargetHandle> m_LDRColorHandles;
         std::vector<RenderTargetHandle> m_ViewportColorHandles;
@@ -671,6 +692,7 @@ namespace eng::renderer {
 
         std::chrono::steady_clock::time_point m_CpuFrameStart{};
         std::chrono::steady_clock::time_point m_StartTime = std::chrono::steady_clock::now();
+        bool m_FrameUsedFallbackSubmit = false;
 
         Omnix::Radiance::RadianceSettings m_RadianceSettings;
         RenderDebugConfig m_DebugConfig;
@@ -681,6 +703,19 @@ namespace eng::renderer {
         glm::vec2 m_CurrentJitter = glm::vec2(0.0f);
         glm::mat4 m_PrevViewProjection = glm::mat4(1.0f);
         glm::mat4 m_CurrentViewProjection = glm::mat4(1.0f);
+
+        // Removed duplicate layout tracking m_DepthImageLayout
+
+        // Depth of Field Pass Resources
+        VkPipelineLayout m_DoFPipelineLayout = VK_NULL_HANDLE;
+        VkPipeline m_DoFPipeline = VK_NULL_HANDLE;
+        VkDescriptorSetLayout m_DoFDescriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool m_DoFDescriptorPool = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> m_DoFDescriptorSets;
+
+        void initDoFPipeline();
+        void destroyDoFPipeline();
+        void updateDoFDescriptorSets();
     };
 
 } // namespace eng::renderer

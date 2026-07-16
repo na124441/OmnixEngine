@@ -433,11 +433,20 @@ namespace eng::runtime {
         m_SharedResources.createSyncObjects();
 
         // Initialize VMA Allocator
+        VkPhysicalDeviceFeatures2 supportedFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkPhysicalDeviceVulkan12Features supportedFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        supportedFeatures.pNext = &supportedFeatures12;
+        vkGetPhysicalDeviceFeatures2(device->GetPhysicalDevice(), &supportedFeatures);
+
         VmaAllocatorCreateInfo allocatorInfo{};
-        allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_0;
+        allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
         allocatorInfo.physicalDevice = device->GetPhysicalDevice();
         allocatorInfo.device = vkDevice;
         allocatorInfo.instance = m_VulkanInstance->GetHandle();
+
+        if (supportedFeatures12.bufferDeviceAddress) {
+            allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+        }
 
         VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_SharedResources.allocator));
         
@@ -699,8 +708,10 @@ namespace eng::runtime {
             double maxMS = m_FrameStats.maxFrameTime * 1000.0;
             double fps = 1.0 / m_FrameStats.averageFrameTime;
 
-            ENG_LOG_DEBUG("Frame Stats: Avg {:.2f}ms ({:.1f} FPS), Min {:.2f}ms, Max {:.2f}ms",
+            char statsBuf[256];
+            snprintf(statsBuf, sizeof(statsBuf), "Frame Stats: Avg %.2fms (%.1f FPS), Min %.2fms, Max %.2fms",
                 avgMS, fps, minMS, maxMS);
+            ENG_LOG_DEBUG(std::string(statsBuf));
 
             // Reset min/max for next interval
             m_FrameStats.minFrameTime = 1000.0;

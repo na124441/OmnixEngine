@@ -91,6 +91,34 @@ vec3 ToneMapFilmic(vec3 color)
     return clamp(curr * whiteScale, 0.0, 1.0);
 }
 
+vec3 ToneMapAgX(vec3 color)
+{
+    const mat3 srgb_to_agx = mat3(
+        1.1968219355755106, -0.09802088114013627, -0.09902974574971842,
+        -0.05881240182991702, 1.1514110345091724, -0.08983452445663673,
+        -0.04597050393849557, -0.04780655474921477, 1.096735126857189
+    );
+    const mat3 agx_to_srgb = mat3(
+        0.8424790622791138, 0.07841400802135468, 0.07922055572271347,
+        0.04373268872499466, 0.8784686326980591, 0.07791625440120697,
+        0.03853118419647217, 0.03923306614160538, 0.9221415519714355
+    );
+
+    color = srgb_to_agx * color;
+
+    const float min_ev = -12.4;
+    const float max_ev = 4.0;
+    
+    color = clamp(log2(color + 1e-5), min_ev, max_ev);
+    color = (color - min_ev) / (max_ev - min_ev);
+
+    vec3 x = color;
+    vec3 curve = x * x * (3.0 - 2.0 * x); // Sigmoidal contrast curve
+
+    curve = agx_to_srgb * curve;
+    return clamp(curve, 0.0, 1.0);
+}
+
 vec3 ApplyWhiteBalance(vec3 c, float temp, float tint)
 {
     c.r = c.r * (1.0 + temp * 0.12);
@@ -196,22 +224,41 @@ void main()
     color = ApplyFog(color, inUV);
 
     // 1. Tone Mapping
-    if (pc.enableTonemapping == 1u)
+    if (pc.enableTonemapping > 0u)
     {
-        if (pc.autoExposure == 1.0)
+        if (pc.enableTonemapping == 1u)
         {
-            color = ToneMapReinhard(color);
-        }
-        else
-        {
-            if (pc.exposureMode == 0u)
+            if (pc.autoExposure == 1.0)
             {
-                color = ToneMapACES(color);
+                color = ToneMapReinhard(color);
             }
             else
             {
-                color = ToneMapFilmic(color);
+                if (pc.exposureMode == 0u)
+                {
+                    color = ToneMapACES(color);
+                }
+                else
+                {
+                    color = ToneMapFilmic(color);
+                }
             }
+        }
+        else if (pc.enableTonemapping == 2u)
+        {
+            color = ToneMapACES(color);
+        }
+        else if (pc.enableTonemapping == 3u)
+        {
+            color = ToneMapFilmic(color);
+        }
+        else if (pc.enableTonemapping == 4u)
+        {
+            color = ToneMapAgX(color);
+        }
+        else if (pc.enableTonemapping == 5u)
+        {
+            color = ToneMapReinhard(color);
         }
     }
 

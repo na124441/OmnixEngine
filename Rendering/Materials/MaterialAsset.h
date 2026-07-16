@@ -27,6 +27,8 @@ namespace eng::renderer {
         float roughnessFactor = 0.6f;
         float normalScale = 1.0f;
         float emissiveStrength = 1.0f;
+        float clearcoatFactor = 0.0f;
+        float clearcoatRoughness = 0.1f;
         MaterialBlendMode blendMode = MaterialBlendMode::Opaque;
         MaterialShadingModel shadingModel = MaterialShadingModel::Lit;
     };
@@ -37,6 +39,11 @@ namespace eng::renderer {
         float metallicFactor = 0.0f;
         float normalScale = 1.0f;
         float emissiveStrength = 1.0f;
+
+        float clearcoatFactor = 0.0f;
+        float clearcoatRoughness = 0.1f;
+        float paddingFloat1 = 0.0f;
+        float paddingFloat2 = 0.0f;
 
         float hasAlbedoMap = 0.0f;
         float useNormalMap = 0.0f;

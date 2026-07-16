@@ -59,9 +59,9 @@ namespace eng::vulkan {
     }
 
     eng::core::Result VulkanInstance::Initialize(const std::string& appName, bool enableValidation) {
-#ifdef NDEBUG
-        enableValidation = false;
-#endif
+// #ifdef NDEBUG
+//         enableValidation = false;
+// #endif
 
         if (enableValidation && !CheckValidationLayerSupport()) {
             std::cerr << "Validation layers requested, but not available!" << std::endl;

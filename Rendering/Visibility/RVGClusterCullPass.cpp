@@ -265,6 +265,7 @@ namespace eng::renderer {
 
         // Destroy previous buffer
         if (frameRes.indirectCommandBuffer != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(resources.device);
             vmaDestroyBuffer(resources.allocator, frameRes.indirectCommandBuffer, frameRes.indirectCommandAlloc);
             ::eng::ResourceTracker::decBuffer();
         }

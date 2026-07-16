@@ -1,4 +1,5 @@
 #include "Runtime/Private/Editor/Panels/ViewportPanel.h"
+#include "Runtime/Public/Editor/EditorCamera.h"
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/imgui_internal.h"
 #include "Rendering/Core/Renderer.h"
@@ -9,6 +10,8 @@
 #include "Scene/SceneManager.h"
 #include "ImGuizmo.h"
 #include "ECS/ECSComponents.h"
+#include "Physics/Public/PhysicsWorld.h"
+#include "Physics/Public/PhysicsQueries.h"
 #include "ECS/LightCollectionSystem.h"
 #include "ECS/Public/IECSWorld.h"
 #include "Runtime/Public/AssetRegistry.h"
@@ -128,7 +131,7 @@ namespace eng::runtime {
         m_Context = context;
     }
 
-    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, EditorSelection& selection, EditorDirtyState& dirtyState, EditorSimulationState simulationState, float cameraSpeed) {
+    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, EditorSelection& selection, EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Viewport", nullptr);
         ImGui::PopStyleVar();
@@ -191,6 +194,61 @@ namespace eng::runtime {
 
             bool hasSelection = selection.HasSelection();
             Entity selectedEntity = selection.GetSelectedEntity();
+
+            if (ImGui::IsKeyPressed(ImGuiKey_End)) {
+                if (hasSelection && m_Context->ecs) {
+                    auto& coordinator = m_Context->ecs->getCoordinator();
+                    if (coordinator.IsEntityAlive(selectedEntity) && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<TransformComponent>())) {
+                        auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
+                        glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
+                        glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
+
+                        // Find bounds
+                        glm::vec3 localMin(-0.5f);
+                        glm::vec3 localMax(0.5f);
+                        bool hasBounds = false;
+                        
+                        auto* loop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
+                        eng::renderer::Renderer* renderer = loop ? loop->GetSceneRenderer() : nullptr;
+
+                        if (coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<RenderableMeshComponent>())) {
+                            const auto& rm = coordinator.GetComponent<RenderableMeshComponent>(selectedEntity);
+                            if (rm.meshAssetHandle.IsValid() && renderer && renderer->m_EcsMeshCache.find(rm.meshAssetHandle.value) != renderer->m_EcsMeshCache.end()) {
+                                eng::renderer::Mesh* m = renderer->m_EcsMeshCache[rm.meshAssetHandle.value];
+                                if (m) {
+                                    localMin = m->minBounds;
+                                    localMax = m->maxBounds;
+                                    hasBounds = true;
+                                }
+                            }
+                        }
+
+                        if (!hasBounds && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<BoxColliderComponent>())) {
+                            const auto& bc = coordinator.GetComponent<BoxColliderComponent>(selectedEntity);
+                            localMin = glm::vec3(bc.offset.x, bc.offset.y, bc.offset.z) - glm::vec3(bc.size.x, bc.size.y, bc.size.z) * 0.5f;
+                            hasBounds = true;
+                        }
+
+                        glm::vec3 rayOrigin = glmPos;
+                        rayOrigin.y += localMin.y * glmScale.y - 0.01f;
+                        Vector3 physOrigin(rayOrigin.x, rayOrigin.y, rayOrigin.z);
+                        Vector3 physDirection(0.0f, -1.0f, 0.0f);
+                        eng::physics::RaycastHit hit;
+                        if (m_Context->physicsWorld && m_Context->physicsWorld->Raycast(physOrigin, physDirection, 1000.0f, hit)) {
+                            float hitY = hit.position.y;
+                            tc.position.y = hitY - localMin.y * tc.scale.y;
+                        } else {
+                            // Snap to Y = 0 plane
+                            tc.position.y = -localMin.y * tc.scale.y;
+                        }
+                        tc.dirty = true;
+                        if (m_Context->physicsWorld) {
+                            m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
+                        }
+                        dirtyState.MarkSceneDirty();
+                    }
+                }
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
                 if (hasSelection) {
                     if (m_Context->physicsWorld) {
@@ -399,7 +457,7 @@ namespace eng::runtime {
                 DrawGrid(drawList, view, proj, imageStartPos, size, cam.position, m_GridScale);
             }
             Entity selectedEntity = selection.GetSelectedEntity();
-            bool disableGizmo = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+            bool disableGizmo = editorCamera.m_IsDraggingRMB || editorCamera.m_IsDraggingLMB || editorCamera.m_IsDraggingMMB;
 
             if (m_ShowGizmos) {
                 DrawAxisGizmo(drawList, view, imageStartPos, size);
@@ -408,16 +466,47 @@ namespace eng::runtime {
                 if (selectedEntity != 0 && m_Context->ecs && !disableGizmo) {
                     auto& coordinator = m_Context->ecs->getCoordinator();
                     if (coordinator.IsEntityAlive(selectedEntity) && coordinator.GetSignature(selectedEntity).test(coordinator.GetComponentType<TransformComponent>())) {
-                        auto& tc = coordinator.GetComponent<TransformComponent>(selectedEntity);
+                        TransformComponent* tc = &coordinator.GetComponent<TransformComponent>(selectedEntity);
+
+                        // Alt-drag duplicate support
+                        static bool s_DuplicatedThisDrag = false;
+                        if (ImGuizmo::IsUsing()) {
+                            if (ImGui::IsKeyDown(ImGuiKey_LeftAlt) || ImGui::IsKeyDown(ImGuiKey_RightAlt)) {
+                                if (!s_DuplicatedThisDrag) {
+                                    auto* sceneMgr = m_Context ? dynamic_cast<SceneManager*>(m_Context->scenes) : nullptr;
+                                    auto* world = m_Context ? dynamic_cast<World*>(m_Context->ecs) : nullptr;
+                                    Entity newEntity = EditorSceneService(sceneMgr, world, &dirtyState, &selection, nullptr).DuplicateObject(selectedEntity);
+                                    if (newEntity != 0) {
+                                        selection.Select(newEntity);
+                                        selectedEntity = newEntity;
+                                        tc = &coordinator.GetComponent<TransformComponent>(selectedEntity);
+                                    }
+                                    s_DuplicatedThisDrag = true;
+                                }
+                            }
+                        } else {
+                            s_DuplicatedThisDrag = false;
+                        }
+
+                        // Rebuild physics actor when gizmo manipulation ends
+                        static bool s_WasUsingGizmo = false;
+                        if (ImGuizmo::IsUsing()) {
+                            s_WasUsingGizmo = true;
+                        } else if (s_WasUsingGizmo) {
+                            s_WasUsingGizmo = false;
+                            if (m_Context->physicsWorld) {
+                                m_Context->physicsWorld->RebuildStaticActor(coordinator, selectedEntity);
+                            }
+                        }
 
                         ImGuizmo::SetOrthographic(false);
                         ImGuizmo::SetDrawlist();
                         ImGuizmo::SetRect(imageStartPos.x, imageStartPos.y, size.x, size.y);
 
                         // Build GLM matrix from custom ECS transform components
-                        glm::vec3 glmPos(tc.position.x, tc.position.y, tc.position.z);
-                        glm::quat glmRot(tc.rotation.w, tc.rotation.x, tc.rotation.y, tc.rotation.z);
-                        glm::vec3 glmScale(tc.scale.x, tc.scale.y, tc.scale.z);
+                        glm::vec3 glmPos(tc->position.x, tc->position.y, tc->position.z);
+                        glm::quat glmRot(tc->rotation.w, tc->rotation.x, tc->rotation.y, tc->rotation.z);
+                        glm::vec3 glmScale(tc->scale.x, tc->scale.y, tc->scale.z);
 
                         glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), glmPos) *
                                                 glm::mat4_cast(glmRot) *
@@ -450,10 +539,10 @@ namespace eng::runtime {
                                                                   matrixRotation,
                                                                   matrixScale);
 
-                            tc.position = Vector3(matrixTranslation[0], matrixTranslation[1], matrixTranslation[2]);
-                            tc.rotation = EulerToQuaternion(matrixRotation[0], matrixRotation[1], matrixRotation[2]);
-                            tc.scale = Vector3(matrixScale[0], matrixScale[1], matrixScale[2]);
-                            tc.dirty = true;
+                            tc->position = Vector3(matrixTranslation[0], matrixTranslation[1], matrixTranslation[2]);
+                            tc->rotation = EulerToQuaternion(matrixRotation[0], matrixRotation[1], matrixRotation[2]);
+                            tc->scale = Vector3(matrixScale[0], matrixScale[1], matrixScale[2]);
+                            tc->dirty = true;
 
                             dirtyState.MarkSceneDirty();
                         }
@@ -859,6 +948,82 @@ namespace eng::runtime {
         }
 
         ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+
+        if (renderer)
+        {
+            // Shading Mode Buttons
+            bool isWire = (renderer->m_ShadingMode == 11);
+            if (isWire) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Wire##Shading")) {
+                renderer->m_ViewportShadingMode = 0;
+                renderer->m_ShadingMode = 11;
+            }
+            if (isWire) ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+            bool isSolid = (renderer->m_ViewportShadingMode == 2);
+            if (isSolid) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Solid##Shading")) {
+                renderer->m_ViewportShadingMode = 2;
+                renderer->m_ShadingMode = 0;
+            }
+            if (isSolid) ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+            bool isLookDev = (renderer->m_ViewportShadingMode == 1);
+            if (isLookDev) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("LookDev##Shading")) {
+                renderer->m_ViewportShadingMode = 1;
+                renderer->m_ShadingMode = 0;
+            }
+            if (isLookDev) ImGui::PopStyleColor();
+
+            ImGui::SameLine();
+            bool isRendered = (renderer->m_ViewportShadingMode == 0 && renderer->m_ShadingMode == 0);
+            if (isRendered) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.7f, 1.0f));
+            if (ImGui::Button("Rendered##Shading")) {
+                renderer->m_ViewportShadingMode = 0;
+                renderer->m_ShadingMode = 0;
+            }
+            if (isRendered) ImGui::PopStyleColor();
+
+            if (isSolid) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(90.0f);
+                const char* colors[] = { "Material", "Single", "Random", "MatCap" };
+                int type = static_cast<int>(renderer->m_SolidColorType);
+                if (ImGui::Combo("##SolidColorType", &type, colors, IM_ARRAYSIZE(colors))) {
+                    renderer->m_SolidColorType = static_cast<uint32_t>(type);
+                }
+                
+                if (renderer->m_SolidColorType == 3) { // MatCap preset
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(90.0f);
+                    const char* matcaps[] = { "Clay", "Red Wax", "Zebra", "NormalMap" };
+                    int preset = static_cast<int>(renderer->m_MatCapPreset);
+                    if (ImGui::Combo("##MatCapPreset", &preset, matcaps, IM_ARRAYSIZE(matcaps))) {
+                        renderer->m_MatCapPreset = static_cast<uint32_t>(preset);
+                    }
+                }
+            }
+            else if (isLookDev) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(90.0f);
+                const char* hdris[] = { "Studio", "Forest", "Sunset", "Night" };
+                int preset = static_cast<int>(renderer->m_LookDevPreset);
+                if (ImGui::Combo("##LookDevPreset", &preset, hdris, IM_ARRAYSIZE(hdris))) {
+                    renderer->m_LookDevPreset = static_cast<uint32_t>(preset);
+                }
+                
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(80.0f);
+                ImGui::SliderFloat("Intensity##LookDevInt", &renderer->m_LookDevIntensity, 0.0f, 5.0f, "%.1f");
+            }
+
+            ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
+        }
+
+        ImGui::SameLine(); ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical); ImGui::SameLine();
         
         {
             ImGui::Checkbox("Snap", &m_EnableSnapping);
@@ -1029,7 +1194,7 @@ namespace eng::runtime {
             ImGui::Text("Selection: None");
         }
         
-        ImGui::Text("Cam Speed: %.1f m/s", cameraSpeed);
+        ImGui::Text("Cam Speed: %.1f m/s", editorCamera.movementSpeed);
         
         ImGui::Text("Mode: "); ImGui::SameLine();
         if (simulationState == EditorSimulationState::Edit) {

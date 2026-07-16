@@ -223,8 +223,8 @@ void SceneRenderer::initPipelines()
     };
 
     // Stub pipelines
-    createPipeline("shadow_vert.spv", "shadow_frag.spv", resources.renderPass, resources.pipelineLayout, &shadowPipeline);
-    createPipeline("fullscreen_vert.spv", "lighting_frag.spv", resources.renderPass, resources.pipelineLayout, &lightingPipeline);
+    createPipeline("shadow_vert.spv", "postprocess_frag.spv", resources.renderPass, resources.pipelineLayout, &shadowPipeline);
+    createPipeline("fullscreen_vert.spv", "deferred_lighting.spv", resources.renderPass, resources.pipelineLayout, &lightingPipeline);
     createPipeline("fullscreen_vert.spv", "postprocess_frag.spv", resources.renderPass, resources.pipelineLayout, &postProcessPipeline);
 }
 

@@ -113,6 +113,20 @@ public:
     }
     float getEmissiveStrength() const { return assetData.emissiveStrength; }
 
+    void setClearcoatFactor(float cf) {
+        assetData.clearcoatFactor = cf;
+        uboData.clearcoatFactor = cf;
+        if(resources) updateUniform(*resources);
+    }
+    float getClearcoatFactor() const { return assetData.clearcoatFactor; }
+
+    void setClearcoatRoughness(float cr) {
+        assetData.clearcoatRoughness = cr;
+        uboData.clearcoatRoughness = cr;
+        if(resources) updateUniform(*resources);
+    }
+    float getClearcoatRoughness() const { return assetData.clearcoatRoughness; }
+
     void setBlendMode(MaterialBlendMode mode) {
         assetData.blendMode = mode;
         uboData.blendMode = static_cast<uint32_t>(mode);

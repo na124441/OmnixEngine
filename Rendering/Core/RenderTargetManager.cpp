@@ -1,9 +1,75 @@
 #include "Core/pch.h"
 #include "RenderTargetManager.h"
+#include "FramebufferManager.h"
 #include "Core/Vulkan/VkUtils.h"
 #include <algorithm>
+#include <cassert>
 
 namespace eng::renderer {
+
+    static std::string LayoutToString(VkImageLayout layout) {
+        switch (layout) {
+            case VK_IMAGE_LAYOUT_UNDEFINED: return "UNDEFINED";
+            case VK_IMAGE_LAYOUT_GENERAL: return "GENERAL";
+            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return "COLOR_ATTACHMENT_OPTIMAL";
+            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: return "DEPTH_STENCIL_ATTACHMENT_OPTIMAL";
+            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL: return "DEPTH_STENCIL_READ_ONLY_OPTIMAL";
+            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return "SHADER_READ_ONLY_OPTIMAL";
+            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return "TRANSFER_SRC_OPTIMAL";
+            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return "TRANSFER_DST_OPTIMAL";
+            case VK_IMAGE_LAYOUT_PREINITIALIZED: return "PREINITIALIZED";
+            case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return "PRESENT_SRC_KHR";
+            default: return "UNKNOWN(" + std::to_string(layout) + ")";
+        }
+    }
+
+    static std::string AccessToString(VkAccessFlags access) {
+        std::string res = "";
+        if (access & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) res += "INDIRECT_COMMAND_READ | ";
+        if (access & VK_ACCESS_INDEX_READ_BIT) res += "INDEX_READ | ";
+        if (access & VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT) res += "VERTEX_ATTRIBUTE_READ | ";
+        if (access & VK_ACCESS_UNIFORM_READ_BIT) res += "UNIFORM_READ | ";
+        if (access & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) res += "INPUT_ATTACHMENT_READ | ";
+        if (access & VK_ACCESS_SHADER_READ_BIT) res += "SHADER_READ | ";
+        if (access & VK_ACCESS_SHADER_WRITE_BIT) res += "SHADER_WRITE | ";
+        if (access & VK_ACCESS_COLOR_ATTACHMENT_READ_BIT) res += "COLOR_ATTACHMENT_READ | ";
+        if (access & VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT) res += "COLOR_ATTACHMENT_WRITE | ";
+        if (access & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT) res += "DEPTH_STENCIL_READ | ";
+        if (access & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) res += "DEPTH_WRITE | ";
+        if (access & VK_ACCESS_TRANSFER_READ_BIT) res += "TRANSFER_READ | ";
+        if (access & VK_ACCESS_TRANSFER_WRITE_BIT) res += "TRANSFER_WRITE | ";
+        if (access & VK_ACCESS_HOST_READ_BIT) res += "HOST_READ | ";
+        if (access & VK_ACCESS_HOST_WRITE_BIT) res += "HOST_WRITE | ";
+        if (access & VK_ACCESS_MEMORY_READ_BIT) res += "MEMORY_READ | ";
+        if (access & VK_ACCESS_MEMORY_WRITE_BIT) res += "MEMORY_WRITE | ";
+        if (!res.empty()) {
+            res = res.substr(0, res.size() - 3);
+        } else {
+            res = "0";
+        }
+        return res;
+    }
+
+    static std::string StageToString(VkPipelineStageFlags stage) {
+        std::string res = "";
+        if (stage & VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT) res += "TOP_OF_PIPE | ";
+        if (stage & VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT) res += "DRAW_INDIRECT | ";
+        if (stage & VK_PIPELINE_STAGE_VERTEX_INPUT_BIT) res += "VERTEX_INPUT | ";
+        if (stage & VK_PIPELINE_STAGE_VERTEX_SHADER_BIT) res += "VERTEX_SHADER | ";
+        if (stage & VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT) res += "FRAGMENT_SHADER | ";
+        if (stage & VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT) res += "EARLY_FRAGMENT_TESTS | ";
+        if (stage & VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT) res += "LATE_FRAGMENT_TESTS | ";
+        if (stage & VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT) res += "COLOR_ATTACHMENT_OUTPUT | ";
+        if (stage & VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) res += "COMPUTE_SHADER | ";
+        if (stage & VK_PIPELINE_STAGE_TRANSFER_BIT) res += "TRANSFER | ";
+        if (stage & VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT) res += "BOTTOM_OF_PIPE | ";
+        if (!res.empty()) {
+            res = res.substr(0, res.size() - 3);
+        } else {
+            res = "0";
+        }
+        return res;
+    }
 
     static void SetVkDebugName(VkDevice device, VkObjectType objectType, uint64_t objectHandle, const char* name) {
         if (!device || !objectHandle || !name || !*name) return;
@@ -185,11 +251,62 @@ namespace eng::renderer {
         VkPipelineStageFlags srcStage,
         VkPipelineStageFlags dstStage,
         VkAccessFlags srcAccess,
-        VkAccessFlags dstAccess
+        VkAccessFlags dstAccess,
+        VkImageLayout expectedOldLayout,
+        const std::string& passName,
+        int frameIndex
     )
     {
         RenderTarget* target = Get(handle);
         if (!target) return;
+
+        // Command Buffer validation (Phase 4)
+        if (m_ActiveCommandBuffer != VK_NULL_HANDLE && cmd != m_ActiveCommandBuffer) {
+            LOG_ERROR("[CommandBuffer Mismatch] Transition recorded into CommandBuffer " + 
+                      std::to_string((uintptr_t)cmd) + " but active pass uses " + 
+                      std::to_string((uintptr_t)m_ActiveCommandBuffer));
+            #ifndef NDEBUG
+            assert(false && "CommandBuffer validation failure");
+            #endif
+        }
+
+        // Expected Old Layout Validation (Phase 1 part 2)
+        if (expectedOldLayout != VK_IMAGE_LAYOUT_MAX_ENUM && target->currentLayout != expectedOldLayout) {
+            LOG_ERROR("[Layout Validation ASSERT]\nResource: " + target->debugName + 
+                      "\nTracked:  " + LayoutToString(target->currentLayout) + 
+                      "\nExpected: " + LayoutToString(expectedOldLayout) + 
+                      "\nPass:     " + passName);
+            #ifndef NDEBUG
+            assert(false && "Layout Validation failure");
+            #endif
+        }
+
+        // Cross-validation (Phase 3 part 2)
+        if (m_ActiveFramebuffer != VK_NULL_HANDLE && m_FramebufferManager) {
+            if (newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL || 
+                newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                bool hasAttachment = m_FramebufferManager->HasAttachment(m_ActiveFramebuffer, target->view);
+                if (!hasAttachment) {
+                    LOG_ERROR("[Frame Resource Mismatch] Transitioning image '" + target->debugName + 
+                              "' to attachment layout " + LayoutToString(newLayout) + 
+                              " but it is NOT attached to the active framebuffer " + 
+                              std::to_string((uintptr_t)m_ActiveFramebuffer));
+                    #ifndef NDEBUG
+                    assert(false && "Frame Resource Mismatch: image view not in active framebuffer attachments");
+                    #endif
+                }
+            }
+        }
+
+        // Detailed transition logging (Phase 1 part 1)
+        std::string logMsg = "[Frame " + (frameIndex >= 0 ? std::to_string(frameIndex) : "N/A") + "]\n" +
+                             "Pass:     " + passName + "\n" +
+                             "Resource: " + target->debugName + "\n" +
+                             "VkImage:  " + std::to_string((uintptr_t)target->image) + "\n" +
+                             "Layout:   " + LayoutToString(target->currentLayout) + " -> " + LayoutToString(newLayout) + "\n" +
+                             "Stage:    " + StageToString(srcStage) + " -> " + StageToString(dstStage) + "\n" +
+                             "Access:   " + AccessToString(srcAccess) + " -> " + AccessToString(dstAccess);
+        LOG_INFO(logMsg);
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -214,8 +331,13 @@ namespace eng::renderer {
     {
         const RenderTarget* target = Get(handle);
         if (!target || target->currentLayout != expected) {
-            LOG_WARN("RenderTarget layout mismatch: expected layout not met for '" + 
-                     (target ? target->debugName : "Unknown") + "'");
+            std::string msg = "RenderTarget layout mismatch for '" + (target ? target->debugName : "Unknown") + 
+                              "': expected " + LayoutToString(expected) + " but tracked layout is " + 
+                              (target ? LayoutToString(target->currentLayout) : "NULL");
+            LOG_ERROR(msg);
+            #ifndef NDEBUG
+            assert(false && "RenderTarget layout mismatch");
+            #endif
         }
     }
 

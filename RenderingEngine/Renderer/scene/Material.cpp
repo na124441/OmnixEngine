@@ -36,6 +36,8 @@ bool Material::createPBR(const std::string& vertPath,
     uboData.metallicFactor = asset.metallicFactor;
     uboData.normalScale = asset.normalScale;
     uboData.emissiveStrength = asset.emissiveStrength;
+    uboData.clearcoatFactor = asset.clearcoatFactor;
+    uboData.clearcoatRoughness = asset.clearcoatRoughness;
     uboData.blendMode = static_cast<uint32_t>(asset.blendMode);
     uboData.shadingModel = static_cast<uint32_t>(asset.shadingModel);
     uboData.padding = 0;
@@ -487,7 +489,10 @@ void Material::destroy()
         uboBuffer = VK_NULL_HANDLE;
         uboAllocation = VK_NULL_HANDLE;
     }
-    descriptorSet = VK_NULL_HANDLE;
+    if (descriptorSet != VK_NULL_HANDLE && resources != nullptr && resources->materialDescriptorPool != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets(resources->device, resources->materialDescriptorPool, 1, &descriptorSet);
+        descriptorSet = VK_NULL_HANDLE;
+    }
 
     albedoTexture.reset();
     normalTexture.reset();

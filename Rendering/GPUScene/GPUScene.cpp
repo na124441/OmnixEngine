@@ -1359,6 +1359,7 @@ void GPUScene::resizeBufferIfNeeded(
     }
 
     if (buffer != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(resources.device);
         vmaDestroyBuffer(resources.allocator, buffer, allocation);
         ::eng::ResourceTracker::decBuffer();
     }
@@ -1583,8 +1584,52 @@ void GPUScene::createDescriptorSetLayout(EngineResources& resources)
 
 void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResources& frameRes)
 {
+    // Determine frameIndex from frameRes reference
+    uint32_t frameIndex = 0;
+    for (uint32_t i = 0; i < m_Frames.size(); ++i) {
+        if (&m_Frames[i] == &frameRes) {
+            frameIndex = i;
+            break;
+        }
+    }
+
     std::vector<VkWriteDescriptorSet> writes;
     writes.reserve(8);
+
+    auto validateWrites = [&](const std::vector<VkWriteDescriptorSet>& writesVec, const std::string& contextName) {
+        for (size_t idx = 0; idx < writesVec.size(); ++idx) {
+            const auto& w = writesVec[idx];
+            if (w.pBufferInfo) {
+                std::string bufName = "unknown";
+                bool isStorageUsage = false;
+                VkBuffer b = w.pBufferInfo->buffer;
+                if (b == frameRes.cameraBuffer) { bufName = "cameraBuffer"; isStorageUsage = false; }
+                else if (b == frameRes.frustumBuffer) { bufName = "frustumBuffer"; isStorageUsage = false; }
+                else if (b == frameRes.instanceBuffer) { bufName = "instanceBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.materialBuffer) { bufName = "materialBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.objectIdBuffer) { bufName = "objectIdBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.meshDrawDataBuffer) { bufName = "meshDrawDataBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.materialOverrideBuffer) { bufName = "materialOverrideBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.lightBuffer) { bufName = "lightBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.localLightBuffer.buffer) { bufName = "localLightBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.clusterBoundsBuffer) { bufName = "clusterBoundsBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.clusterRangeBuffer) { bufName = "clusterRangeBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.clusterLightIndexBuffer) { bufName = "clusterLightIndexBuffer"; isStorageUsage = true; }
+                else if (b == frameRes.clusterSettingsBuffer) { bufName = "clusterSettingsBuffer"; isStorageUsage = false; }
+                else if (b == RVGPageStreamingManager::Get().GetVirtualPageTableBuffer(frameIndex)) { bufName = "virtualPageTableBuffer"; isStorageUsage = true; }
+                else if (b == RVGPageStreamingManager::Get().GetStreamingRequestBuffer(frameIndex)) { bufName = "streamingRequestBuffer"; isStorageUsage = true; }
+
+                bool expectStorage = (w.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || w.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+                if (expectStorage != isStorageUsage) {
+                    LOG_ERROR("[Validation Diagnostic] " + contextName + " Mismatch! Write idx " + std::to_string(idx) + 
+                              ", dstBinding " + std::to_string(w.dstBinding) + 
+                              ", buffer " + bufName + 
+                              ", descriptorType " + std::to_string(w.descriptorType) + 
+                              ", isStorageUsage " + std::to_string(isStorageUsage));
+                }
+            }
+        }
+    };
 
     // Binding 0: Camera Uniform Buffer
     VkDescriptorBufferInfo cameraInfo{};
@@ -1770,14 +1815,6 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     rvgClusterWrite.pBufferInfo     = &rvgClusterInfo;
     writes.push_back(rvgClusterWrite);
 
-    // Determine frameIndex from frameRes reference
-    uint32_t frameIndex = 0;
-    for (uint32_t i = 0; i < m_Frames.size(); ++i) {
-        if (&m_Frames[i] == &frameRes) {
-            frameIndex = i;
-            break;
-        }
-    }
 
     // G9 Bindings 11 and 12: Virtual Page Table and Streaming Request Buffer
     VkBuffer virtualPageTableBuf = RVGPageStreamingManager::Get().GetVirtualPageTableBuffer(frameIndex);
@@ -1818,6 +1855,7 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     streamingRequestWrite.pBufferInfo     = &streamingRequestInfo;
     writes.push_back(streamingRequestWrite);
 
+    validateWrites(writes, "writes");
     vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     // Write local lights descriptor set
@@ -1909,13 +1947,19 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
     }
 
     if (!localSetWrites.empty()) {
+        validateWrites(localSetWrites, "localSetWrites");
         vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(localSetWrites.size()), localSetWrites.data(), 0, nullptr);
     }
 
     // Write light culling compute shader descriptors
     std::vector<VkWriteDescriptorSet> cullingSetWrites;
+    VkDescriptorBufferInfo csInfo{};
+    VkDescriptorBufferInfo lbInfo{};
+    VkDescriptorBufferInfo cbInfo{};
+    VkDescriptorBufferInfo crInfo{};
+    VkDescriptorBufferInfo cliInfo{};
+
     if (frameRes.clusterSettingsBuffer != VK_NULL_HANDLE) {
-        VkDescriptorBufferInfo csInfo{};
         csInfo.buffer = frameRes.clusterSettingsBuffer;
         csInfo.offset = 0;
         csInfo.range  = sizeof(Omnix::Radiance::ClusterSettingsGPU);
@@ -1931,7 +1975,6 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
         cullingSetWrites.push_back(w);
     }
     if (frameRes.localLightBuffer.buffer != VK_NULL_HANDLE) {
-        VkDescriptorBufferInfo lbInfo{};
         lbInfo.buffer = frameRes.localLightBuffer.buffer;
         lbInfo.offset = 0;
         lbInfo.range  = frameRes.localLightBuffer.size;
@@ -1947,7 +1990,6 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
         cullingSetWrites.push_back(w);
     }
     if (frameRes.clusterBoundsBuffer != VK_NULL_HANDLE) {
-        VkDescriptorBufferInfo cbInfo{};
         cbInfo.buffer = frameRes.clusterBoundsBuffer;
         cbInfo.offset = 0;
         cbInfo.range  = frameRes.clusterBoundsBufferSize;
@@ -1963,7 +2005,6 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
         cullingSetWrites.push_back(w);
     }
     if (frameRes.clusterRangeBuffer != VK_NULL_HANDLE) {
-        VkDescriptorBufferInfo crInfo{};
         crInfo.buffer = frameRes.clusterRangeBuffer;
         crInfo.offset = 0;
         crInfo.range  = frameRes.clusterRangeBufferSize;
@@ -1979,7 +2020,6 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
         cullingSetWrites.push_back(w);
     }
     if (frameRes.clusterLightIndexBuffer != VK_NULL_HANDLE) {
-        VkDescriptorBufferInfo cliInfo{};
         cliInfo.buffer = frameRes.clusterLightIndexBuffer;
         cliInfo.offset = 0;
         cliInfo.range  = frameRes.clusterLightIndexBufferSize;
@@ -1995,6 +2035,7 @@ void GPUScene::writeDescriptorSet(EngineResources& resources, GPUSceneFrameResou
         cullingSetWrites.push_back(w);
     }
     if (!cullingSetWrites.empty()) {
+        validateWrites(cullingSetWrites, "cullingSetWrites");
         vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(cullingSetWrites.size()), cullingSetWrites.data(), 0, nullptr);
     }
 }

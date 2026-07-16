@@ -57,99 +57,165 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
     std::vector<PbrVertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<glm::vec3> temp_positions;
+    std::vector<glm::vec2> temp_texcoords;
+    std::vector<glm::vec3> temp_normals;
+
+    auto resolveIndex = [](int objIndex, size_t count) -> int {
+        if (objIndex > 0) return objIndex - 1;
+        if (objIndex < 0) return static_cast<int>(count) + objIndex;
+        return -1;
+    };
+
+    struct FaceVertex {
+        int position = -1;
+        int uv = -1;
+        int normal = -1;
+    };
+
+    auto parseFaceVertex = [&](const std::string& token) -> FaceVertex {
+        FaceVertex v{};
+        size_t firstSlash = token.find('/');
+        size_t secondSlash = firstSlash == std::string::npos ? std::string::npos : token.find('/', firstSlash + 1);
+
+        std::string posStr = firstSlash == std::string::npos ? token : token.substr(0, firstSlash);
+        std::string uvStr = firstSlash == std::string::npos ? std::string() :
+            (secondSlash == std::string::npos ? token.substr(firstSlash + 1) : token.substr(firstSlash + 1, secondSlash - firstSlash - 1));
+        std::string normStr = secondSlash == std::string::npos ? std::string() : token.substr(secondSlash + 1);
+
+        if (!posStr.empty()) v.position = resolveIndex(std::stoi(posStr), temp_positions.size());
+        if (!uvStr.empty()) v.uv = resolveIndex(std::stoi(uvStr), temp_texcoords.size());
+        if (!normStr.empty()) v.normal = resolveIndex(std::stoi(normStr), temp_normals.size());
+        return v;
+    };
+
+    auto fetchPosition = [&](int index) -> glm::vec3 {
+        return temp_positions[static_cast<size_t>(index)];
+    };
+
+    auto fetchUv = [&](int index) -> glm::vec2 {
+        return temp_texcoords[static_cast<size_t>(index)];
+    };
+
+    auto fetchNormal = [&](int index) -> glm::vec3 {
+        return temp_normals[static_cast<size_t>(index)];
+    };
+
+    auto computePlanarUv = [](const glm::vec3& normal, const glm::vec3& p) -> glm::vec2 {
+        float absX = std::abs(normal.x);
+        float absY = std::abs(normal.y);
+        float absZ = std::abs(normal.z);
+        if (absX >= absY && absX >= absZ) return { p.z, p.y };
+        if (absY >= absX && absY >= absZ) return { p.x, p.z };
+        return { p.x, p.y };
+    };
 
     std::string line;
     while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
         std::stringstream ss(line);
         std::string prefix;
         ss >> prefix;
 
         if (prefix == "v") {
-            glm::vec3 pos;
+            glm::vec3 pos{};
             ss >> pos.x >> pos.y >> pos.z;
             temp_positions.push_back(pos);
+        } else if (prefix == "vt") {
+            glm::vec2 uv{};
+            ss >> uv.x >> uv.y;
+            temp_texcoords.push_back(uv);
+        } else if (prefix == "vn") {
+            glm::vec3 normal{};
+            ss >> normal.x >> normal.y >> normal.z;
+            if (glm::length(normal) > 0.0001f) {
+                normal = glm::normalize(normal);
+            }
+            temp_normals.push_back(normal);
         } else if (prefix == "f") {
-            std::string v1, v2, v3;
-            if (!(ss >> v1 >> v2 >> v3)) continue;
-
-            auto parse_index = [&](const std::string& v_str) -> uint32_t {
-                size_t slash = v_str.find('/');
-                std::string idx_str = (slash == std::string::npos) ? v_str : v_str.substr(0, slash);
-                return static_cast<uint32_t>(std::stoul(idx_str)) - 1;
-            };
-
-            uint32_t i1 = parse_index(v1);
-            uint32_t i2 = parse_index(v2);
-            uint32_t i3 = parse_index(v3);
-
-            if (i1 >= temp_positions.size() || i2 >= temp_positions.size() || i3 >= temp_positions.size()) {
-                ::Logger::Log(::LogLevel::Error, "Malformed face index in OBJ: " + path + " - index out of range of positions (positions size: " + std::to_string(temp_positions.size()) + ")");
-                return false;
-            }
-
-            glm::vec3 p1 = temp_positions[i1];
-            glm::vec3 p2 = temp_positions[i2];
-            glm::vec3 p3 = temp_positions[i3];
-
-            glm::vec3 e1 = p2 - p1;
-            glm::vec3 e2 = p3 - p1;
-            glm::vec3 faceNormal = { 0.0f, 0.0f, 1.0f };
-            if (glm::length(e1) > 0.0001f && glm::length(e2) > 0.0001f) {
-                faceNormal = glm::normalize(glm::cross(e1, e2));
-            }
-
-            // Determine dominant axis of normal for planar projection
-            float absX = std::abs(faceNormal.x);
-            float absY = std::abs(faceNormal.y);
-            float absZ = std::abs(faceNormal.z);
-
-            glm::vec2 uv1, uv2, uv3;
-            if (absX >= absY && absX >= absZ) {
-                uv1 = { p1.z, p1.y };
-                uv2 = { p2.z, p2.y };
-                uv3 = { p3.z, p3.y };
-            } else if (absY >= absX && absY >= absZ) {
-                uv1 = { p1.x, p1.z };
-                uv2 = { p2.x, p2.z };
-                uv3 = { p3.x, p3.z };
-            } else {
-                uv1 = { p1.x, p1.y };
-                uv2 = { p2.x, p2.y };
-                uv3 = { p3.x, p3.y };
-            }
-
-            // Scale UV coordinates slightly to fit nicely on standard geometries
-            float uvScale = 2.0f;
-            uv1 *= uvScale;
-            uv2 *= uvScale;
-            uv3 *= uvScale;
-
-            // Compute tangent vectors for proper normal map perturbation
-            glm::vec3 tangent{1.0f, 0.0f, 0.0f};
-            glm::vec2 duv1 = uv2 - uv1;
-            glm::vec2 duv2 = uv3 - uv1;
-            float denom = (duv1.x * duv2.y - duv2.x * duv1.y);
-            if (std::abs(denom) > 0.00001f) {
-                float f = 1.0f / denom;
-                tangent.x = f * (duv2.y * e1.x - duv1.y * e2.x);
-                tangent.y = f * (duv2.y * e1.y - duv1.y * e2.y);
-                tangent.z = f * (duv2.y * e1.z - duv1.y * e2.z);
-                if (glm::length(tangent) > 0.0001f) {
-                    tangent = glm::normalize(tangent);
-                } else {
-                    tangent = {1.0f, 0.0f, 0.0f};
+            std::vector<FaceVertex> face;
+            std::string token;
+            while (ss >> token) {
+                try {
+                    face.push_back(parseFaceVertex(token));
+                } catch (const std::exception&) {
+                    ::Logger::Log(::LogLevel::Error, "Malformed face vertex in OBJ: " + path);
+                    return false;
                 }
             }
-            glm::vec4 tVal = glm::vec4(tangent, 1.0f);
 
-            indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({p1, faceNormal, uv1, tVal});
+            if (face.size() < 3) {
+                continue;
+            }
 
-            indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({p2, faceNormal, uv2, tVal});
+            for (size_t tri = 1; tri + 1 < face.size(); ++tri) {
+                FaceVertex refs[3] = { face[0], face[tri], face[tri + 1] };
+                glm::vec3 positions[3];
+                glm::vec2 uvs[3];
+                glm::vec3 normals[3];
+                bool hasFaceNormals = true;
+                bool hasFaceUvs = true;
 
-            indices.push_back(static_cast<uint32_t>(vertices.size()));
-            vertices.push_back({p3, faceNormal, uv3, tVal});
+                for (int i = 0; i < 3; ++i) {
+                    if (refs[i].position < 0 || static_cast<size_t>(refs[i].position) >= temp_positions.size()) {
+                        ::Logger::Log(::LogLevel::Error, "Malformed face index in OBJ: " + path + " - position index out of range");
+                        return false;
+                    }
+                    positions[i] = fetchPosition(refs[i].position);
+
+                    if (refs[i].uv >= 0 && static_cast<size_t>(refs[i].uv) < temp_texcoords.size()) {
+                        uvs[i] = fetchUv(refs[i].uv);
+                    } else {
+                        hasFaceUvs = false;
+                    }
+
+                    if (refs[i].normal >= 0 && static_cast<size_t>(refs[i].normal) < temp_normals.size()) {
+                        normals[i] = fetchNormal(refs[i].normal);
+                    } else {
+                        hasFaceNormals = false;
+                    }
+                }
+
+                glm::vec3 e1 = positions[1] - positions[0];
+                glm::vec3 e2 = positions[2] - positions[0];
+                glm::vec3 faceNormal = {0.0f, 0.0f, 1.0f};
+                if (glm::length(e1) > 0.0001f && glm::length(e2) > 0.0001f) {
+                    faceNormal = glm::normalize(glm::cross(e1, e2));
+                }
+
+                if (!hasFaceNormals) {
+                    normals[0] = normals[1] = normals[2] = faceNormal;
+                }
+
+                if (!hasFaceUvs) {
+                    uvs[0] = computePlanarUv(faceNormal, positions[0]);
+                    uvs[1] = computePlanarUv(faceNormal, positions[1]);
+                    uvs[2] = computePlanarUv(faceNormal, positions[2]);
+                }
+
+                glm::vec3 tangent{1.0f, 0.0f, 0.0f};
+                glm::vec2 duv1 = uvs[1] - uvs[0];
+                glm::vec2 duv2 = uvs[2] - uvs[0];
+                float denom = (duv1.x * duv2.y) - (duv2.x * duv1.y);
+                if (std::abs(denom) > 0.00001f) {
+                    float f = 1.0f / denom;
+                    tangent = {
+                        f * (duv2.y * e1.x - duv1.y * e2.x),
+                        f * (duv2.y * e1.y - duv1.y * e2.y),
+                        f * (duv2.y * e1.z - duv1.y * e2.z)
+                    };
+                    if (glm::length(tangent) > 0.0001f) {
+                        tangent = glm::normalize(tangent);
+                    }
+                }
+
+                for (int i = 0; i < 3; ++i) {
+                    indices.push_back(static_cast<uint32_t>(vertices.size()));
+                    vertices.push_back({ positions[i], normals[i], uvs[i], glm::vec4(tangent, 1.0f) });
+                }
+            }
         }
     }
 
@@ -171,5 +237,4 @@ bool ModelLoader::LoadOBJ(const std::string& path, Mesh& outMesh, EngineResource
 
     return outMesh.init(vertices.data(), vertices.size(), indices.data(), indices.size(), resources);
 }
-
 } // namespace eng::renderer

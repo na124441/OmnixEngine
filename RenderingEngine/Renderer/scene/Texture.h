@@ -35,6 +35,13 @@ public:
                       const struct EngineResources& res,
                       TextureUsage usage = TextureUsage::Albedo);
 
+    bool create2DTextureFromRGBA8(
+        const unsigned char* pixels,
+        uint32_t width,
+        uint32_t height,
+        VkFormat format,
+        const struct EngineResources& res);
+
     bool createCubemapFromData(
         const std::vector<std::vector<std::vector<float>>>& mipFacePixels,
         uint32_t width,

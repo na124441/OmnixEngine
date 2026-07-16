@@ -440,6 +440,8 @@ namespace eng::runtime {
                 static float roughness = 0.6f;
                 static float normalScale = 1.0f;
                 static float emissiveStrength = 1.0f;
+                static float clearcoatFactor = 0.0f;
+                static float clearcoatRoughness = 0.0f;
                 static int blendMode = 0;
                 static int shadingModel = 0;
                 static uint64_t lastHandle = 0;
@@ -474,6 +476,8 @@ namespace eng::runtime {
                         baseColor[3] = mat.baseColorFactor.a;
                         metallic = mat.metallicFactor;
                         roughness = mat.roughnessFactor;
+                        clearcoatFactor = mat.clearcoatFactor;
+                        clearcoatRoughness = mat.clearcoatRoughness;
                         normalScale = mat.normalScale;
                         emissiveStrength = mat.emissiveStrength;
                         blendMode = static_cast<int>(mat.blendMode);
@@ -487,6 +491,8 @@ namespace eng::runtime {
                         baseColor[0] = 0.65f; baseColor[1] = 0.65f; baseColor[2] = 0.65f; baseColor[3] = 1.0f;
                         metallic = 0.0f;
                         roughness = 0.6f;
+                        clearcoatFactor = 0.0f;
+                        clearcoatRoughness = 0.0f;
                         normalScale = 1.0f;
                         emissiveStrength = 1.0f;
                         blendMode = 0;
@@ -534,6 +540,20 @@ namespace eng::runtime {
                 if (ImGui::SliderFloat("Roughness Factor##MatRoughness", &roughness, 0.0f, 1.0f)) {
                     if (liveMaterial) {
                         liveMaterial->setRoughness(roughness);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::SliderFloat("Clearcoat Factor##MatClearcoat", &clearcoatFactor, 0.0f, 1.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setClearcoatFactor(clearcoatFactor);
+                    }
+                    dirtyState.MarkSceneDirty();
+                    changed = true;
+                }
+                if (ImGui::SliderFloat("Clearcoat Roughness##MatClearcoatRough", &clearcoatRoughness, 0.0f, 1.0f)) {
+                    if (liveMaterial) {
+                        liveMaterial->setClearcoatRoughness(clearcoatRoughness);
                     }
                     dirtyState.MarkSceneDirty();
                     changed = true;
@@ -595,6 +615,8 @@ namespace eng::runtime {
                     mat.baseColorFactor = glm::vec4(baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
                     mat.metallicFactor = metallic;
                     mat.roughnessFactor = roughness;
+                    mat.clearcoatFactor = clearcoatFactor;
+                    mat.clearcoatRoughness = clearcoatRoughness;
                     mat.normalScale = normalScale;
                     mat.emissiveStrength = emissiveStrength;
                     mat.blendMode = static_cast<uint32_t>(blendMode);

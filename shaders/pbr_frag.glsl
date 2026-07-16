@@ -46,6 +46,11 @@ struct MaterialData {
     float normalScale;
     float emissiveStrength;
 
+    float clearcoatFactor;
+    float clearcoatRoughness;
+    float paddingFloat1;
+    float paddingFloat2;
+
     float hasAlbedoMap;
     float useNormalMap;
     float hasMetallicRoughnessMap;

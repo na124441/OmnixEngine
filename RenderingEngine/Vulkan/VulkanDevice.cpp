@@ -56,14 +56,29 @@ namespace eng::vulkan {
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
-        VkPhysicalDeviceFeatures deviceFeatures{}; // Initially empty
-        deviceFeatures.samplerAnisotropy = VK_TRUE;
+        // Query supported physical device features
+        VkPhysicalDeviceFeatures2 supportedFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+        VkPhysicalDeviceVulkan12Features supportedFeatures12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        supportedFeatures.pNext = &supportedFeatures12;
+        vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &supportedFeatures);
+
+        VkPhysicalDeviceFeatures deviceFeatures{};
+        deviceFeatures.samplerAnisotropy = supportedFeatures.features.samplerAnisotropy;
+        deviceFeatures.multiDrawIndirect = supportedFeatures.features.multiDrawIndirect;
+        deviceFeatures.drawIndirectFirstInstance = supportedFeatures.features.drawIndirectFirstInstance;
+
+        VkPhysicalDeviceVulkan12Features features12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+        features12.drawIndirectCount = supportedFeatures12.drawIndirectCount;
+        features12.bufferDeviceAddress = supportedFeatures12.bufferDeviceAddress;
+        features12.descriptorBindingPartiallyBound = supportedFeatures12.descriptorBindingPartiallyBound;
+        features12.runtimeDescriptorArray = supportedFeatures12.runtimeDescriptorArray;
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
+        createInfo.pNext = &features12;
 
         const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
         createInfo.enabledExtensionCount = 1;

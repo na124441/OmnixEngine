@@ -232,6 +232,7 @@ namespace eng::renderer {
         VkDeviceSize newSize = newCapacity * sizeof(uint32_t);
 
         if (frameRes.finalVisibleInstanceBuffer != VK_NULL_HANDLE) {
+            vkDeviceWaitIdle(resources.device);
             vmaDestroyBuffer(resources.allocator, frameRes.finalVisibleInstanceBuffer, frameRes.finalVisibleInstanceAlloc);
             ::eng::ResourceTracker::decBuffer();
             frameRes.finalVisibleInstanceBuffer = VK_NULL_HANDLE;

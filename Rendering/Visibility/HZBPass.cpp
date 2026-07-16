@@ -483,4 +483,13 @@ namespace eng::renderer {
         }
     }
 
+    void HZBPass::RecreateResources(EngineResources& resources, uint32_t width, uint32_t height) {
+        if (m_Frames.size() < resources.MAX_FRAMES_IN_FLIGHT) {
+            m_Frames.resize(resources.MAX_FRAMES_IN_FLIGHT);
+        }
+        for (uint32_t i = 0; i < resources.MAX_FRAMES_IN_FLIGHT; ++i) {
+            recreateFrameResources(resources, m_Frames[i], width, height);
+        }
+    }
+
 } // namespace eng::renderer

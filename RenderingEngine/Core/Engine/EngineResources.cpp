@@ -430,7 +430,7 @@ void EngineResources::createMaterialDescriptorResources()
     LOG_INFO("Material descriptor set layout created.");
 
     // ---- Pool ---------------------------------------------------------
-    const uint32_t maxMaterials = 256; // arbitrary upper bound for now
+    const uint32_t maxMaterials = 2048; // arbitrary upper bound for now
 
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;

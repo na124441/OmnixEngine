@@ -45,6 +45,7 @@ namespace eng::renderer {
         uint32_t GetWidth(uint32_t frameIndex) const { return m_Frames[frameIndex].width; }
         uint32_t GetHeight(uint32_t frameIndex) const { return m_Frames[frameIndex].height; }
         VkSampler GetSampler() const { return m_HZBSampler; }
+        void RecreateResources(EngineResources& resources, uint32_t width, uint32_t height);
 
     private:
         void createPipelines(EngineResources& resources);

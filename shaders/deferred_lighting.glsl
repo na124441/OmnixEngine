@@ -258,7 +258,9 @@ vec3 EvaluateDirectionalLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 L = normalize(-light.directional.direction);
     vec3 H = normalize(V + L);
@@ -281,8 +283,17 @@ vec3 EvaluateDirectionalLight(
 
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffuse = kD * albedo / 3.14159265;
+    vec3 baseLo = (diffuse + specular);
 
-    return (diffuse + specular) * sunColor * sunIntensity * NdotL;
+    if (clearcoatFactor > 0.0) {
+        float D_c = DistributionGGX(N, H, clearcoatRoughness);
+        float G_c = GeometrySmith(N, V, L, clearcoatRoughness);
+        vec3 F_c = FresnelSchlick(max(dot(H, V), 0.0), vec3(0.04)) * clearcoatFactor;
+        vec3 clearcoatSpecular = (D_c * G_c * F_c) / max(4.0 * NdotV * NdotL, 0.001);
+        baseLo = baseLo * (vec3(1.0) - F_c) + clearcoatSpecular;
+    }
+
+    return baseLo * sunColor * sunIntensity * NdotL;
 }
 
 vec3 debugHeat(float value) {
@@ -418,7 +429,9 @@ vec3 EvaluatePointLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 lightPos = light.positionRange.xyz;
     float range = light.positionRange.w;
@@ -453,8 +466,17 @@ vec3 EvaluatePointLight(
     vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffuse = kD * albedo / 3.14159265;
+    vec3 baseLo = (diffuse + specular);
 
-    return (diffuse + specular) * color * intensity * attenuation * NdotL;
+    if (clearcoatFactor > 0.0) {
+        float D_c = DistributionGGX(N, H, clearcoatRoughness);
+        float G_c = GeometrySmith(N, V, L, clearcoatRoughness);
+        vec3 F_c = FresnelSchlick(max(dot(H, V), 0.0), vec3(0.04)) * clearcoatFactor;
+        vec3 clearcoatSpecular = (D_c * G_c * F_c) / max(4.0 * NdotV * NdotL, 0.001);
+        baseLo = baseLo * (vec3(1.0) - F_c) + clearcoatSpecular;
+    }
+
+    return baseLo * color * intensity * attenuation * NdotL;
 }
 
 vec3 EvaluateSpotLight(
@@ -464,7 +486,9 @@ vec3 EvaluateSpotLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 lightPos = light.positionRange.xyz;
     float range = light.positionRange.w;
@@ -509,7 +533,9 @@ vec3 EvaluateSpotLight(
         N,
         V,
         metallic,
-        roughness
+        roughness,
+        clearcoatFactor,
+        clearcoatRoughness
     );
 
     return result * cone;
@@ -541,6 +567,8 @@ void main()
     float metallic = gbufferCSample.r;
     float AO = gbufferCSample.g;
     float rawEntityID = gbufferCSample.b;
+    float clearcoatFactor = gbufferASample.a;
+    float clearcoatRoughness = gbufferCSample.a;
     vec3 emissive = gbufferDSample.rgb;
 
     // Mode 14: LightingOnly (overwrite albedo to neutral grey, emissive to black)
@@ -647,8 +675,7 @@ void main()
             affectingLights += 1;
         }
         for (uint i = 0; i < light.pointLightCount && i < 16; ++i) {
-            float radius = light.pointPositionsRadius[i].w;
-            if (distance(light.pointPositionsRadius[i].xyz, vWorldPos) <= radius) {
+            if (distance(light.pointPositionsRadius[i].xyz, vWorldPos) <= light.pointPositionsRadius[i].w) {
                 affectingLights += 1;
             }
         }
@@ -699,74 +726,81 @@ void main()
 
     vec3 Lo = vec3(0.0);
 
-    // ----- 1. Directional Light -----
-        // Apply shadow factor
-        float shadow = CalculateShadow(vWorldPos, N);
+    uint viewportMode = frame.renderFlags.y;
 
-        vec3 sunLighting = EvaluateDirectionalLight(albedo, N, V, metallic, roughness);
+    if (viewportMode != 1u) // LookDev Mode skips direct lights (uses environment/ambient only)
+    {
+        // ----- 1. Directional Light -----
+        float shadow = CalculateShadow(vWorldPos, N);
+        vec3 sunLighting = EvaluateDirectionalLight(albedo, N, V, metallic, roughness, clearcoatFactor, clearcoatRoughness);
         sunLighting *= (1.0 - shadow);
         Lo += sunLighting;
 
-    // ----- 2. Clustered Local Lights -----
-    vec3 localLighting = vec3(0.0);
-    
-    // View-space NDC position reconstruction for slice lookup
-    vec4 clip = vec4(inUV * 2.0 - 1.0, depth, 1.0);
-    vec4 viewPos = frame.inverseProjection * clip;
-    viewPos /= viewPos.w;
-    float linearDepth = -viewPos.z;
+        // ----- 2. Clustered Local Lights -----
+        vec3 localLighting = vec3(0.0);
+        
+        // View-space NDC position reconstruction for slice lookup
+        vec4 clip = vec4(inUV * 2.0 - 1.0, depth, 1.0);
+        vec4 viewPos = frame.inverseProjection * clip;
+        viewPos /= viewPos.w;
+        float linearDepth = -viewPos.z;
 
-    // Calculate tile coordinate
-    uint tileX = uint((gl_FragCoord.x / frame.viewportSize.x) * float(settings.tileCountX));
-    uint tileY = uint((gl_FragCoord.y / frame.viewportSize.y) * float(settings.tileCountY));
+        // Calculate tile coordinate
+        uint tileX = uint((gl_FragCoord.x / frame.viewportSize.x) * float(settings.tileCountX));
+        uint tileY = uint((gl_FragCoord.y / frame.viewportSize.y) * float(settings.tileCountY));
 
-    // Clamp tile coords
-    tileX = clamp(tileX, 0u, settings.tileCountX - 1u);
-    tileY = clamp(tileY, 0u, settings.tileCountY - 1u);
+        // Clamp tile coords
+        tileX = clamp(tileX, 0u, settings.tileCountX - 1u);
+        tileY = clamp(tileY, 0u, settings.tileCountY - 1u);
 
-    // Calculate depth slice
-    float depthT = (linearDepth - settings.nearPlane) / (settings.farPlane - settings.nearPlane);
-    uint slice = uint(clamp(depthT * float(settings.depthSliceCount), 0.0, float(settings.depthSliceCount - 1)));
+        // Calculate depth slice
+        float depthT = (linearDepth - settings.nearPlane) / (settings.farPlane - settings.nearPlane);
+        uint slice = uint(clamp(depthT * float(settings.depthSliceCount), 0.0, float(settings.depthSliceCount - 1)));
 
-    // Cluster index
-    uint clusterIdx = tileX + tileY * settings.tileCountX + slice * settings.tileCountX * settings.tileCountY;
+        // Cluster index
+        uint clusterIdx = tileX + tileY * settings.tileCountX + slice * settings.tileCountX * settings.tileCountY;
 
-    // Retrieve range for this cluster
-    ClusterRangeGPU range = clusterRanges.ranges[clusterIdx];
-    uint offset = range.offset;
-    uint count = range.count;
+        // Retrieve range for this cluster
+        ClusterRangeGPU range = clusterRanges.ranges[clusterIdx];
+        uint offset = range.offset;
+        uint count = range.count;
 
-    for (uint i = 0; i < count; i++)
-    {
-        uint lightIndex = clusterLightIndices.lightIndices[offset + i];
-        LocalLightGPU light = localLights.lights[lightIndex];
-
-        if (uint(light.directionType.w) == 0u)
+        for (uint i = 0; i < count; i++)
         {
-            localLighting += EvaluatePointLight(
-                light,
-                vWorldPos,
-                albedo,
-                N,
-                V,
-                metallic,
-                roughness
-            );
+            uint lightIndex = clusterLightIndices.lightIndices[offset + i];
+            LocalLightGPU light = localLights.lights[lightIndex];
+
+            if (uint(light.directionType.w) == 0u)
+            {
+                localLighting += EvaluatePointLight(
+                    light,
+                    vWorldPos,
+                    albedo,
+                    N,
+                    V,
+                    metallic,
+                    roughness,
+                    clearcoatFactor,
+                    clearcoatRoughness
+                );
+            }
+            else if (uint(light.directionType.w) == 1u)
+            {
+                localLighting += EvaluateSpotLight(
+                    light,
+                    vWorldPos,
+                    albedo,
+                    N,
+                    V,
+                    metallic,
+                    roughness,
+                    clearcoatFactor,
+                    clearcoatRoughness
+                );
+            }
         }
-        else if (uint(light.directionType.w) == 1u)
-        {
-            localLighting += EvaluateSpotLight(
-                light,
-                vWorldPos,
-                albedo,
-                N,
-                V,
-                metallic,
-                roughness
-            );
-        }
+        Lo += localLighting;
     }
-    Lo += localLighting;
 
     // Ambient sky light (multiplied by finalAO)
     float ssao = texture(ssaoMap, inUV).r;

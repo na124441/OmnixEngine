@@ -43,6 +43,7 @@
 #include "ThirdParty/imgui/imgui.h"
 #include "ThirdParty/imgui/imgui_internal.h"
 #include "ThirdParty/imgui/backends/imgui_impl_win32.h"
+#include "ImGuizmo.h"
 #include "ThirdParty/imgui/backends/imgui_impl_vulkan.h"
 
 #include <algorithm>
@@ -391,10 +392,63 @@ namespace eng::runtime {
             mousePos.y >= m_ViewportPanel.GetViewportScreenY() &&
             mousePos.x <= (m_ViewportPanel.GetViewportScreenX() + m_ViewportPanel.GetViewportWidth()) &&
             mousePos.y <= (m_ViewportPanel.GetViewportScreenY() + m_ViewportPanel.GetViewportHeight());
+
+        // Check if there are design warnings in the viewport to calculate UI bounds correctly
+        bool hasCamera = false;
+        bool hasLight = false;
+        bool hasPlayerStart = false;
+        if (m_Context && m_Context->ecs) {
+            auto& coordinator = m_Context->ecs->getCoordinator();
+            auto camType = coordinator.GetComponentType<CameraComponent>();
+            auto playerStartType = coordinator.GetComponentType<PlayerStartComponent>();
+            auto dirLightType = coordinator.GetComponentType<DirectionalLightComponent>();
+            auto pointLightType = coordinator.GetComponentType<PointLightComponent>();
+            auto skyLightType = coordinator.GetComponentType<SkyLightComponent>();
+            auto spotLightType = coordinator.GetComponentType<SpotLightComponent>();
+
+            for (Entity ent : coordinator.GetActiveEntities()) {
+                if (ent == 0 || !coordinator.IsEntityAlive(ent)) continue;
+                const auto& sig = coordinator.GetSignature(ent);
+                if (sig.test(camType)) hasCamera = true;
+                if (sig.test(playerStartType)) hasPlayerStart = true;
+                if (sig.test(dirLightType) || sig.test(pointLightType) || sig.test(skyLightType) || sig.test(spotLightType)) hasLight = true;
+            }
+        }
+        bool hasWarnings = !hasCamera || !hasLight || !hasPlayerStart;
+        float warningBoxHeight = 10.0f;
+        if (!hasCamera) warningBoxHeight += 20.0f;
+        if (!hasLight) warningBoxHeight += 20.0f;
+        if (!hasPlayerStart) warningBoxHeight += 20.0f;
+
+        ImVec2 imageStartPos(m_ViewportPanel.GetViewportScreenX(), m_ViewportPanel.GetViewportScreenY());
+        ImVec2 viewportSize(m_ViewportPanel.GetViewportWidth(), m_ViewportPanel.GetViewportHeight());
+        bool isMouseOverUI = false;
+        // Toolbar bounds
+        if (mousePos.x >= imageStartPos.x + 10.0f && mousePos.x <= imageStartPos.x + viewportSize.x - 10.0f &&
+            mousePos.y >= imageStartPos.y + 10.0f && mousePos.y <= imageStartPos.y + 45.0f) {
+            isMouseOverUI = true;
+        }
+        // Info card bounds
+        else if (mousePos.x >= imageStartPos.x + 10.0f && mousePos.x <= imageStartPos.x + 230.0f &&
+                 mousePos.y >= imageStartPos.y + 50.0f && mousePos.y <= imageStartPos.y + 165.0f) {
+            isMouseOverUI = true;
+        }
+        // Warnings bounds
+        else if (hasWarnings &&
+                 mousePos.x >= imageStartPos.x + viewportSize.x - 230.0f && mousePos.x <= imageStartPos.x + viewportSize.x - 10.0f &&
+                 mousePos.y >= imageStartPos.y + 110.0f && mousePos.y <= imageStartPos.y + 110.0f + warningBoxHeight) {
+            isMouseOverUI = true;
+        }
+
+        bool isGizmoActive = ImGuizmo::IsUsing() || ImGuizmo::IsOver();
+
         bool wantsViewportCamera =
             m_SimulationState == EditorSimulationState::Edit &&
-            (m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused() || mouseInsideViewport || m_EditorCamera.m_IsDraggingRMB) &&
-            ImGui::IsMouseDown(ImGuiMouseButton_Right) &&
+            (m_ViewportPanel.IsHovered() || m_ViewportPanel.IsFocused() || mouseInsideViewport || 
+             m_EditorCamera.m_IsDraggingRMB || m_EditorCamera.m_IsDraggingLMB || m_EditorCamera.m_IsDraggingMMB) &&
+            (ImGui::IsMouseDown(ImGuiMouseButton_Right) || 
+             (ImGui::IsMouseDown(ImGuiMouseButton_Left) && !isGizmoActive && !isMouseOverUI) || 
+             ImGui::IsMouseDown(ImGuiMouseButton_Middle)) &&
             !inputIO.WantTextInput;
 
         m_InputOwner = EditorInputOwner::None;
@@ -408,12 +462,27 @@ namespace eng::runtime {
 
         if (m_SimulationState == EditorSimulationState::Edit) {
             auto* engineLoop = m_Context ? dynamic_cast<eng::runtime::EngineLoop*>(m_Context->renderer) : nullptr;
-            bool wasDragging = m_EditorCamera.m_IsDraggingRMB;
+            bool wasDragging = m_EditorCamera.m_IsDraggingRMB || m_EditorCamera.m_IsDraggingLMB || m_EditorCamera.m_IsDraggingMMB;
             bool allowEditorCamera = (m_InputOwner == EditorInputOwner::ViewportEditorCamera) ||
                                      (!inputIO.WantCaptureMouse && !inputIO.WantCaptureKeyboard && !inputIO.WantTextInput);
-            bool cameraViewportActive = m_ViewportPanel.IsHovered() || mouseInsideViewport || m_EditorCamera.m_IsDraggingRMB;
-            m_EditorCamera.Update(dt, allowEditorCamera && cameraViewportActive, allowEditorCamera && m_ViewportPanel.IsFocused());
-            bool isDragging = m_EditorCamera.m_IsDraggingRMB;
+            bool cameraViewportActive = m_ViewportPanel.IsHovered() || mouseInsideViewport || 
+                                       m_EditorCamera.m_IsDraggingRMB || m_EditorCamera.m_IsDraggingLMB || m_EditorCamera.m_IsDraggingMMB;
+
+            Entity selectedEntity = m_Selection.GetSelectedEntity();
+            glm::vec3 selectedPos(0.0f);
+            glm::vec3* selectedPosPtr = nullptr;
+            if (selectedEntity != 0 && m_Context && m_Context->ecs && m_Context->ecs->getCoordinator().IsEntityAlive(selectedEntity)) {
+                auto& coordinator = m_Context->ecs->getCoordinator();
+                auto transformType = coordinator.GetComponentType<TransformComponent>();
+                if (coordinator.GetSignature(selectedEntity).test(transformType)) {
+                    const auto& transform = coordinator.GetComponent<TransformComponent>(selectedEntity);
+                    selectedPos = glm::vec3(transform.position.x, transform.position.y, transform.position.z);
+                    selectedPosPtr = &selectedPos;
+                }
+            }
+
+            m_EditorCamera.Update(dt, allowEditorCamera && cameraViewportActive, allowEditorCamera && m_ViewportPanel.IsFocused(), isGizmoActive, isMouseOverUI, selectedPosPtr);
+            bool isDragging = m_EditorCamera.m_IsDraggingRMB || m_EditorCamera.m_IsDraggingLMB || m_EditorCamera.m_IsDraggingMMB;
 
             if (engineLoop && engineLoop->GetWindow()) {
                 if (isDragging && !wasDragging) {
@@ -1401,7 +1470,7 @@ namespace eng::runtime {
         else if (m_InputOwner == EditorInputOwner::ViewportEditorCamera) inputOwnerLabel = "ViewportEditorCamera";
         else if (m_InputOwner == EditorInputOwner::Game) inputOwnerLabel = "Game";
         m_ViewportPanel.SetInputDiagnostics(inputOwnerLabel, m_CursorCaptured);
-        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera.movementSpeed);
+        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera);
 
         // Save the viewport size for recreation check at the start of the next frame
         m_LastViewportWidth = panelWidth;
@@ -2289,11 +2358,31 @@ namespace eng::runtime {
                     }
                     if (ImGui::BeginTabItem("Exposure")) {
                         ImGui::Text("Exposure and Tone Mapping");
+                        ImGui::Checkbox("Enable Tone Mapping", &postSettings.enableTonemapping);
+                        if (postSettings.enableTonemapping) {
+                            const char* tonemappers[] = { "Reinhard", "ACES", "Filmic", "AgX" };
+                            int mode = static_cast<int>(postSettings.tonemappingMode);
+                            if (ImGui::Combo("Tone Mapping Curve", &mode, tonemappers, IM_ARRAYSIZE(tonemappers))) {
+                                postSettings.tonemappingMode = static_cast<uint32_t>(mode);
+                            }
+                        }
+                        ImGui::Separator();
                         bool autoExp = settings.exposure.autoExposure;
                         if (ImGui::Checkbox("Auto Exposure", &autoExp)) {
                             settings.exposure.autoExposure = autoExp;
                         }
                         ImGui::SliderFloat("Manual Exposure", &settings.exposure.manualExposure, 0.05f, 10.0f);
+                        ImGui::EndTabItem();
+                    }
+                    if (ImGui::BeginTabItem("Lens (DoF)")) {
+                        ImGui::Text("Camera Depth of Field Settings");
+                        ImGui::Separator();
+                        ImGui::Checkbox("Enable Depth of Field", &postSettings.enableDoF);
+                        if (postSettings.enableDoF) {
+                            ImGui::SliderFloat("Focus Distance", &postSettings.dofFocusDistance, 0.1f, 100.0f, "%.2fm");
+                            ImGui::SliderFloat("Focal Length", &postSettings.dofFocalLength, 10.0f, 200.0f, "%.1fmm");
+                            ImGui::SliderFloat("F-Stop (Aperture)", &postSettings.dofAperture, 0.95f, 22.0f, "f/%.2f");
+                        }
                         ImGui::EndTabItem();
                     }
                     if (ImGui::BeginTabItem("Temporal")) {

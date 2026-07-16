@@ -17,6 +17,7 @@ call "d:\New folder\.vsconfig\VC\Auxiliary\Build\vcvarsall.bat" x64
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/ssr.comp -o shaders/ssr.spv
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/exposure.comp -o shaders/exposure.spv
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/taa.comp -o shaders/taa.spv
+"C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=frag shaders/dof.frag -o shaders/dof.spv
 cmake --build build_ninja
 
 

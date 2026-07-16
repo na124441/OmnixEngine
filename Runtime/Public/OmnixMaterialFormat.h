@@ -93,6 +93,8 @@ struct OmnixMaterial
     float roughnessFactor = 0.6f;
     float normalScale = 1.0f;
     float emissiveStrength = 1.0f;
+    float clearcoatFactor = 0.0f;
+    float clearcoatRoughness = 0.1f;
     uint32_t blendMode = 0; // 0=Opaque, 1=Mask, 2=Blend
     uint32_t shadingModel = 0; // 0=Lit, 1=Unlit
 };
@@ -139,6 +141,8 @@ inline bool SerializeMaterial(const OmnixMaterial& mat, const std::string& filep
     writer.WriteFloat(mat.emissiveStrength);
     writer.WriteU32(mat.blendMode);
     writer.WriteU32(mat.shadingModel);
+    writer.WriteFloat(mat.clearcoatFactor);
+    writer.WriteFloat(mat.clearcoatRoughness);
 
     return writer.SaveToFile(filepath);
 }
@@ -253,6 +257,18 @@ inline bool DeserializeMaterial(OmnixMaterial& mat, const std::string& filepath)
             mat.shadingModel = reader.ReadU32();
         } else {
             mat.shadingModel = 0;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.clearcoatFactor = reader.ReadFloat();
+        } else {
+            mat.clearcoatFactor = 0.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.clearcoatRoughness = reader.ReadFloat();
+        } else {
+            mat.clearcoatRoughness = 0.1f;
         }
 
     } catch (const std::exception&) {
@@ -372,6 +388,18 @@ inline bool DeserializeMaterialFromMemory(OmnixMaterial& mat, const uint8_t* dat
             mat.shadingModel = reader.ReadU32();
         } else {
             mat.shadingModel = 0;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.clearcoatFactor = reader.ReadFloat();
+        } else {
+            mat.clearcoatFactor = 0.0f;
+        }
+
+        if (reader.GetOffset() < reader.GetBufferSize()) {
+            mat.clearcoatRoughness = reader.ReadFloat();
+        } else {
+            mat.clearcoatRoughness = 0.1f;
         }
 
     } catch (const std::exception&) {

@@ -1,18 +1,16 @@
 #include "Core/pch.h"
-#include "stb/stb_image_write.h"
 #include "GltfModel.h"
 #include "Core/Engine/Log.h"
-#include "Core/Engine/ResourceTracker.h"
 #include "Core/Engine/VmaHelpers.h"
 #include <cstring>
 #include <cassert>
+#include <algorithm>
 #include <iostream>
-#include <cstdio> // for std::remove
 
 namespace eng::renderer {
 
 // ---------------------------------------------------------------------
-// Load a GLTF image → temporary PNG → our Texture class.
+// Load a GLTF image directly into GPU memory.
 std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
                                                 const tinygltf::Model& model,
                                                 EngineResources& resources,
@@ -25,34 +23,39 @@ std::shared_ptr<Texture> GltfModel::loadTexture(int imageIndex,
     }
 
     const tinygltf::Image& img = model.images[imageIndex];
-
-    // Write the raw image data to a temporary PNG file.
-    std::string tmpPath = "tmp_gltf_img_" + std::to_string(imageIndex) + ".png";
-
-    const unsigned char* pixels = img.image.data();
-
-    if (!stbi_write_png(tmpPath.c_str(),
-                        img.width,
-                        img.height,
-                        img.component,
-                        pixels,
-                        img.width * img.component)) {
-        LOG_ERROR("Failed to write temporary PNG for GLTF image");
+    if (img.width <= 0 || img.height <= 0 || img.image.empty()) {
+        LOG_ERROR("GLTF: embedded image is empty or invalid; using fallback texture");
         return std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
     }
 
-    // Load the PNG via our existing Texture::loadFromFile() method.
     auto tex = std::make_shared<Texture>();
-    if (!tex->loadFromFile(tmpPath,
-                           resources,
-                           usage)) {
-        LOG_ERROR("Failed to load texture from temporary PNG: " + tmpPath);
-        std::remove(tmpPath.c_str());
+    std::vector<unsigned char> rgba(static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 4u, 255u);
+    const int components = std::max(1, img.component);
+    const unsigned char* src = img.image.data();
+
+    for (size_t i = 0; i < static_cast<size_t>(img.width) * static_cast<size_t>(img.height); ++i) {
+        const size_t srcIndex = i * static_cast<size_t>(components);
+        const size_t dstIndex = i * 4u;
+        const unsigned char r = src[srcIndex + 0];
+        const unsigned char g = components > 1 ? src[srcIndex + 1] : r;
+        const unsigned char b = components > 2 ? src[srcIndex + 2] : r;
+        const unsigned char a = components > 3 ? src[srcIndex + 3] : 255u;
+        rgba[dstIndex + 0] = r;
+        rgba[dstIndex + 1] = g;
+        rgba[dstIndex + 2] = b;
+        rgba[dstIndex + 3] = a;
+    }
+
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    if (usage == TextureUsage::Albedo || usage == TextureUsage::Emissive || usage == TextureUsage::UI) {
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+
+    if (!tex->create2DTextureFromRGBA8(rgba.data(), static_cast<uint32_t>(img.width), static_cast<uint32_t>(img.height), format, resources)) {
+        LOG_ERROR("Failed to upload embedded GLTF texture; using fallback texture");
         return std::shared_ptr<Texture>(Texture::getWhiteTexture(resources), [](Texture*){});
     }
 
-    // Cleanup temp file
-    std::remove(tmpPath.c_str());
     return tex;
 }
 

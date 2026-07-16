@@ -54,68 +54,138 @@ namespace eng::runtime {
             }
         }
 
+        bool m_IsDraggingLMB = false;
         bool m_IsDraggingRMB = false;
+        bool m_IsDraggingMMB = false;
+        float m_OrbitDistance = 10.0f;
 
-        void Update(float deltaTime, bool isViewportHovered, bool isViewportFocused) {
+        void Update(float deltaTime, bool isViewportHovered, bool isViewportFocused, bool isGizmoActive = false, bool isMouseOverUI = false, const glm::vec3* selectedEntityPosition = nullptr) {
             ImGuiIO& io = ImGui::GetIO();
+            bool altDown = io.KeyAlt;
 
-            // Handle transition states for RMB dragging.
-            // Start drag only when the viewport is hovered, but keep it alive
-            // as long as the mouse button stays down (allows looking around even
-            // if the cursor briefly leaves the viewport bounds).
-            if (isViewportHovered && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+            // Handle transition states for dragging
+            // RMB Drag
+            if (isViewportHovered && !isMouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
                 m_IsDraggingRMB = true;
             }
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 m_IsDraggingRMB = false;
             }
 
-            // Right-click drag mouse look
-            if (m_IsDraggingRMB) {
-                float deltaX = io.MouseDelta.x;
-                float deltaY = io.MouseDelta.y;
-
-                yaw += deltaX * mouseSensitivity;
-                pitch -= deltaY * mouseSensitivity;
-                pitch = std::clamp(pitch, -89.0f, 89.0f);
+            // MMB Drag
+            if (isViewportHovered && !isMouseOverUI && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+                m_IsDraggingMMB = true;
+            }
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                m_IsDraggingMMB = false;
             }
 
-            // Fly controls when holding Right Mouse Button
-            if (m_IsDraggingRMB) {
-                float speedMultiplier = 1.0f;
-                if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) {
-                    speedMultiplier = 3.0f; // 15.0f / 5.0f = 3x boost
-                }
-                float currentSpeed = movementSpeed * speedMultiplier;
+            // LMB Drag
+            if (isViewportHovered && !isMouseOverUI && !isGizmoActive && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                m_IsDraggingLMB = true;
+            }
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                m_IsDraggingLMB = false;
+            }
 
-                glm::vec3 forward = getForward();
-                glm::vec3 right = getRight();
+            // Calculate camera orbit target/pivot
+            glm::vec3 orbitPivot = position + getForward() * m_OrbitDistance;
+            if (selectedEntityPosition) {
+                orbitPivot = *selectedEntityPosition;
+                m_OrbitDistance = glm::distance(position, orbitPivot);
+            }
 
-                if (ImGui::IsKeyDown(ImGuiKey_W)) {
-                    position += forward * currentSpeed * deltaTime;
+            float deltaX = io.MouseDelta.x;
+            float deltaY = io.MouseDelta.y;
+
+            // ALT + Drag Navigation
+            if (altDown) {
+                if (m_IsDraggingLMB) {
+                    // Orbit: rotates camera around the pivot
+                    yaw += deltaX * mouseSensitivity;
+                    pitch -= deltaY * mouseSensitivity;
+                    pitch = std::clamp(pitch, -89.0f, 89.0f);
+                    position = orbitPivot - getForward() * m_OrbitDistance;
                 }
-                if (ImGui::IsKeyDown(ImGuiKey_S)) {
-                    position -= forward * currentSpeed * deltaTime;
+                else if (m_IsDraggingRMB) {
+                    // Dolly/Zoom: moves camera closer to or further from the pivot
+                    m_OrbitDistance += deltaY * movementSpeed * 0.02f;
+                    m_OrbitDistance = std::max(m_OrbitDistance, 0.1f);
+                    position = orbitPivot - getForward() * m_OrbitDistance;
                 }
-                if (ImGui::IsKeyDown(ImGuiKey_A)) {
-                    position -= right * currentSpeed * deltaTime;
+                else if (m_IsDraggingMMB) {
+                    // Pan relative to target
+                    glm::vec3 panOffset = -getRight() * (deltaX * movementSpeed * 0.005f) + getUp() * (deltaY * movementSpeed * 0.005f);
+                    position += panOffset;
                 }
-                if (ImGui::IsKeyDown(ImGuiKey_D)) {
-                    position += right * currentSpeed * deltaTime;
+            }
+            // Standard (Non-ALT) Drag Navigation
+            else {
+                if (m_IsDraggingLMB) {
+                    // LMB Drag: Move forward/backward (deltaY) and rotate yaw (deltaX)
+                    yaw += deltaX * mouseSensitivity;
+                    
+                    // Move along the horizontal (XZ) plane
+                    glm::vec3 forward = getForward();
+                    forward.y = 0.0f;
+                    if (glm::length(forward) > 0.001f) {
+                        forward = glm::normalize(forward);
+                    }
+                    position += forward * (-deltaY * movementSpeed * 0.005f);
                 }
-                if (ImGui::IsKeyDown(ImGuiKey_E)) {
-                    position += glm::vec3(0.0f, 1.0f, 0.0f) * currentSpeed * deltaTime;
+                else if (m_IsDraggingRMB) {
+                    // RMB Drag: standard fly camera rotate pitch and yaw
+                    yaw += deltaX * mouseSensitivity;
+                    pitch -= deltaY * mouseSensitivity;
+                    pitch = std::clamp(pitch, -89.0f, 89.0f);
+
+                    // Fly controls (WASDQE keys) are active when holding RMB
+                    float speedMultiplier = 1.0f;
+                    if (io.KeyShift) {
+                        speedMultiplier = 3.0f;
+                    }
+                    float currentSpeed = movementSpeed * speedMultiplier;
+
+                    glm::vec3 forward = getForward();
+                    glm::vec3 right = getRight();
+
+                    if (ImGui::IsKeyDown(ImGuiKey_W)) {
+                        position += forward * currentSpeed * deltaTime;
+                    }
+                    if (ImGui::IsKeyDown(ImGuiKey_S)) {
+                        position -= forward * currentSpeed * deltaTime;
+                    }
+                    if (ImGui::IsKeyDown(ImGuiKey_A)) {
+                        position -= right * currentSpeed * deltaTime;
+                    }
+                    if (ImGui::IsKeyDown(ImGuiKey_D)) {
+                        position += right * currentSpeed * deltaTime;
+                    }
+                    if (ImGui::IsKeyDown(ImGuiKey_E)) {
+                        position += glm::vec3(0.0f, 1.0f, 0.0f) * currentSpeed * deltaTime;
+                    }
+                    if (ImGui::IsKeyDown(ImGuiKey_Q)) {
+                        position -= glm::vec3(0.0f, 1.0f, 0.0f) * currentSpeed * deltaTime;
+                    }
                 }
-                if (ImGui::IsKeyDown(ImGuiKey_Q)) {
-                    position -= glm::vec3(0.0f, 1.0f, 0.0f) * currentSpeed * deltaTime;
+                else if (m_IsDraggingMMB) {
+                    // MMB Drag: Standard Pan (move left/right/up/down)
+                    position -= getRight() * (deltaX * movementSpeed * 0.005f);
+                    position += getUp() * (deltaY * movementSpeed * 0.005f);
                 }
             }
 
-            // Adjust speed with mouse scroll wheel if viewport hovered or RMB dragging
-            if (isViewportHovered || m_IsDraggingRMB) {
+            // Scroll wheel zooming and speed adjustment
+            if (isViewportHovered || m_IsDraggingRMB || m_IsDraggingLMB || m_IsDraggingMMB) {
                 if (io.MouseWheel != 0.0f) {
-                    movementSpeed += io.MouseWheel * 1.0f;
-                    movementSpeed = std::clamp(movementSpeed, 0.5f, 50.0f);
+                    if (m_IsDraggingRMB) {
+                        // Holding RMB + Scroll Wheel = change camera movement speed
+                        movementSpeed += io.MouseWheel * 1.0f;
+                        movementSpeed = std::clamp(movementSpeed, 0.5f, 50.0f);
+                    } else {
+                        // Scroll Wheel alone = move forward/backward (Zoom)
+                        position += getForward() * (io.MouseWheel * movementSpeed * 0.5f);
+                    }
                 }
             }
         }

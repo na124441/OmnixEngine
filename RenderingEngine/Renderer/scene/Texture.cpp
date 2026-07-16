@@ -26,61 +26,44 @@ void Texture::cleanupFallbackTextures()
     LOG_INFO("Static fallback textures cleaned up successfully.");
 }
 
-bool Texture::loadFromFile(const std::string& filename,
-                           const EngineResources& res,
-                           TextureUsage usage)
+bool Texture::create2DTextureFromRGBA8(
+    const unsigned char* pixels,
+    uint32_t width,
+    uint32_t height,
+    VkFormat format,
+    const EngineResources& res)
 {
-    device    = res.device;
+    device = res.device;
     allocator = res.allocator;
 
-    // ---------------------------------------------------------------
-    // Load image data (force 4 channels)
-    int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(filename.c_str(),
-                                 &texWidth, &texHeight,
-                                 &texChannels, STBI_rgb_alpha);
-    if (!pixels) {
-        LOG_ERROR(("Failed to load texture image: " + filename).c_str());
+    if (pixels == nullptr || width == 0 || height == 0) {
+        LOG_ERROR("Texture::create2DTextureFromRGBA8 received invalid input.");
         return false;
     }
-    VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth * texHeight * 4);
-    LOG_INFO(("Loaded texture '" + filename + "' (" +
-             std::to_string(texWidth) + "x" + std::to_string(texHeight) + ")").c_str());
 
-    // ---------------------------------------------------------------
-    // 1️⃣ Staging buffer (host visible)
-    VkBuffer stagingBuffer;
-    VmaAllocation stagingAlloc;
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * 4u;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAlloc = VK_NULL_HANDLE;
+
     VkBufferCreateInfo bufInfo{};
     bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufInfo.size  = imageSize;
+    bufInfo.size = imageSize;
     bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo bufAllocInfo{};
     bufAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
-    VK_CHECK(vmaCreateBuffer(allocator, &bufInfo, &bufAllocInfo,
-                             &stagingBuffer, &stagingAlloc, nullptr));
+    VK_CHECK(vmaCreateBuffer(allocator, &bufInfo, &bufAllocInfo, &stagingBuffer, &stagingAlloc, nullptr));
     ::eng::ResourceTracker::incBuffer();
 
-    // Copy pixel data into staging buffer
-    void* data = nullptr;
-    VK_CHECK(vmaMapMemory(allocator, stagingAlloc, &data));
-    std::memcpy(data, pixels, static_cast<size_t>(imageSize));
+    void* mappedData = nullptr;
+    VK_CHECK(vmaMapMemory(allocator, stagingAlloc, &mappedData));
+    std::memcpy(mappedData, pixels, static_cast<size_t>(imageSize));
     vmaUnmapMemory(allocator, stagingAlloc);
-    stbi_image_free(pixels);
 
-    // ---------------------------------------------------------------
-    // Determine format based on usage
-    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
-    if (usage == TextureUsage::Albedo || usage == TextureUsage::Emissive || usage == TextureUsage::UI) {
-        format = VK_FORMAT_R8G8B8A8_SRGB;
-    }
-
-    mipLevels = static_cast<uint32_t>(
-        std::floor(std::log2(static_cast<double>(std::max(texWidth, texHeight))))
-    ) + 1u;
+    mipLevels = static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(std::max(width, height))))) + 1u;
 
     VkFormatProperties formatProps{};
     vkGetPhysicalDeviceFormatProperties(res.physicalDevice, format, &formatProps);
@@ -90,25 +73,21 @@ bool Texture::loadFromFile(const std::string& filename,
         (formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0;
 
     if (!supportsLinearBlit) {
-        LOG_WARN(("Texture format does not support linear blit mip generation for '" + filename +
-                  "'; using a single mip level.").c_str());
         mipLevels = 1;
     }
 
-    // 2️⃣ Create GPU‑only image
     VkImageCreateInfo imgInfo{};
     imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imgInfo.imageType = VK_IMAGE_TYPE_2D;
     imgInfo.format = format;
-    imgInfo.extent.width  = static_cast<uint32_t>(texWidth);
-    imgInfo.extent.height = static_cast<uint32_t>(texHeight);
-    imgInfo.extent.depth  = 1;
+    imgInfo.extent.width = width;
+    imgInfo.extent.height = height;
+    imgInfo.extent.depth = 1;
     imgInfo.mipLevels = mipLevels;
     imgInfo.arrayLayers = 1;
     imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imgInfo.tiling  = VK_IMAGE_TILING_OPTIMAL;
-    imgInfo.usage   = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                      VK_IMAGE_USAGE_SAMPLED_BIT;
+    imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     if (mipLevels > 1) {
         imgInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
@@ -118,16 +97,11 @@ bool Texture::loadFromFile(const std::string& filename,
     VmaAllocationCreateInfo imgAllocInfo{};
     imgAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    VK_CHECK(vmaCreateImage(allocator, &imgInfo,
-                            &imgAllocInfo, &image,
-                            &allocation, nullptr));
+    VK_CHECK(vmaCreateImage(allocator, &imgInfo, &imgAllocInfo, &image, &allocation, nullptr));
     ::eng::ResourceTracker::incImage();
 
-    // ---------------------------------------------------------------
-    // 3️⃣ Transition image layout & copy from staging to image
     VkCommandBuffer cmd = res.beginSingleTimeCommands();
 
-    // Transition to TRANSFER_DST_OPTIMAL
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -137,21 +111,14 @@ bool Texture::loadFromFile(const std::string& filename,
     barrier.image = image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount   = mipLevels;
+    barrier.subresourceRange.levelCount = mipLevels;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount   = 1;
+    barrier.subresourceRange.layerCount = 1;
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         0,
-                         0, nullptr,
-                         0, nullptr,
-                         1, &barrier);
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-    // Copy buffer → image
     VkBufferImageCopy region{};
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
@@ -160,22 +127,14 @@ bool Texture::loadFromFile(const std::string& filename,
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0,0,0};
-    region.imageExtent = {
-        static_cast<uint32_t>(texWidth),
-        static_cast<uint32_t>(texHeight),
-        1
-    };
-    vkCmdCopyBufferToImage(cmd,
-                           stagingBuffer,
-                           image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1,
-                           &region);
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(cmd, stagingBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     if (mipLevels > 1) {
-        int32_t mipWidth = texWidth;
-        int32_t mipHeight = texHeight;
+        int32_t mipWidth = static_cast<int32_t>(width);
+        int32_t mipHeight = static_cast<int32_t>(height);
 
         for (uint32_t i = 1; i < mipLevels; ++i) {
             VkImageMemoryBarrier mipBarrier{};
@@ -193,13 +152,7 @@ bool Texture::loadFromFile(const std::string& filename,
             mipBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             mipBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 0,
-                                 0, nullptr,
-                                 0, nullptr,
-                                 1, &mipBarrier);
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &mipBarrier);
 
             VkImageBlit blit{};
             blit.srcOffsets[0] = {0, 0, 0};
@@ -209,34 +162,20 @@ bool Texture::loadFromFile(const std::string& filename,
             blit.srcSubresource.baseArrayLayer = 0;
             blit.srcSubresource.layerCount = 1;
             blit.dstOffsets[0] = {0, 0, 0};
-            blit.dstOffsets[1] = {
-                mipWidth > 1 ? mipWidth / 2 : 1,
-                mipHeight > 1 ? mipHeight / 2 : 1,
-                1
-            };
+            blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1};
             blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             blit.dstSubresource.mipLevel = i;
             blit.dstSubresource.baseArrayLayer = 0;
             blit.dstSubresource.layerCount = 1;
 
-            vkCmdBlitImage(cmd,
-                           image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           1, &blit,
-                           VK_FILTER_LINEAR);
+            vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 
             mipBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             mipBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             mipBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
             mipBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0,
-                                 0, nullptr,
-                                 0, nullptr,
-                                 1, &mipBarrier);
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &mipBarrier);
 
             if (mipWidth > 1) mipWidth /= 2;
             if (mipHeight > 1) mipHeight /= 2;
@@ -257,39 +196,19 @@ bool Texture::loadFromFile(const std::string& filename,
         lastMipBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         lastMipBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0,
-                             0, nullptr,
-                             0, nullptr,
-                             1, &lastMipBarrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &lastMipBarrier);
     } else {
-        // Transition to SHADER_READ_ONLY_OPTIMAL
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.subresourceRange.levelCount = 1;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0,
-                             0, nullptr,
-                             0, nullptr,
-                             1, &barrier);
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
     res.endSingleTimeCommands(cmd);
-
-    // ---------------------------------------------------------------
-    // 4️⃣ Destroy staging resources
     vmaDestroyBuffer(allocator, stagingBuffer, stagingAlloc);
     ::eng::ResourceTracker::decBuffer();
 
-    // ---------------------------------------------------------------
-    // 5️⃣ Create image view
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -303,34 +222,51 @@ bool Texture::loadFromFile(const std::string& filename,
 
     VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &imageView));
 
-    // ---------------------------------------------------------------
-    // 6️⃣ Create sampler (simple clamp‑to‑edge, linear filtering)
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 16;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = mipLevels > 1 ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.mipLodBias = 0.0f;
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = mipLevels > 1 ? static_cast<float>(mipLevels) : 0.0f;
-    samplerInfo.mipLodBias = 0.0f;
 
     VK_CHECK(vkCreateSampler(device, &samplerInfo, nullptr, &samplerHandle));
-    LOG_INFO(("Texture '" + filename + "' uploaded and ready with " +
-              std::to_string(mipLevels) + " mip level(s).").c_str());
-
     return true;
 }
 
-// ---------------------------------------------------------------------
-// ---------------------------------------------------------------------
+bool Texture::loadFromFile(const std::string& filename,
+                           const EngineResources& res,
+                           TextureUsage usage)
+{
+    int texWidth = 0;
+    int texHeight = 0;
+    int texChannels = 0;
+    stbi_uc* pixels = stbi_load(filename.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    if (!pixels) {
+        LOG_ERROR(("Failed to load texture image: " + filename).c_str());
+        return false;
+    }
+
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    if (usage == TextureUsage::Albedo || usage == TextureUsage::Emissive || usage == TextureUsage::UI) {
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+
+    bool ok = create2DTextureFromRGBA8(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), format, res);
+    stbi_image_free(pixels);
+    return ok;
+}
+
 void Texture::destroy()
 {
     if (samplerHandle != VK_NULL_HANDLE) {

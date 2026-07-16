@@ -12,6 +12,13 @@ if(MSVC)
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
     add_compile_options(/Z7) 
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    
+    # Enable high-performance optimization options for Release configuration
+    add_compile_options("$<$<CONFIG:Release>:/O2>")
+    add_compile_options("$<$<CONFIG:Release>:/Oi>")
+    add_compile_options("$<$<CONFIG:Release>:/Ot>")
+    add_compile_options("$<$<CONFIG:Release>:/Oy>")
+    add_compile_options("$<$<CONFIG:Release>:/arch:AVX2>")
 endif()
 
 add_definitions(-DNOMINMAX -DENG_ENABLE_LOG -DENG_ENABLE_PROFILE -DGLM_FORCE_DEPTH_ZERO_TO_ONE)
@@ -251,6 +258,7 @@ if(GLSLC)
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=mesh --target-env=vulkan1.3 ${CMAKE_SOURCE_DIR}/shaders/visibility.mesh -o ${CMAKE_SOURCE_DIR}/shaders/visibility_mesh.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=task --target-env=vulkan1.3 ${CMAKE_SOURCE_DIR}/shaders/visibility.task -o ${CMAKE_SOURCE_DIR}/shaders/visibility_task.spv"
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=comp ${CMAKE_SOURCE_DIR}/shaders/software_rasterizer.comp -o ${CMAKE_SOURCE_DIR}/shaders/software_rasterizer.spv"
+        COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/dof.frag -o ${CMAKE_SOURCE_DIR}/shaders/dof.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
     add_dependencies(RenderingEngine CompileShaders)

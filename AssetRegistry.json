@@ -13,17 +13,6 @@
         },
         {
             "dependencies": [],
-            "handle": 13368210448611474745,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Models/pyramid.obj",
-            "type": "Mesh"
-        },
-        {
-            "dependencies": [],
             "handle": 15570065021787186981,
             "importTimestamp": 0,
             "importedPath": "",
@@ -32,6 +21,28 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Materials/brick.omnixmat",
             "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 14563795593874495022,
+            "importTimestamp": 0,
+            "importedPath": "Assets/Meshes/mount.blend1.omnixmesh",
+            "isDirty": false,
+            "isImported": true,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/mount.blend1.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 13368210448611474745,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/pyramid.obj",
+            "type": "Mesh"
         },
         {
             "dependencies": [],
@@ -46,17 +57,6 @@
         },
         {
             "dependencies": [],
-            "handle": 519101999989861967,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Meshes/mount.blend1.obj",
-            "type": "Mesh"
-        },
-        {
-            "dependencies": [],
             "handle": 16699927540305262433,
             "importTimestamp": 0,
             "importedPath": "",
@@ -65,6 +65,17 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Materials/default.omnixmat",
             "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 519101999989861967,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Meshes/mount.blend1.obj",
+            "type": "Mesh"
         },
         {
             "dependencies": [],

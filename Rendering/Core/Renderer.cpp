@@ -144,6 +144,7 @@ void Renderer::Initialize()
 {
     resources.debugConfig = &m_DebugConfig;
     m_RenderTargetManager.Initialize(resources.device, resources.allocator);
+    m_RenderTargetManager.SetFramebufferManager(&m_FramebufferManager);
     m_FramebufferManager.Initialize(resources.device, &m_RenderTargetManager);
 
     // RenderTargetManager Unit Test
@@ -989,6 +990,7 @@ void Renderer::BeginFrame()
 void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
 {
     m_FrameDiagnostics = {};
+    // Removed duplicate layout tracking initialization m_DepthImageLayout
     m_FrameDiagnostics.frameNumber = m_FrameCount;
     s_CurrentDiagnostics = &m_FrameDiagnostics;
 
@@ -1260,6 +1262,7 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
 
     // --------------------------------------------------------------
     // 4. Compile and Execute render graph
+    updateSSRDescriptorSet(frameIndex);
     setupRenderGraph();
     renderGraph.Compile(resources);
 
@@ -1268,6 +1271,15 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
         renderGraph.PrintDebug();
         s_DebugPrinted = true;
     }
+
+    // Log frame resources ownership (Phase 3 part 1)
+    std::string ownershipLog = "[Frame Resource Acquisition Log]\n"
+                               "Current Frame:   " + std::to_string(frameIndex) + "\n" +
+                               "DepthBuffer Idx: " + std::to_string(m_DepthHandles[frameIndex].index) + "\n" +
+                               "VkImage:         " + std::to_string((uintptr_t)m_DepthImages[frameIndex]) + "\n" +
+                               "Framebuffer:     " + std::to_string((uintptr_t)(frameIndex < m_GBufferFramebuffers.size() ? m_GBufferFramebuffers[frameIndex] : VK_NULL_HANDLE)) + "\n" +
+                               "Swapchain Image: " + std::to_string(currentSwapchainImageIndex);
+    LOG_INFO(ownershipLog);
 
     bool graphExecutionFailed = false;
     bool ok = renderGraph.ExecuteWithValidation(resources, frameIndex, m_RenderTargetManager, graphExecutionFailed);
@@ -1394,10 +1406,24 @@ void Renderer::EndFrame()
     submitInfo.pSignalSemaphores    = &signalSem;
 
     vkResetFences(resources.device, 1, &resources.inFlightFences.at(frameIndex));
-    VK_CHECK(vkQueueSubmit(resources.graphicsQueue,
-                            1,
-                            &submitInfo,
-                            resources.inFlightFences.at(frameIndex)));
+
+    // Detailed vkQueueSubmit logging (Phase 6 part 1)
+    std::string submitLog = "[vkQueueSubmit Log]\n"
+                             "Frame:          " + std::to_string(frameIndex) + "\n" +
+                             "Fence:          " + std::to_string((uintptr_t)resources.inFlightFences.at(frameIndex)) + "\n" +
+                             "Wait Semaphore: " + std::to_string((uintptr_t)waitSem) + "\n" +
+                             "Signal Sem:     " + std::to_string((uintptr_t)signalSem) + "\n" +
+                             "Cmd Buffers:    " + std::to_string(submitCmds.size());
+    LOG_INFO(submitLog);
+
+    VkResult submitResult = vkQueueSubmit(resources.graphicsQueue,
+                                          1,
+                                          &submitInfo,
+                                          resources.inFlightFences.at(frameIndex));
+    if (submitResult == VK_ERROR_DEVICE_LOST) {
+        renderGraph.LogDeviceLostReport(frameIndex);
+    }
+    VK_CHECK(submitResult);
 
     // --------------------------------------------------------------
     // 7. Present
@@ -1695,6 +1721,7 @@ void Renderer::initPipelines()
         m_ShadowPipeline.compatibleRenderPass = m_ShadowRenderPass;
         m_ShadowPipeline.colorAttachmentCount = 0;
         m_ShadowPipeline.vertexStride = sizeof(PbrVertex);
+        shadowPipeline = m_ShadowPipeline.pipeline;
 
         vkDestroyShaderModule(resources.device, shadowVertModule, nullptr);
     } else {
@@ -2248,11 +2275,14 @@ void Renderer::setupRenderGraph()
                 { textureNames[c] },
                 PassID::Shadow,
                 [this, c](VkCommandBuffer cmd) {
-                    if (activeRenderScene.directionalLights.empty()) {
-                        return;
-                    }
-                    const auto& dirLight = activeRenderScene.directionalLights[0];
-                    if (dirLight.castShadows <= 0.0f) {
+                    if (activeRenderScene.directionalLights.empty() || activeRenderScene.directionalLights[0].castShadows <= 0.0f) {
+                        RenderTarget* target = m_RenderTargetManager.Get(m_ShadowHandlesCascades[c][frameIndex]);
+                        if (target && target->currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+                            m_RenderTargetManager.Transition(cmd, m_ShadowHandlesCascades[c][frameIndex],
+                                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                0, VK_ACCESS_SHADER_READ_BIT);
+                        }
                         return;
                     }
 
@@ -2341,6 +2371,11 @@ void Renderer::setupRenderGraph()
                     }
 
                     vkCmdEndRenderPass(cmd);
+
+                    RenderTarget* target = m_RenderTargetManager.Get(m_ShadowHandlesCascades[c][frameIndex]);
+                    if (target) {
+                        target->currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    }
                 },
                 true,
                 frameIndex < m_ShadowFramebuffersCascades[c].size() ? m_ShadowFramebuffersCascades[c][frameIndex] : VK_NULL_HANDLE,
@@ -2373,6 +2408,11 @@ void Renderer::setupRenderGraph()
                 rpInfo.pClearValues = &clearValue;
                 vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
                 vkCmdEndRenderPass(cmd);
+
+                RenderTarget* target = m_RenderTargetManager.Get(m_ShadowAtlasHandles[frameIndex]);
+                if (target) {
+                    target->currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                }
                 return;
             }
 
@@ -2453,6 +2493,11 @@ void Renderer::setupRenderGraph()
             }
 
             vkCmdEndRenderPass(cmd);
+
+            RenderTarget* target = m_RenderTargetManager.Get(m_ShadowAtlasHandles[frameIndex]);
+            if (target) {
+                target->currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            }
         },
         true,
         m_ShadowAtlasFramebuffers[frameIndex],
@@ -2524,6 +2569,10 @@ void Renderer::setupRenderGraph()
                 MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue, m_DepthPipeline, &gpuScene);
 
                 vkCmdEndRenderPass(cmd);
+                RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+                if (depthTarget) {
+                    depthTarget->currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                }
             },
             true,
             depthFb,
@@ -2548,6 +2597,25 @@ void Renderer::setupRenderGraph()
         {"GBufferA", "GBufferB", "GBufferC", "GBufferD", "GBufferObjectID", "GBufferVelocity"},
         PassID::Geometry,
         [this](VkCommandBuffer cmd) {
+            if (!m_DebugConfig.enableDepthPrepass) {
+                RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+                if (depthTarget && depthTarget->currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                    m_RenderTargetManager.Transition(
+                        cmd,
+                        m_DepthHandles[frameIndex],
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        "GBufferPass",
+                        frameIndex
+                    );
+                }
+            }
+            m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
             VkRenderPassBeginInfo rpInfo{};
             rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             rpInfo.renderPass = m_GBufferRenderPass;
@@ -2618,6 +2686,24 @@ void Renderer::setupRenderGraph()
             MeshRenderer::DrawQueue(cmd, resources.pipelineLayout, renderQueue, m_GBufferPipeline, &gpuScene);
 
             vkCmdEndRenderPass(cmd);
+            std::array<RenderTargetHandle, 6> gbufferHandles = {
+                m_GBufferAHandles[frameIndex],
+                m_GBufferBHandles[frameIndex],
+                m_GBufferCHandles[frameIndex],
+                m_GBufferDHandles[frameIndex],
+                m_ObjectIDHandles[frameIndex],
+                m_GBufferVelocityHandles[frameIndex]
+            };
+            for (auto h : gbufferHandles) {
+                RenderTarget* target = m_RenderTargetManager.Get(h);
+                if (target) {
+                    target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
+            }
+            RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+            if (depthTarget) {
+                depthTarget->currentLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            }
         },
         true,
         gbufferFb,
@@ -2634,6 +2720,23 @@ void Renderer::setupRenderGraph()
         {"HZBImage"},
         PassID::Lighting,
         [this](VkCommandBuffer cmd) {
+            RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+            if (depthTarget && depthTarget->currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+                m_RenderTargetManager.Transition(
+                    cmd,
+                    m_DepthHandles[frameIndex],
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                    "HZBPass",
+                    frameIndex
+                );
+            }
+            m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
             VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
                 m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
             VkImageView depthView = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
@@ -2689,33 +2792,22 @@ void Renderer::setupRenderGraph()
                 }
 
                 // Transition depth image to DEPTH_STENCIL_READ_ONLY_OPTIMAL for sampling
-                VkImage depthImage = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
-                    m_ViewportRenderer.getOffscreenDepthImage(frameIndex) : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
-
-                if (depthImage != VK_NULL_HANDLE) {
-                    VkImageMemoryBarrier barrier{};
-                    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                    barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    barrier.image = depthImage;
-                    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                    barrier.subresourceRange.baseMipLevel = 0;
-                    barrier.subresourceRange.levelCount = 1;
-                    barrier.subresourceRange.baseArrayLayer = 0;
-                    barrier.subresourceRange.layerCount = 1;
-                    barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-                    vkCmdPipelineBarrier(cmd,
+                RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+                if (depthTarget && depthTarget->currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+                    m_RenderTargetManager.Transition(
+                        cmd,
+                        m_DepthHandles[frameIndex],
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                        0,
-                        0, nullptr,
-                        0, nullptr,
-                        1, &barrier);
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        "SSAOPass",
+                        frameIndex
+                    );
                 }
+                m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
                 VkRenderPassBeginInfo rpInfo{};
                 rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2758,6 +2850,10 @@ void Renderer::setupRenderGraph()
 
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     vkCmdEndRenderPass(cmd);
+                    RenderTarget* target = m_RenderTargetManager.Get(m_SSAOHandles[frameIndex]);
+                    if (target) {
+                        target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    }
                 }
             },
             false,
@@ -2814,6 +2910,10 @@ void Renderer::setupRenderGraph()
 
                     vkCmdDraw(cmd, 3, 1, 0, 0);
                     vkCmdEndRenderPass(cmd);
+                    RenderTarget* target = m_RenderTargetManager.Get(m_SSAOBlurredHandles[frameIndex]);
+                    if (target) {
+                        target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    }
                 }
             },
             false,
@@ -2937,32 +3037,22 @@ void Renderer::setupRenderGraph()
      
                 // Transition depth from DEPTH_STENCIL_ATTACHMENT_OPTIMAL to DEPTH_STENCIL_READ_ONLY_OPTIMAL
                 // so it can be sampled by the deferred lighting fragment shader.
-                {
-                    VkImage depthImg = m_ViewportRenderer.isOffscreenRenderingEnabled()
-                        ? m_ViewportRenderer.getOffscreenDepthImage(frameIndex)
-                        : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
-                    if (depthImg != VK_NULL_HANDLE) {
-                        VkImageMemoryBarrier barrier{};
-                        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                        barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                        barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        barrier.image = depthImg;
-                        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                        barrier.subresourceRange.baseMipLevel = 0;
-                        barrier.subresourceRange.levelCount = 1;
-                        barrier.subresourceRange.baseArrayLayer = 0;
-                        barrier.subresourceRange.layerCount = 1;
-                        barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-                        vkCmdPipelineBarrier(cmd,
-                            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                            0, 0, nullptr, 0, nullptr, 1, &barrier);
-                    }
+                RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+                if (depthTarget && depthTarget->currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+                    m_RenderTargetManager.Transition(
+                        cmd,
+                        m_DepthHandles[frameIndex],
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        "DeferredLightingPass",
+                        frameIndex
+                    );
                 }
+                m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
                 vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -3009,6 +3099,10 @@ void Renderer::setupRenderGraph()
                 // NOTE: m_HDRRenderPass has finalLayout = SHADER_READ_ONLY_OPTIMAL, so
                 // HDRColor is already in SHADER_READ_ONLY after vkCmdEndRenderPass.
                 // No explicit HDR barrier is needed here.
+                RenderTarget* target = m_RenderTargetManager.Get(m_HDRColorHandles[frameIndex]);
+                if (target) {
+                    target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
                 // NOTE: Depth is NOT used by this render pass (pDepthStencilAttachment = nullptr).
                 // Depth stays in SHADER_READ_ONLY_OPTIMAL (from GBufferPass) so SSRPass can
                 // read it. TransparentPass will transition depth in its own barrier.
@@ -3030,211 +3124,38 @@ void Renderer::setupRenderGraph()
             {"HDRColorComposed"},
             PassID::Lighting,
             [this](VkCommandBuffer cmd) {
-                // Update descriptor set for SSR
-                VkDescriptorImageInfo gbufferAInfo{};
-                gbufferAInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                gbufferAInfo.imageView = frameIndex < m_GBufferAImageViews.size() ? m_GBufferAImageViews[frameIndex] : VK_NULL_HANDLE;
-                gbufferAInfo.sampler = m_GBufferSampler;
+            // Assert that DepthBuffer is in SHADER_READ_ONLY (since it was transitioned by GBuffer / HZB)
+            m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
-                VkDescriptorImageInfo gbufferBInfo{};
-                gbufferBInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                gbufferBInfo.imageView = frameIndex < m_GBufferBImageViews.size() ? m_GBufferBImageViews[frameIndex] : VK_NULL_HANDLE;
-                gbufferBInfo.sampler = m_GBufferSampler;
+            // Transition HDRColor (which is SHADER_READ_ONLY_OPTIMAL) from color attachment write in DeferredLighting
+            // to compute shader read in SSR
+            m_RenderTargetManager.Transition(
+                cmd,
+                m_HDRColorHandles[frameIndex],
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                "SSRPass",
+                frameIndex
+            );
+            m_RenderTargetManager.AssertLayout(m_HDRColorHandles[frameIndex], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-                VkDescriptorImageInfo gbufferCInfo{};
-                gbufferCInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                gbufferCInfo.imageView = frameIndex < m_GBufferCImageViews.size() ? m_GBufferCImageViews[frameIndex] : VK_NULL_HANDLE;
-                gbufferCInfo.sampler = m_GBufferSampler;
+            // Transition HDRColorComposed layout to GENERAL
+            VkImageMemoryBarrier barrier{};
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = frameIndex < m_HDRColorComposedImages.size() ? m_HDRColorComposedImages[frameIndex] : VK_NULL_HANDLE;
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
-                VkDescriptorImageInfo gbufferDInfo{};
-                gbufferDInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                gbufferDInfo.imageView = frameIndex < m_GBufferDImageViews.size() ? m_GBufferDImageViews[frameIndex] : VK_NULL_HANDLE;
-                gbufferDInfo.sampler = m_GBufferSampler;
-
-                VkDescriptorImageInfo depthInfo{};
-                depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                depthInfo.imageView = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
-                    m_ViewportRenderer.getOffscreenDepthImageView(frameIndex) : (frameIndex < m_DepthImageViews.size() ? m_DepthImageViews[frameIndex] : VK_NULL_HANDLE);
-                depthInfo.sampler = m_GBufferSampler;
-
-                VkDescriptorImageInfo hdrColorInfo{};
-                hdrColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                hdrColorInfo.imageView = frameIndex < m_HDRColorImageViews.size() ? m_HDRColorImageViews[frameIndex] : VK_NULL_HANDLE;
-                hdrColorInfo.sampler = m_GBufferSampler;
-
-                VkDescriptorImageInfo hzbInfo{};
-                hzbInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                hzbInfo.imageView = m_HZBPass.GetHZBSRV(frameIndex);
-                hzbInfo.sampler = m_HZBPass.GetSampler();
-
-                VkDescriptorImageInfo outputInfo{};
-                outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-                outputInfo.imageView = frameIndex < m_HDRColorComposedImageViews.size() ? m_HDRColorComposedImageViews[frameIndex] : VK_NULL_HANDLE;
-
-                VkDescriptorBufferInfo uboInfo{};
-                uboInfo.buffer = gpuScene.GetFrameResources(frameIndex).lightBuffer;
-                uboInfo.offset = 0;
-                uboInfo.range = sizeof(LightData);
-
-                // localReflectionProbes[4] (from Registry / fallback)
-                VkDescriptorImageInfo localProbesInfo[4]{};
-                auto fallbackCubemap = Texture::getWhiteCubemap(resources);
-                for (uint32_t p = 0; p < 4; ++p) {
-                    localProbesInfo[p].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    localProbesInfo[p].sampler = m_GBufferSampler;
-                    localProbesInfo[p].imageView = fallbackCubemap->view();
-                }
-                const auto& activeProbes = activeRenderScene.reflectionProbes;
-                for (size_t p = 0; p < std::min(activeProbes.size(), size_t(4)); ++p) {
-                    Texture* tex = ReflectionProbeRegistry::Get().GetTexture(activeProbes[p].capturePath);
-                    if (tex != nullptr) {
-                        localProbesInfo[p].imageView = tex->view();
-                    }
-                }
-
-                // prefilterMap and brdfLUT
-                EnvironmentMap* activeEnv = nullptr;
-                if (activeRenderScene.skyLight.mode == 1 && !activeRenderScene.skyLight.environmentPath.empty()) {
-                    activeEnv = EnvironmentSystem::Get().GetOrCreateEnvironment(activeRenderScene.skyLight.environmentPath, resources);
-                }
-
-                VkDescriptorImageInfo prefilterInfo{};
-                prefilterInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                if (activeEnv && activeEnv->prefilterCube) {
-                    prefilterInfo.imageView = activeEnv->prefilterCube->view();
-                    prefilterInfo.sampler = activeEnv->prefilterCube->sampler();
-                } else {
-                    prefilterInfo.imageView = fallbackCubemap->view();
-                    prefilterInfo.sampler = fallbackCubemap->sampler();
-                }
-
-                auto brdfLutTex = EnvironmentSystem::Get().GetBRDFLUT(resources);
-                VkDescriptorImageInfo brdfInfo{};
-                brdfInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                if (brdfLutTex) {
-                    brdfInfo.imageView = brdfLutTex->view();
-                    brdfInfo.sampler = brdfLutTex->sampler();
-                } else {
-                    auto fallback2D = Texture::getWhiteTexture(resources);
-                    brdfInfo.imageView = fallback2D->view();
-                    brdfInfo.sampler = fallback2D->sampler();
-                }
-
-                // Build writes
-                std::array<VkWriteDescriptorSet, 13> writes{};
-                
-                writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[0].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[0].dstBinding = 0;
-                writes[0].descriptorCount = 1;
-                writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[0].pImageInfo = &gbufferAInfo;
-
-                writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[1].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[1].dstBinding = 1;
-                writes[1].descriptorCount = 1;
-                writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[1].pImageInfo = &gbufferBInfo;
-
-                writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[2].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[2].dstBinding = 2;
-                writes[2].descriptorCount = 1;
-                writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[2].pImageInfo = &gbufferCInfo;
-
-                writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[3].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[3].dstBinding = 3;
-                writes[3].descriptorCount = 1;
-                writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[3].pImageInfo = &gbufferDInfo;
-
-                writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[4].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[4].dstBinding = 4;
-                writes[4].descriptorCount = 1;
-                writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[4].pImageInfo = &depthInfo;
-
-                writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[5].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[5].dstBinding = 5;
-                writes[5].descriptorCount = 1;
-                writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[5].pImageInfo = &hdrColorInfo;
-
-                writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[6].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[6].dstBinding = 6;
-                writes[6].descriptorCount = 1;
-                writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[6].pImageInfo = &hzbInfo;
-
-                writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[7].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[7].dstBinding = 7;
-                writes[7].descriptorCount = 1;
-                writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-                writes[7].pImageInfo = &outputInfo;
-
-                writes[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[8].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[8].dstBinding = 8;
-                writes[8].descriptorCount = 1;
-                // lightBuffer is a STORAGE_BUFFER — must match layout binding 8 type.
-                writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                writes[8].pBufferInfo = &uboInfo;
-
-                writes[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[9].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[9].dstBinding = 9;
-                writes[9].descriptorCount = 4;
-                writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[9].pImageInfo = localProbesInfo;
-
-                writes[10].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[10].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[10].dstBinding = 10;
-                writes[10].descriptorCount = 1;
-                writes[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[10].pImageInfo = &prefilterInfo;
-
-                writes[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[11].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[11].dstBinding = 11;
-                writes[11].descriptorCount = 1;
-                writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                writes[11].pImageInfo = &brdfInfo;
-
-                VkDescriptorBufferInfo cameraInfo{};
-                cameraInfo.buffer = gpuScene.GetFrameResources(frameIndex).cameraBuffer;
-                cameraInfo.offset = 0;
-                cameraInfo.range = sizeof(Omnix::Radiance::RadianceFrameUBO);
-
-                writes[12].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                writes[12].dstSet = m_SSRDescriptorSets[frameIndex];
-                writes[12].dstBinding = 12;
-                writes[12].descriptorCount = 1;
-                writes[12].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                writes[12].pBufferInfo = &cameraInfo;
-
-                vkUpdateDescriptorSets(resources.device, 13, writes.data(), 0, nullptr);
-
-                // Transition HDRColorComposed layout to GENERAL
-                VkImageMemoryBarrier barrier{};
-                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                barrier.image = frameIndex < m_HDRColorComposedImages.size() ? m_HDRColorComposedImages[frameIndex] : VK_NULL_HANDLE;
-                barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                barrier.srcAccessMask = 0;
-                barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
                 // Bind pipeline and descriptor sets
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_SSRPipeline);
@@ -3243,6 +3164,11 @@ void Renderer::setupRenderGraph()
                 uint32_t groupX = (m_DepthWidth + 15) / 16;
                 uint32_t groupY = (m_DepthHeight + 15) / 16;
                 vkCmdDispatch(cmd, groupX, groupY, 1);
+
+                RenderTarget* target = m_RenderTargetManager.Get(m_HDRColorComposedHandles[frameIndex]);
+                if (target) {
+                    target->currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+                }
             },
             false,
             VK_NULL_HANDLE,
@@ -3298,6 +3224,10 @@ void Renderer::setupRenderGraph()
                     barrierDst.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
                     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierDst);
+                    RenderTarget* target = m_RenderTargetManager.Get(m_HDRColorHandles[frameIndex]);
+                    if (target) {
+                        target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    }
                 }
             },
             false,
@@ -3349,28 +3279,22 @@ void Renderer::setupRenderGraph()
                 // SSRPass (compute) has finished reading depth. TransparentPass renders
                 // geometry with depth test, so it needs DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
                 // m_TransparentRenderPass expects initialLayout = DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
-                {
-                    VkImage depthImg = m_ViewportRenderer.isOffscreenRenderingEnabled()
-                        ? m_ViewportRenderer.getOffscreenDepthImage(frameIndex)
-                        : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
-                    if (depthImg != VK_NULL_HANDLE) {
-                        VkImageMemoryBarrier depthBarrier{};
-                        depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                        depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                        depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                        depthBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        depthBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        depthBarrier.image = depthImg;
-                        depthBarrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-                        depthBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                        depthBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
-                                                   | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                        vkCmdPipelineBarrier(cmd,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                            0, 0, nullptr, 0, nullptr, 1, &depthBarrier);
-                    }
+                RenderTarget* depthTarget = m_RenderTargetManager.Get(m_DepthHandles[frameIndex]);
+                if (depthTarget) {
+                    m_RenderTargetManager.Transition(
+                        cmd,
+                        m_DepthHandles[frameIndex],
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        "TransparentPass_Pre",
+                        frameIndex
+                    );
                 }
+                m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
                 vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -3430,26 +3354,25 @@ void Renderer::setupRenderGraph()
 
                 // Transition depth back to DEPTH_STENCIL_READ_ONLY_OPTIMAL so that subsequent compute
                 // passes (TAAPass, HZBPass, SSRPass, etc. on next frame) and PostProcessPass can read it.
-                {
-                    VkImage depthImg = m_ViewportRenderer.isOffscreenRenderingEnabled()
-                        ? m_ViewportRenderer.getOffscreenDepthImage(frameIndex)
-                        : (frameIndex < m_DepthImages.size() ? m_DepthImages[frameIndex] : VK_NULL_HANDLE);
-                    if (depthImg != VK_NULL_HANDLE) {
-                        VkImageMemoryBarrier barrier{};
-                        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                        barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                        barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        barrier.image = depthImg;
-                        barrier.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-                        barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                        vkCmdPipelineBarrier(cmd,
-                            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                            0, 0, nullptr, 0, nullptr, 1, &barrier);
-                    }
+                if (depthTarget) {
+                    m_RenderTargetManager.Transition(
+                        cmd,
+                        m_DepthHandles[frameIndex],
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        "TransparentPass_Post",
+                        frameIndex
+                    );
+                }
+                m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+                RenderTarget* hdrTarget = m_RenderTargetManager.Get(m_HDRColorHandles[frameIndex]);
+                if (hdrTarget) {
+                    hdrTarget->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 }
             },
             true,
@@ -3474,8 +3397,26 @@ void Renderer::setupRenderGraph()
 
                 VkDescriptorSet taaSet = m_TAADescriptorSets[frameIndex * 2 + readIndex];
 
-                VkImageMemoryBarrier barriers[3]{};
-                for (int b = 0; b < 3; ++b) {
+                // Assert that DepthBuffer is in SHADER_READ_ONLY (since it was transitioned by GBuffer / HZB)
+                m_RenderTargetManager.AssertLayout(m_DepthHandles[frameIndex], VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+                // Transition currentImage (HDRColor) to SHADER_READ_ONLY_OPTIMAL for compute read
+                m_RenderTargetManager.Transition(
+                    cmd,
+                    m_HDRColorHandles[frameIndex],
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    "TAAPass",
+                    frameIndex
+                );
+                m_RenderTargetManager.AssertLayout(m_HDRColorHandles[frameIndex], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+                VkImageMemoryBarrier barriers[2]{};
+                for (int b = 0; b < 2; ++b) {
                     barriers[b].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
                     barriers[b].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                     barriers[b].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -3486,32 +3427,21 @@ void Renderer::setupRenderGraph()
                     barriers[b].subresourceRange.layerCount = 1;
                 }
 
-                // TAA always operates in HDR space — never use the offscreen (LDR/sRGB) image here.
-                // getOffscreenImage() returns the swapchain-format target which is format-incompatible
-                // with the R16G16B16A16_SFLOAT history buffer used by vkCmdCopyImage.
-                VkImage currentImage = (frameIndex < m_HDRColorImages.size()) ? m_HDRColorImages[frameIndex] : VK_NULL_HANDLE;
-                barriers[0].image = currentImage;
-                barriers[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                // 1. History Read Image — previous frame left this at TRANSFER_SRC_OPTIMAL
+                barriers[0].image = m_TAAHistoryImages[readIndex];
+                barriers[0].oldLayout = m_TAAInitialized ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
                 barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                barriers[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                barriers[0].srcAccessMask = m_TAAInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0;
                 barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-                // 2. History Read Image — previous frame left this at TRANSFER_SRC_OPTIMAL
-                //    (frame 0: still UNDEFINED, which is handled safely with srcAccessMask=0)
-                barriers[1].image = m_TAAHistoryImages[readIndex];
-                barriers[1].oldLayout = m_TAAInitialized ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
-                barriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                barriers[1].srcAccessMask = m_TAAInitialized ? VK_ACCESS_TRANSFER_READ_BIT : 0;
-                barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                // 2. History Write Image — always transition from UNDEFINED (discard old)
+                barriers[1].image = m_TAAHistoryImages[writeIndex];
+                barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                barriers[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+                barriers[1].srcAccessMask = 0;
+                barriers[1].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
-                // 3. History Write Image — always transition from UNDEFINED (discard old)
-                barriers[2].image = m_TAAHistoryImages[writeIndex];
-                barriers[2].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                barriers[2].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-                barriers[2].srcAccessMask = 0;
-                barriers[2].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 3, barriers);
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers);
 
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TAAPipeline);
 
@@ -3536,31 +3466,38 @@ void Renderer::setupRenderGraph()
                 uint32_t groupY = (m_DepthHeight + 15) / 16;
                 vkCmdDispatch(cmd, groupX, groupY, 1);
 
-                VkImageMemoryBarrier copyBarriers[2]{};
-                for (int b = 0; b < 2; ++b) {
-                    copyBarriers[b].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                    copyBarriers[b].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    copyBarriers[b].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    copyBarriers[b].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                    copyBarriers[b].subresourceRange.baseMipLevel = 0;
-                    copyBarriers[b].subresourceRange.levelCount = 1;
-                    copyBarriers[b].subresourceRange.baseArrayLayer = 0;
-                    copyBarriers[b].subresourceRange.layerCount = 1;
-                }
+                // TAA always operates in HDR space — never use the offscreen (LDR/sRGB) image here.
+                VkImage currentImage = (frameIndex < m_HDRColorImages.size()) ? m_HDRColorImages[frameIndex] : VK_NULL_HANDLE;
 
-                copyBarriers[0].image = m_TAAHistoryImages[writeIndex];
-                copyBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-                copyBarriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                copyBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                copyBarriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                VkImageMemoryBarrier copyBarrier{};
+                copyBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                copyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                copyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                copyBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                copyBarrier.subresourceRange.baseMipLevel = 0;
+                copyBarrier.subresourceRange.levelCount = 1;
+                copyBarrier.subresourceRange.baseArrayLayer = 0;
+                copyBarrier.subresourceRange.layerCount = 1;
+                copyBarrier.image = m_TAAHistoryImages[writeIndex];
+                copyBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+                copyBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                copyBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                copyBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
-                copyBarriers[1].image = currentImage;
-                copyBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                copyBarriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                copyBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                copyBarriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &copyBarrier);
 
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, copyBarriers);
+                m_RenderTargetManager.Transition(
+                    cmd,
+                    m_HDRColorHandles[frameIndex],
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    "TAAPass_CopyPrep",
+                    frameIndex
+                );
 
                 VkImageCopy copyRegion{};
                 copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3574,22 +3511,19 @@ void Renderer::setupRenderGraph()
 
                 vkCmdCopyImage(cmd, m_TAAHistoryImages[writeIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, currentImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-                VkImageMemoryBarrier postCopyBarrier{};
-                postCopyBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                postCopyBarrier.image = currentImage;
-                postCopyBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                postCopyBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-                postCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                postCopyBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
-                postCopyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                postCopyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                postCopyBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                postCopyBarrier.subresourceRange.baseMipLevel = 0;
-                postCopyBarrier.subresourceRange.levelCount = 1;
-                postCopyBarrier.subresourceRange.baseArrayLayer = 0;
-                postCopyBarrier.subresourceRange.layerCount = 1;
-
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &postCopyBarrier);
+                m_RenderTargetManager.Transition(
+                    cmd,
+                    m_HDRColorHandles[frameIndex],
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    "TAAPass_PostCopy",
+                    frameIndex
+                );
+                m_RenderTargetManager.AssertLayout(m_HDRColorHandles[frameIndex], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
                 m_PrevViewProjection = m_CurrentViewProjection;
                 m_TAAHistoryIndex = writeIndex;
@@ -3606,6 +3540,8 @@ void Renderer::setupRenderGraph()
             {},
             PassID::Lighting,
             [this](VkCommandBuffer cmd) {
+                m_RenderTargetManager.AssertLayout(m_HDRColorHandles[frameIndex], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
                 // Buffer memory barrier to transition ExposureBuffer for writing
                 VkBufferMemoryBarrier barrier{};
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -3678,6 +3614,8 @@ void Renderer::setupRenderGraph()
             {"LDRColor"},
             PassID::PostProcess,
             [this](VkCommandBuffer cmd) {
+                m_RenderTargetManager.AssertLayout(m_HDRColorHandles[frameIndex], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
                 VkRenderPassBeginInfo rpInfo{};
                 rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 
@@ -3775,6 +3713,10 @@ void Renderer::setupRenderGraph()
                 vkCmdDraw(cmd, 3, 1, 0, 0);
 
                 vkCmdEndRenderPass(cmd);
+                RenderTarget* target = m_RenderTargetManager.Get(m_LDRColorHandles[frameIndex]);
+                if (target) {
+                    target->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
             },
             true,
             postProcessFb,
@@ -3898,6 +3840,14 @@ void Renderer::setupRenderGraph()
                     m_SelectedEntityID,
                     overlaySettings
                 );
+            }
+            RenderTarget* ldrTargetTracked = m_RenderTargetManager.Get(m_LDRColorHandles[frameIndex]);
+            if (ldrTargetTracked) {
+                ldrTargetTracked->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+            RenderTarget* vpTargetTracked = m_RenderTargetManager.Get(m_ViewportColorHandles[frameIndex]);
+            if (vpTargetTracked) {
+                vpTargetTracked->currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
         },
         false,
@@ -4502,6 +4452,207 @@ void Renderer::updateLightingUBO()
 
     m_LastLightData = uboData;
     m_LastFallbackActive = m_UseEditorDefaultLighting || activeRenderScene.directionalLights.empty();
+}
+
+void Renderer::updateSSRDescriptorSet(uint32_t frameIndex)
+{
+    if (resources.device == VK_NULL_HANDLE || m_SSRDescriptorSets.empty() || frameIndex >= m_SSRDescriptorSets.size()) return;
+
+    auto fallback2D = Texture::getWhiteTexture(resources);
+    VkImageView fallbackView = fallback2D ? fallback2D->view() : VK_NULL_HANDLE;
+
+    // Update descriptor set for SSR
+    VkDescriptorImageInfo gbufferAInfo{};
+    gbufferAInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    gbufferAInfo.imageView = (frameIndex < m_GBufferAImageViews.size() && m_GBufferAImageViews[frameIndex] != VK_NULL_HANDLE) ? m_GBufferAImageViews[frameIndex] : fallbackView;
+    gbufferAInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo gbufferBInfo{};
+    gbufferBInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    gbufferBInfo.imageView = (frameIndex < m_GBufferBImageViews.size() && m_GBufferBImageViews[frameIndex] != VK_NULL_HANDLE) ? m_GBufferBImageViews[frameIndex] : fallbackView;
+    gbufferBInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo gbufferCInfo{};
+    gbufferCInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    gbufferCInfo.imageView = (frameIndex < m_GBufferCImageViews.size() && m_GBufferCImageViews[frameIndex] != VK_NULL_HANDLE) ? m_GBufferCImageViews[frameIndex] : fallbackView;
+    gbufferCInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo gbufferDInfo{};
+    gbufferDInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    gbufferDInfo.imageView = (frameIndex < m_GBufferDImageViews.size() && m_GBufferDImageViews[frameIndex] != VK_NULL_HANDLE) ? m_GBufferDImageViews[frameIndex] : fallbackView;
+    gbufferDInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo depthInfo{};
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    VkImageView depthView = m_ViewportRenderer.isOffscreenRenderingEnabled() ?
+        m_ViewportRenderer.getOffscreenDepthImageView(frameIndex) : (frameIndex < m_DepthImageViews.size() ? m_DepthImageViews[frameIndex] : VK_NULL_HANDLE);
+    depthInfo.imageView = depthView != VK_NULL_HANDLE ? depthView : fallbackView;
+    depthInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo hdrColorInfo{};
+    hdrColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    hdrColorInfo.imageView = (frameIndex < m_HDRColorImageViews.size() && m_HDRColorImageViews[frameIndex] != VK_NULL_HANDLE) ? m_HDRColorImageViews[frameIndex] : fallbackView;
+    hdrColorInfo.sampler = m_GBufferSampler;
+
+    VkDescriptorImageInfo hzbInfo{};
+    hzbInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkImageView hzbSRV = m_HZBPass.GetHZBSRV(frameIndex);
+    hzbInfo.imageView = hzbSRV != VK_NULL_HANDLE ? hzbSRV : fallbackView;
+    hzbInfo.sampler = m_HZBPass.GetSampler() ? m_HZBPass.GetSampler() : m_GBufferSampler;
+
+    VkDescriptorImageInfo outputInfo{};
+    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    outputInfo.imageView = (frameIndex < m_HDRColorComposedImageViews.size() && m_HDRColorComposedImageViews[frameIndex] != VK_NULL_HANDLE) ? m_HDRColorComposedImageViews[frameIndex] : fallbackView;
+
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = gpuScene.GetFrameResources(frameIndex).lightBuffer;
+    uboInfo.offset = 0;
+    uboInfo.range = sizeof(LightData);
+
+    // localReflectionProbes[4] (from Registry / fallback)
+    VkDescriptorImageInfo localProbesInfo[4]{};
+    auto fallbackCubemap = Texture::getWhiteCubemap(resources);
+    for (uint32_t p = 0; p < 4; ++p) {
+        localProbesInfo[p].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        localProbesInfo[p].sampler = m_GBufferSampler;
+        localProbesInfo[p].imageView = fallbackCubemap->view();
+    }
+    const auto& activeProbes = activeRenderScene.reflectionProbes;
+    for (size_t p = 0; p < std::min(activeProbes.size(), size_t(4)); ++p) {
+        Texture* tex = ReflectionProbeRegistry::Get().GetTexture(activeProbes[p].capturePath);
+        if (tex != nullptr) {
+            localProbesInfo[p].imageView = tex->view();
+        }
+    }
+
+    // prefilterMap and brdfLUT
+    EnvironmentMap* activeEnv = nullptr;
+    if (activeRenderScene.skyLight.mode == 1 && !activeRenderScene.skyLight.environmentPath.empty()) {
+        activeEnv = EnvironmentSystem::Get().GetOrCreateEnvironment(activeRenderScene.skyLight.environmentPath, resources);
+    }
+
+    VkDescriptorImageInfo prefilterInfo{};
+    prefilterInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (activeEnv && activeEnv->prefilterCube) {
+        prefilterInfo.imageView = activeEnv->prefilterCube->view();
+        prefilterInfo.sampler = activeEnv->prefilterCube->sampler();
+    } else {
+        prefilterInfo.imageView = fallbackCubemap->view();
+        prefilterInfo.sampler = fallbackCubemap->sampler();
+    }
+
+    auto brdfLutTex = EnvironmentSystem::Get().GetBRDFLUT(resources);
+    VkDescriptorImageInfo brdfInfo{};
+    brdfInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (brdfLutTex) {
+        brdfInfo.imageView = brdfLutTex->view();
+        brdfInfo.sampler = brdfLutTex->sampler();
+    } else {
+        auto fallback2D = Texture::getWhiteTexture(resources);
+        brdfInfo.imageView = fallback2D->view();
+        brdfInfo.sampler = fallback2D->sampler();
+    }
+
+    // Build writes
+    std::array<VkWriteDescriptorSet, 13> writes{};
+    
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &gbufferAInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].pImageInfo = &gbufferBInfo;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[2].dstBinding = 2;
+    writes[2].descriptorCount = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].pImageInfo = &gbufferCInfo;
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[3].dstBinding = 3;
+    writes[3].descriptorCount = 1;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].pImageInfo = &gbufferDInfo;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[4].dstBinding = 4;
+    writes[4].descriptorCount = 1;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].pImageInfo = &depthInfo;
+
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[5].dstBinding = 5;
+    writes[5].descriptorCount = 1;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].pImageInfo = &hdrColorInfo;
+
+    writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[6].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[6].dstBinding = 6;
+    writes[6].descriptorCount = 1;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[6].pImageInfo = &hzbInfo;
+
+    writes[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[7].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[7].dstBinding = 7;
+    writes[7].descriptorCount = 1;
+    writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[7].pImageInfo = &outputInfo;
+
+    writes[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[8].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[8].dstBinding = 8;
+    writes[8].descriptorCount = 1;
+    writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[8].pBufferInfo = &uboInfo;
+
+    writes[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[9].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[9].dstBinding = 9;
+    writes[9].descriptorCount = 4;
+    writes[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[9].pImageInfo = localProbesInfo;
+
+    writes[10].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[10].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[10].dstBinding = 10;
+    writes[10].descriptorCount = 1;
+    writes[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[10].pImageInfo = &prefilterInfo;
+
+    writes[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[11].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[11].dstBinding = 11;
+    writes[11].descriptorCount = 1;
+    writes[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[11].pImageInfo = &brdfInfo;
+
+    VkDescriptorBufferInfo cameraInfo{};
+    cameraInfo.buffer = gpuScene.GetFrameResources(frameIndex).cameraBuffer;
+    cameraInfo.offset = 0;
+    cameraInfo.range = sizeof(Omnix::Radiance::RadianceFrameUBO);
+
+    writes[12].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[12].dstSet = m_SSRDescriptorSets[frameIndex];
+    writes[12].dstBinding = 12;
+    writes[12].descriptorCount = 1;
+    writes[12].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[12].pBufferInfo = &cameraInfo;
+
+    vkUpdateDescriptorSets(resources.device, 13, writes.data(), 0, nullptr);
 }
 
 void Renderer::updateGBufferDescriptorSets()
@@ -5465,6 +5616,7 @@ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
     updateExposureDescriptorSets();
     recreateTAAResources(width, height);
     updateTAADescriptorSets();
+    m_HZBPass.RecreateResources(resources, width, height);
 
     // Update PostProcess descriptor sets
     for (uint32_t i = 0; i < maxFrames; ++i) {
@@ -7340,6 +7492,7 @@ void Renderer::RenderSceneOffscreen(
     const glm::mat4& customProj,
     const glm::vec3& customCamPos
 ) {
+    // Removed duplicate layout tracking initialization m_DepthImageLayout
     CameraComponent fakeCamera{};
     fakeCamera.fov = 90.0f;
     fakeCamera.nearPlane = 0.1f;

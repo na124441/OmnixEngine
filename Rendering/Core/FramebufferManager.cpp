@@ -171,4 +171,27 @@ namespace eng::renderer {
         return entry.resource.valid && entry.resource.framebuffer != VK_NULL_HANDLE;
     }
 
+    bool FramebufferManager::HasAttachment(VkFramebuffer fb, VkImageView view) const {
+        for (const auto& entry : m_Framebuffers) {
+            if (entry.active && entry.resource.framebuffer == fb) {
+                // Check desc.rawAttachments
+                if (!entry.resource.desc.rawAttachments.empty()) {
+                    for (auto rawView : entry.resource.desc.rawAttachments) {
+                        if (rawView == view) return true;
+                    }
+                }
+                // Check desc.attachments
+                if (m_TargetManager) {
+                    for (auto targetHandle : entry.resource.desc.attachments) {
+                        const RenderTarget* target = m_TargetManager->Get(targetHandle);
+                        if (target && target->view == view) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
 } // namespace eng::renderer

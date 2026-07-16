@@ -58,6 +58,8 @@ namespace eng::renderer {
         }
     };
 
+    class FramebufferManager;
+
     class RenderTargetManager {
     public:
         RenderTargetManager() = default;
@@ -81,15 +83,26 @@ namespace eng::renderer {
             VkPipelineStageFlags srcStage,
             VkPipelineStageFlags dstStage,
             VkAccessFlags srcAccess,
-            VkAccessFlags dstAccess
+            VkAccessFlags dstAccess,
+            VkImageLayout expectedOldLayout = VK_IMAGE_LAYOUT_MAX_ENUM,
+            const std::string& passName = "Unknown",
+            int frameIndex = -1
         );
 
         void AssertLayout(RenderTargetHandle handle, VkImageLayout expected);
         void DumpAllTargets() const;
 
+        void SetFramebufferManager(FramebufferManager* fbm) { m_FramebufferManager = fbm; }
+        void SetActiveFramebuffer(VkFramebuffer fb) { m_ActiveFramebuffer = fb; }
+        void SetActiveCommandBuffer(VkCommandBuffer cmd) { m_ActiveCommandBuffer = cmd; }
+
     private:
         VkDevice m_Device = VK_NULL_HANDLE;
         VmaAllocator m_Allocator = VK_NULL_HANDLE;
+
+        FramebufferManager* m_FramebufferManager = nullptr;
+        VkFramebuffer m_ActiveFramebuffer = VK_NULL_HANDLE;
+        VkCommandBuffer m_ActiveCommandBuffer = VK_NULL_HANDLE;
 
         struct ManagerTargetEntry {
             RenderTarget target;

@@ -233,6 +233,7 @@ void FrustumCullPass::resizeVisibleInstanceBufferIfNeeded(
     VkDeviceSize newSize = newCapacity * sizeof(uint32_t);
 
     if (frameRes.visibleInstanceBuffer != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(resources.device);
         vmaDestroyBuffer(resources.allocator, frameRes.visibleInstanceBuffer, frameRes.visibleInstanceAlloc);
         ::eng::ResourceTracker::decBuffer();
         frameRes.visibleInstanceBuffer = VK_NULL_HANDLE;
