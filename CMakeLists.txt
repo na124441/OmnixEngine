@@ -52,29 +52,41 @@ endif()
 # -------------------------------
 set(ENGINE_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/Core
-    ${CMAKE_SOURCE_DIR}/ECS
-    ${CMAKE_SOURCE_DIR}/ECS/Public
-    ${CMAKE_SOURCE_DIR}/Scene
-    ${CMAKE_SOURCE_DIR}/Scene/Public
-    ${CMAKE_SOURCE_DIR}/Serializer
-    ${CMAKE_SOURCE_DIR}/Serializer/Serialization
-    ${CMAKE_SOURCE_DIR}/Components
-    ${CMAKE_SOURCE_DIR}/Data
-    ${CMAKE_SOURCE_DIR}/RenderingEngine
-    ${CMAKE_SOURCE_DIR}/RenderingEngine/Public
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Core
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/ECS
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/ECS/Public
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Scene
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Scene/Public
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Serializer
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Serializer/Serialization
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Components
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/RenderingEngine
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/RenderingEngine/Public
     ${CMAKE_SOURCE_DIR}/RenderingEngine/ThirdParty
+    ${CMAKE_SOURCE_DIR}/RenderingEngine/ThirdParty/spdlog/include
+    ${CMAKE_SOURCE_DIR}/RenderingEngine/ThirdParty/VMA
     ${CMAKE_SOURCE_DIR}/RenderingEngine/ThirdParty/tinyglf
     ${CMAKE_SOURCE_DIR}/RenderingEngine/ThirdParty/stb
-    ${CMAKE_SOURCE_DIR}/Systems/Scheduler/Public
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Physics/Public
+
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Rendering
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Runtime
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/src
+    ${CMAKE_SOURCE_DIR}/OmnixRuntime/Include/Systems/Scheduler/Public
+
+    ${CMAKE_SOURCE_DIR}/OmnixEditor/Include
+    ${CMAKE_SOURCE_DIR}/OmnixEditor/Include/Editor
+    ${CMAKE_SOURCE_DIR}/OmnixEditor/Include/Rendering/Editor
+    ${CMAKE_SOURCE_DIR}/OmnixGame/Include
+    ${CMAKE_SOURCE_DIR}/OmnixGame/Include/Gameplay
+    ${CMAKE_SOURCE_DIR}/OmnixGame/Include/Components
     ${CMAKE_SOURCE_DIR}/ThirdParty
     ${CMAKE_SOURCE_DIR}/ThirdParty/nlohmann
     ${CMAKE_SOURCE_DIR}/ThirdParty/imgui
     ${CMAKE_SOURCE_DIR}/ThirdParty/imgui/backends
     ${CMAKE_SOURCE_DIR}/ThirdParty/ImGuizmo
     ${Vulkan_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/Physics/Public
-    ${CMAKE_SOURCE_DIR}/Rendering
 )
 
 # -------------------------------
@@ -91,149 +103,215 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${ENGINE_INCLUDE_DIRS})
 target_link_libraries(imgui PUBLIC Vulkan::Vulkan dwmapi)
 
-add_library(EngineCore
-    Core/Logging/Logger.cpp
-    Core/Diagnostics/Diagnostics.cpp
-    Core/Timer.cpp
-    Components/Behavior/MovementCapability.cpp
-    Core/Memory/AllocationTracker.cpp
-    Core/Memory/LinearAllocator.cpp
-    Core/Memory/PoolAllocator.cpp
-    Core/Memory/StackAllocator.cpp
-    Core/Memory/FreeListAllocator.cpp
-    Core/Memory/AllocatorValidation.cpp
-)
-target_include_directories(EngineCore PUBLIC ${ENGINE_INCLUDE_DIRS})
-
-add_library(Serialization
-    Serializer/Serialization/Normal/NormalSerializer.cpp
-    Serializer/Serialization/Normal/NormalDeserializer.cpp
-    Serializer/Serialization/Normal/Binary/BinarySerializer.cpp
-    Serializer/Serialization/Normal/Binary/BinaryDeserializer.cpp
-    Serializer/Serialization/Normal/Binary/BinaryWriter.cpp
-    Serializer/Serialization/Normal/Binary/BinaryReader.cpp
-    Serializer/Serialization/Normal/Text/TextSerializer.cpp
-    Serializer/Serialization/Normal/Text/TextDeserializer.cpp
-    Serializer/Serialization/Delta/DeltaSerializer.cpp
-    Serializer/Serialization/Delta/DeltaDeserializer.cpp
-    Serializer/Serialization/Delta/DeltaTracker.cpp
-    Serializer/Serialization/Delta/DeltaSnapshot.cpp
-    Serializer/ECS/ECS.cpp
-    Serializer/ECS/SchemaRegistry.cpp
-    Serializer/ECS/SerializationBridge.cpp
-    Serializer/ECS/Snapshot/ComponentSnapshot.cpp
-    Serializer/ECS/Snapshot/FieldSnapshot.cpp
-    Serializer/ECS/Snapshot/ECSSnapshot.cpp
-)
-target_link_libraries(Serialization PUBLIC EngineCore)
-target_include_directories(Serialization PUBLIC ${ENGINE_INCLUDE_DIRS})
-
-add_library(ECS
-    ECS/EntityManager.cpp
-    ECS/ComponentManager.cpp
-    ECS/SystemManager.cpp
-    ECS/Coordinator.cpp
-)
-target_link_libraries(ECS PUBLIC EngineCore Serialization)
-target_include_directories(ECS PUBLIC ${ENGINE_INCLUDE_DIRS})
-
-add_library(Input
-    Input/InputManager.cpp
-)
-target_link_libraries(Input PUBLIC EngineCore)
-target_include_directories(Input PUBLIC ${ENGINE_INCLUDE_DIRS})
-
-add_library(Scene
-    Scene/Scene.cpp
-    Scene/SceneManager.cpp
-    Scene/SceneObject.cpp
-    Scene/Transform.cpp
-    Scene/Camera.cpp
-    Scene/Prefab.cpp
-    Scene/PrefabRegistry.cpp
-    Scene/ComponentFactory.cpp
-    Scene/SceneLoader.cpp
-    Scene/SceneSerializer.cpp
-    Scene/SceneValidator.cpp
-)
-target_link_libraries(Scene PUBLIC EngineCore ECS)
-target_include_directories(Scene PUBLIC ${ENGINE_INCLUDE_DIRS})
-
-add_library(Physics STATIC
-    Physics/Private/PhysicsWorld.cpp
-    Physics/Private/PhysicsValidation.cpp
-    Physics/Private/PhysicsDebugDraw.cpp
-    Physics/Private/PhysicsConversion.cpp
-)
-target_include_directories(Physics PUBLIC ${ENGINE_INCLUDE_DIRS})
-target_link_libraries(Physics PUBLIC EngineCore ECS)
-if(MSVC)
-    target_link_libraries(Physics PUBLIC unofficial::omniverse-physx-sdk::sdk)
-endif()
-
-add_library(RenderingEngine
-    RenderingEngine/Runtime/engine/EngineLoop.cpp
-    RenderingEngine/Platform/window/Window.cpp
-    RenderingEngine/Vulkan/VulkanInstance.cpp
-    RenderingEngine/Vulkan/VulkanDevice.cpp
-    RenderingEngine/Vulkan/VulkanSwapChain.cpp
-    RenderingEngine/Vulkan/VulkanMemory.cpp
-    RenderingEngine/Platform/time/Timer.cpp
-    RenderingEngine/runtime/render_scene/SceneBuilder.cpp
-    Rendering/Core/Renderer.cpp
-    Rendering/Core/RenderTargetManager.cpp
-    Rendering/Core/FramebufferManager.cpp
-    Rendering/Graph/RenderGraph.cpp
-    Rendering/Scene/RenderSceneExtractor.cpp
-    Rendering/GPUScene/GPUScene.cpp
-    Rendering/Visibility/Frustum.cpp
-    Rendering/Visibility/FrustumCullPass.cpp
-    Rendering/Visibility/IndirectCommandBuildPass.cpp
-    Rendering/Visibility/HZBPass.cpp
-    Rendering/Visibility/OcclusionCullPass.cpp
-    Rendering/Visibility/RVGClusterCullPass.cpp
-    Rendering/Geometry/MeshRenderer.cpp
-    Rendering/Geometry/VisibilitySystem.cpp
-    Rendering/Geometry/CapabilityTiers.cpp
-    Rendering/Geometry/Assets/RVGAsset.cpp
-    Rendering/Geometry/Assets/RVGRegistry.cpp
-    Rendering/Geometry/Streaming/RVGPageStreamingManager.cpp
-    Rendering/Geometry/Arena/GeometryAllocator.cpp
-    Rendering/Geometry/Arena/GeometryUploader.cpp
-    Rendering/Geometry/Arena/GeometryArena.cpp
-    Rendering/Geometry/Arena/GeometryArenaStats.cpp
-    Rendering/Materials/MaterialSystem.cpp
-    Rendering/Materials/ShaderLibrary.cpp
-    Rendering/Lighting/DeferredLightingPass.cpp
-    Rendering/Lighting/ShadowRenderer.cpp
-    Rendering/Lighting/SkyLightRenderer.cpp
-    Rendering/Lighting/EnvironmentSystem.cpp
-    Rendering/PostProcess/TonemapPass.cpp
-    Rendering/PostProcess/ExposurePass.cpp
-    Rendering/Editor/EditorViewportRenderer.cpp
-    Rendering/Editor/GridRenderer.cpp
-    Rendering/Editor/SelectionOutlinePass.cpp
-    Rendering/Editor/EditorOverlayPass.cpp
-    Rendering/Editor/DebugViewRenderer.cpp
-    Rendering/Debug/GPUProfiler.cpp
-    Rendering/Debug/DebugDraw.cpp
-    RenderingEngine/Renderer/scene/Mesh.cpp
-    RenderingEngine/Renderer/scene/ModelLoader.cpp
-    RenderingEngine/Renderer/scene/Scene.cpp
-    RenderingEngine/Renderer/scene/Material.cpp
-    RenderingEngine/Renderer/scene/Texture.cpp
-    RenderingEngine/Renderer/scene/Shader.cpp
-    RenderingEngine/Renderer/gltf/GltfModel.cpp
+# -- Layer 1: OmnixRuntime --
+add_library(OmnixRuntime STATIC
+    OmnixRuntime/Source/Core/Diagnostics/Diagnostics.cpp
+    OmnixRuntime/Source/Core/Diagnostics/StressTest.cpp
+    OmnixRuntime/Source/Core/Logging/Logger.cpp
+    OmnixRuntime/Source/Core/Memory/AllocationTracker.cpp
+    OmnixRuntime/Source/Core/Memory/AllocatorValidation.cpp
+    OmnixRuntime/Source/Core/Memory/FreeListAllocator.cpp
+    OmnixRuntime/Source/Core/Memory/LinearAllocator.cpp
+    OmnixRuntime/Source/Core/Memory/PoolAllocator.cpp
+    OmnixRuntime/Source/Core/Memory/StackAllocator.cpp
+    OmnixRuntime/Source/Core/Timer.cpp
+    OmnixRuntime/Source/ECS/ComponentManager.cpp
+    OmnixRuntime/Source/ECS/Coordinator.cpp
+    OmnixRuntime/Source/ECS/EntityManager.cpp
+    OmnixRuntime/Source/ECS/SystemManager.cpp
+    OmnixRuntime/Source/Input/InputManager.cpp
+    OmnixRuntime/Source/Physics/Private/PhysicsConversion.cpp
+    OmnixRuntime/Source/Physics/Private/PhysicsDebugDraw.cpp
+    OmnixRuntime/Source/Physics/Private/PhysicsValidation.cpp
+    OmnixRuntime/Source/Physics/Private/PhysicsWorld.cpp
+    OmnixRuntime/Source/Rendering/Core/FramebufferManager.cpp
+    OmnixRuntime/Source/Rendering/Core/RenderTargetManager.cpp
+    OmnixRuntime/Source/Rendering/Core/Renderer.cpp
+    OmnixRuntime/Source/Rendering/Debug/DebugDraw.cpp
+    OmnixRuntime/Source/Rendering/Debug/GPUProfiler.cpp
+    OmnixRuntime/Source/Rendering/GPUScene/GPUScene.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Arena/GeometryAllocator.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Arena/GeometryArena.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Arena/GeometryArenaStats.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Arena/GeometryUploader.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Assets/RVGAsset.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Assets/RVGRegistry.cpp
+    OmnixRuntime/Source/Rendering/Geometry/CapabilityTiers.cpp
+    OmnixRuntime/Source/Rendering/Geometry/MeshRenderer.cpp
+    OmnixRuntime/Source/Rendering/Geometry/Streaming/RVGPageStreamingManager.cpp
+    OmnixRuntime/Source/Rendering/Geometry/VisibilitySystem.cpp
+    OmnixRuntime/Source/Rendering/Graph/RenderGraph.cpp
+    OmnixRuntime/Source/Rendering/Lighting/DeferredLightingPass.cpp
+    OmnixRuntime/Source/Rendering/Lighting/EnvironmentSystem.cpp
+    OmnixRuntime/Source/Rendering/Lighting/ShadowRenderer.cpp
+    OmnixRuntime/Source/Rendering/Lighting/SkyLightRenderer.cpp
+    OmnixRuntime/Source/Rendering/Materials/MaterialSystem.cpp
+    OmnixRuntime/Source/Rendering/Materials/ShaderLibrary.cpp
+    OmnixRuntime/Source/Rendering/PostProcess/ExposurePass.cpp
+    OmnixRuntime/Source/Rendering/PostProcess/TonemapPass.cpp
+    OmnixRuntime/Source/Rendering/Scene/RenderSceneExtractor.cpp
+    OmnixRuntime/Source/Rendering/Visibility/Frustum.cpp
+    OmnixRuntime/Source/Rendering/Visibility/FrustumCullPass.cpp
+    OmnixRuntime/Source/Rendering/Visibility/HZBPass.cpp
+    OmnixRuntime/Source/Rendering/Visibility/IndirectCommandBuildPass.cpp
+    OmnixRuntime/Source/Rendering/Visibility/OcclusionCullPass.cpp
+    OmnixRuntime/Source/Rendering/Visibility/RVGClusterCullPass.cpp
+    OmnixRuntime/Source/RenderingEngine/Core/Engine/DebugLabels.cpp
+    OmnixRuntime/Source/RenderingEngine/Core/Engine/EngineResources.cpp
+    OmnixRuntime/Source/RenderingEngine/Platform/Time/Timer.cpp
+    OmnixRuntime/Source/RenderingEngine/Platform/window/Window.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/gltf/GltfModel.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/Material.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/Mesh.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/ModelLoader.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/Scene.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/Shader.cpp
+    OmnixRuntime/Source/RenderingEngine/Renderer/scene/Texture.cpp
+    OmnixRuntime/Source/RenderingEngine/Runtime/Render_Scene/SceneBuilder.cpp
+    OmnixRuntime/Source/RenderingEngine/Runtime/engine/EngineLoop.cpp
+    OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanDevice.cpp
+    OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanInstance.cpp
+    OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanMemory.cpp
+    OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanSwapChain.cpp
+    OmnixRuntime/Source/Runtime/AllocationDiagnostics.cpp
+    OmnixRuntime/Source/Runtime/AssetCacheTests.cpp
+    OmnixRuntime/Source/Runtime/AssetLoadingStressTests.cpp
+    OmnixRuntime/Source/Runtime/AssetManager.cpp
+    OmnixRuntime/Source/Runtime/AssetRegistry.cpp
+    OmnixRuntime/Source/Runtime/AssetRegistryTests.cpp
+    OmnixRuntime/Source/Runtime/Audio/AudioSystem.cpp
+    OmnixRuntime/Source/Runtime/Audio/MiniaudioBackend.cpp
+    OmnixRuntime/Source/Runtime/BinaryReader.cpp
+    OmnixRuntime/Source/Runtime/BinaryWriter.cpp
+    OmnixRuntime/Source/Runtime/CVarSystem.cpp
+    OmnixRuntime/Source/Runtime/ConfigSystem.cpp
+    OmnixRuntime/Source/Runtime/EngineRuntime.cpp
+    OmnixRuntime/Source/Runtime/FileWatcher.cpp
+    OmnixRuntime/Source/Runtime/FormatTests.cpp
+    OmnixRuntime/Source/Runtime/GLTFImporter.cpp
+    OmnixRuntime/Source/Runtime/GPUSceneTests.cpp
+    OmnixRuntime/Source/Runtime/GeometryArenaTests.cpp
+    OmnixRuntime/Source/Runtime/GeometryHandleTests.cpp
+    OmnixRuntime/Source/Runtime/GoldenImageTests.cpp
+    OmnixRuntime/Source/Runtime/HotReloadStressTests.cpp
+    OmnixRuntime/Source/Runtime/HotReloadSystem.cpp
+    OmnixRuntime/Source/Runtime/MeshImportTests.cpp
+    OmnixRuntime/Source/Runtime/MeshImporter.cpp
+    OmnixRuntime/Source/Runtime/MeshReloadTests.cpp
+    OmnixRuntime/Source/Runtime/ModuleManager.cpp
+    OmnixRuntime/Source/Runtime/OBJImporter.cpp
+    OmnixRuntime/Source/Runtime/OwnershipValidation.cpp
+    OmnixRuntime/Source/Runtime/Package.cpp
+    OmnixRuntime/Source/Runtime/PackageBuilder.cpp
+    OmnixRuntime/Source/Runtime/PackageManager.cpp
+    OmnixRuntime/Source/Runtime/PackageTests.cpp
+    OmnixRuntime/Source/Runtime/PluginManager.cpp
+    OmnixRuntime/Source/Runtime/RuntimeConsole.cpp
+    OmnixRuntime/Source/Runtime/RuntimeDiagnostics.cpp
+    OmnixRuntime/Source/Runtime/RuntimeLoaders.cpp
+    OmnixRuntime/Source/Runtime/ShaderReloadTests.cpp
+    OmnixRuntime/Source/Runtime/TextureImportTests.cpp
+    OmnixRuntime/Source/Runtime/TextureImporter.cpp
+    OmnixRuntime/Source/Runtime/TextureReloadTests.cpp
+    OmnixRuntime/Source/Runtime/TimeManager.cpp
+    OmnixRuntime/Source/Runtime/UUIDSystem.cpp
+    OmnixRuntime/Source/Runtime/World/WorldFileReader.cpp
+    OmnixRuntime/Source/Runtime/World/WorldFileWriter.cpp
+    OmnixRuntime/Source/Runtime/World/WorldManager.cpp
+    OmnixRuntime/Source/Runtime/World/WorldZone.cpp
+    OmnixRuntime/Source/Runtime/World/WorldZoneReader.cpp
+    OmnixRuntime/Source/Runtime/World/WorldZoneWriter.cpp
+    OmnixRuntime/Source/Scene/Camera.cpp
+    OmnixRuntime/Source/Scene/ComponentFactory.cpp
+    OmnixRuntime/Source/Scene/Prefab.cpp
+    OmnixRuntime/Source/Scene/PrefabRegistry.cpp
+    OmnixRuntime/Source/Scene/Scene.cpp
+    OmnixRuntime/Source/Scene/SceneLoader.cpp
+    OmnixRuntime/Source/Scene/SceneManager.cpp
+    OmnixRuntime/Source/Scene/SceneObject.cpp
+    OmnixRuntime/Source/Scene/SceneSerializer.cpp
+    OmnixRuntime/Source/Scene/SceneValidator.cpp
+    OmnixRuntime/Source/Scene/Transform.cpp
+    OmnixRuntime/Source/Serializer/ECS/ECS.cpp
+    OmnixRuntime/Source/Serializer/ECS/SchemaRegistry.cpp
+    OmnixRuntime/Source/Serializer/ECS/SerializationBridge.cpp
+    OmnixRuntime/Source/Serializer/ECS/Snapshot/ComponentSnapshot.cpp
+    OmnixRuntime/Source/Serializer/ECS/Snapshot/ECSSnapshot.cpp
+    OmnixRuntime/Source/Serializer/ECS/Snapshot/FieldSnapshot.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaDeserializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaSerializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaSnapshot.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaTracker.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryDeserializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryReader.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinarySerializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryWriter.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/NormalDeserializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/NormalSerializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Text/TextDeserializer.cpp
+    OmnixRuntime/Source/Serializer/Serialization/Normal/Text/TextSerializer.cpp
     RenderingEngine/ThirdParty/tinyglf/tiny_gltf_impl.cpp
-    RenderingEngine/Core/Engine/DebugLabels.cpp
-    RenderingEngine/Core/Engine/EngineResources.cpp
+    ThirdParty/ImGuizmo/ImGuizmo.cpp
 )
-target_include_directories(RenderingEngine PUBLIC ${ENGINE_INCLUDE_DIRS})
-target_link_libraries(RenderingEngine PUBLIC EngineCore Vulkan::Vulkan "${GLFW_TARGET}" user32 gdi32 shell32 imgui)
-if(COMMAND target_precompiled_headers)
-    target_precompiled_headers(RenderingEngine PRIVATE RenderingEngine/Core/pch.h)
+target_include_directories(OmnixRuntime PUBLIC ${ENGINE_INCLUDE_DIRS})
+target_link_libraries(OmnixRuntime PUBLIC Vulkan::Vulkan imgui "${GLFW_TARGET}")
+if(MSVC)
+    target_link_libraries(OmnixRuntime PUBLIC unofficial::omniverse-physx-sdk::sdk)
 endif()
 
+# -- Layer 2A: OmnixEditor --
+add_library(OmnixEditor STATIC
+    OmnixEditor/Source/Editor/AssetImportService.cpp
+    OmnixEditor/Source/Editor/Commands/EditorEntityCommands.cpp
+    OmnixEditor/Source/Editor/EditorDirtyState.cpp
+    OmnixEditor/Source/Editor/EditorFileService.cpp
+    OmnixEditor/Source/Editor/EditorLayer.cpp
+    OmnixEditor/Source/Editor/EditorLayout.cpp
+    OmnixEditor/Source/Editor/EditorNotificationService.cpp
+    OmnixEditor/Source/Editor/EditorSceneService.cpp
+    OmnixEditor/Source/Editor/EditorSelection.cpp
+    OmnixEditor/Source/Editor/EditorTheme.cpp
+    OmnixEditor/Source/Editor/Panels/AssetBrowserPanel.cpp
+    OmnixEditor/Source/Editor/Panels/ConsolePanel.cpp
+    OmnixEditor/Source/Editor/Panels/ImportLogPanel.cpp
+    OmnixEditor/Source/Editor/Panels/InspectorPanel.cpp
+    OmnixEditor/Source/Editor/Panels/SceneHierarchyPanel.cpp
+    OmnixEditor/Source/Editor/Panels/ViewportPanel.cpp
+    OmnixEditor/Source/Editor/PlatformFileDialog.cpp
+    OmnixEditor/Source/Editor/Utils/EditorMath.cpp
+    OmnixEditor/Source/Editor/Utils/ImGuiHelpers.cpp
+    OmnixEditor/Source/Editor/Widgets/ComponentWidgets.cpp
+    OmnixEditor/Source/Editor/Widgets/TransformWidget.cpp
+    OmnixEditor/Source/Rendering/Editor/DebugViewRenderer.cpp
+    OmnixEditor/Source/Rendering/Editor/EditorOverlayPass.cpp
+    OmnixEditor/Source/Rendering/Editor/EditorViewportRenderer.cpp
+    OmnixEditor/Source/Rendering/Editor/GridRenderer.cpp
+    OmnixEditor/Source/Rendering/Editor/SelectionOutlinePass.cpp
+    ThirdParty/ImGuizmo/ImGuizmo.cpp
+)
+target_include_directories(OmnixEditor PUBLIC ${ENGINE_INCLUDE_DIRS})
+target_link_libraries(OmnixEditor PUBLIC OmnixRuntime imgui)
+
+# -- Layer 2B: OmnixGame --
+add_library(OmnixGame STATIC
+    OmnixGame/Source/Components/Behavior/MovementCapability.cpp
+    OmnixGame/Source/Gameplay/CheckpointSystem.cpp
+    OmnixGame/Source/Gameplay/GameMode.cpp
+    OmnixGame/Source/Gameplay/GameplayEventBus.cpp
+    OmnixGame/Source/Gameplay/Objectives/ObjectiveSystem.cpp
+    OmnixGame/Source/Gameplay/Save/GameplaySaveSystem.cpp
+    OmnixGame/Source/Gameplay/StateObjects/ObjectActivationSystem.cpp
+    OmnixGame/Source/Gameplay/Systems/InteractionSystem.cpp
+    OmnixGame/Source/Gameplay/UI/GameplayHUD.cpp
+    OmnixGame/Source/Gameplay/Validation/GameplayValidator.cpp
+    OmnixGame/Source/Gameplay/VerticalSliceGameMode.cpp
+)
+target_include_directories(OmnixGame PUBLIC ${ENGINE_INCLUDE_DIRS})
+target_link_libraries(OmnixGame PUBLIC OmnixRuntime)
+
+# -------------------------------
+# Shader Compilation Target
+# -------------------------------
 find_program(GLSLC glslc PATHS ENV VULKAN_SDK)
 if(GLSLC)
     add_custom_target(CompileShaders ALL
@@ -261,110 +339,26 @@ if(GLSLC)
         COMMAND powershell.exe -Command "${GLSLC} -fshader-stage=frag ${CMAKE_SOURCE_DIR}/shaders/dof.frag -o ${CMAKE_SOURCE_DIR}/shaders/dof.spv"
         COMMENT "Compiling Vulkan shaders..."
     )
-    add_dependencies(RenderingEngine CompileShaders)
+    add_dependencies(OmnixRuntime CompileShaders)
 endif()
 
-# -------------------------------
-# EngineRuntime Core
-# -------------------------------
-add_library(EngineRuntime
-    Runtime/Private/EngineRuntime.cpp
-    Runtime/Private/Gameplay/GameMode.cpp
-    Runtime/Private/Gameplay/Save/GameplaySaveSystem.cpp
-    Runtime/Private/Gameplay/VerticalSliceGameMode.cpp
-    Runtime/Private/Gameplay/GameplayEventBus.cpp
-    Runtime/Private/Gameplay/Objectives/ObjectiveSystem.cpp
-    Runtime/Private/Gameplay/StateObjects/ObjectActivationSystem.cpp
-    Runtime/Private/Gameplay/CheckpointSystem.cpp
-    Runtime/Private/Gameplay/UI/GameplayHUD.cpp
-    Runtime/Private/Gameplay/Systems/InteractionSystem.cpp
-    Runtime/Private/Gameplay/Validation/GameplayValidator.cpp
-    Runtime/Private/Audio/MiniaudioBackend.cpp
-    Runtime/Private/Audio/AudioSystem.cpp
-    Runtime/Private/Editor/EditorLayer.cpp
-    Runtime/Private/Editor/EditorTheme.cpp
-    Runtime/Private/Editor/EditorLayout.cpp
-    Runtime/Private/Editor/PlatformFileDialog.cpp
-    Runtime/Private/Editor/AssetImportService.cpp
-    ThirdParty/ImGuizmo/ImGuizmo.cpp
-    Runtime/Private/Editor/EditorSelection.cpp
-    Runtime/Private/Editor/EditorDirtyState.cpp
-    Runtime/Private/Editor/Utils/EditorMath.cpp
-    Runtime/Private/Editor/Utils/ImGuiHelpers.cpp
-    Runtime/Private/Editor/Commands/EditorEntityCommands.cpp
-    Runtime/Private/Editor/EditorFileService.cpp
-    Runtime/Private/Editor/EditorNotificationService.cpp
-    Runtime/Private/Editor/EditorSceneService.cpp
-    Runtime/Private/Editor/Panels/SceneHierarchyPanel.cpp
-    Runtime/Private/Editor/Panels/InspectorPanel.cpp
-    Runtime/Private/Editor/Panels/ConsolePanel.cpp
-    Runtime/Private/Editor/Panels/ImportLogPanel.cpp
-    Runtime/Private/Editor/Panels/ViewportPanel.cpp
-    Runtime/Private/Editor/Panels/AssetBrowserPanel.cpp
-    Runtime/Private/Editor/Widgets/TransformWidget.cpp
-    Runtime/Private/Editor/Widgets/ComponentWidgets.cpp
-    Runtime/Private/RuntimeDiagnostics.cpp
-    Runtime/Private/AllocationDiagnostics.cpp
-    Runtime/Private/ModuleManager.cpp
-    Runtime/Private/PluginManager.cpp
-    Runtime/Private/ConfigSystem.cpp
-    Runtime/Private/UUIDSystem.cpp
-    Runtime/Private/CVarSystem.cpp
-    Runtime/Private/RuntimeConsole.cpp
-    Runtime/Private/TimeManager.cpp
-    Runtime/Private/OwnershipValidation.cpp
-    Core/Diagnostics/StressTest.cpp
-    Runtime/Private/AssetRegistry.cpp
-    Runtime/Private/AssetRegistryTests.cpp
-    Runtime/Private/GeometryHandleTests.cpp
-    Runtime/Private/GeometryArenaTests.cpp
-    Runtime/Private/GPUSceneTests.cpp
-    Runtime/Private/GoldenImageTests.cpp
-    Runtime/Private/BinaryWriter.cpp
-    Runtime/Private/BinaryReader.cpp
-    Runtime/Private/World/WorldFileReader.cpp
-    Runtime/Private/World/WorldFileWriter.cpp
-    Runtime/Private/World/WorldZone.cpp
-    Runtime/Private/World/WorldZoneReader.cpp
-    Runtime/Private/World/WorldZoneWriter.cpp
-    Runtime/Private/World/WorldManager.cpp
-    Runtime/Private/FormatTests.cpp
-    Runtime/Private/TextureImporter.cpp
-    Runtime/Private/TextureImportTests.cpp
-    Runtime/Private/OBJImporter.cpp
-    Runtime/Private/GLTFImporter.cpp
-    Runtime/Private/MeshImporter.cpp
-    Runtime/Private/MeshImportTests.cpp
-    Runtime/Private/AssetManager.cpp
-    Runtime/Private/RuntimeLoaders.cpp
-    Runtime/Private/AssetCacheTests.cpp
-    Runtime/Private/AssetLoadingStressTests.cpp
-    Runtime/Private/FileWatcher.cpp
-    Runtime/Private/HotReloadSystem.cpp
-    Runtime/Private/TextureReloadTests.cpp
-    Runtime/Private/ShaderReloadTests.cpp
-    Runtime/Private/MeshReloadTests.cpp
-    Runtime/Private/HotReloadStressTests.cpp
-    Runtime/Private/PackageBuilder.cpp
-    Runtime/Private/Package.cpp
-    Runtime/Private/PackageManager.cpp
-    Runtime/Private/PackageTests.cpp
-)
-target_link_libraries(EngineRuntime PUBLIC EngineCore ECS Serialization Input Scene RenderingEngine imgui Physics)
-target_include_directories(EngineRuntime PUBLIC ${ENGINE_INCLUDE_DIRS})
+# Precompiled Header Configuration
+if(COMMAND target_precompiled_headers)
+    target_precompiled_headers(OmnixRuntime PRIVATE OmnixRuntime/Include/RenderingEngine/Core/pch.h)
+endif()
 
 # -------------------------------
 # Applications
 # -------------------------------
 add_executable(Application
-    main.cpp
-    Core/Application.cpp
+    OmnixApp/Source/main.cpp
+    OmnixApp/Source/Core/Application.cpp
 )
-target_link_libraries(Application PRIVATE EngineRuntime "${GLFW_TARGET}")
-target_include_directories(Application PRIVATE ${ENGINE_INCLUDE_DIRS})
+target_link_libraries(Application PRIVATE OmnixGame OmnixEditor OmnixRuntime "${GLFW_TARGET}")
+target_include_directories(Application PRIVATE ${ENGINE_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/OmnixApp/Include)
 
 # -------------------------------
-# Tools
+# Tools & Schedulers
 # -------------------------------
 add_executable(OmnixRVGCooker
     Tools/RVGCooker/RVGCookerMain.cpp
@@ -377,22 +371,13 @@ add_executable(OmnixRVGCooker
     Tools/RVGCooker/RVGPagePacker.cpp
     Tools/RVGCooker/RVGWriter.cpp
 )
-target_link_libraries(OmnixRVGCooker PRIVATE EngineCore)
+target_link_libraries(OmnixRVGCooker PRIVATE OmnixRuntime)
 target_include_directories(OmnixRVGCooker PRIVATE ${ENGINE_INCLUDE_DIRS})
 
-# add_executable(serialization_test Test/SerializationTest.cpp)
-# target_link_libraries(serialization_test PRIVATE EngineCore ECS Serialization)
-# target_include_directories(serialization_test PRIVATE ${ENGINE_INCLUDE_DIRS})
-
-add_executable(sampler ECS/sampler.cpp)
-target_link_libraries(sampler PRIVATE EngineCore ECS)
+add_executable(sampler Tools/ECSSampler/sampler.cpp)
+target_link_libraries(sampler PRIVATE OmnixRuntime)
 target_include_directories(sampler PRIVATE ${ENGINE_INCLUDE_DIRS})
 
-add_executable(transform_tests Scene/tests/TransformTests.cpp)
-target_link_libraries(transform_tests PRIVATE Scene EngineCore)
+add_executable(transform_tests OmnixRuntime/Source/Scene/tests/TransformTests.cpp)
+target_link_libraries(transform_tests PRIVATE OmnixRuntime)
 target_include_directories(transform_tests PRIVATE ${ENGINE_INCLUDE_DIRS})
-
-# Phase 2: RenderQueue Unit Test
-# add_executable(engine_tests RenderingEngine/Renderer/tests/RenderQueue_test.cpp)
-# target_include_directories(engine_tests PRIVATE ${ENGINE_INCLUDE_DIRS})
-# target_link_libraries(engine_tests PRIVATE EngineCore RenderingEngine)

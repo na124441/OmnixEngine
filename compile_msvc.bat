@@ -1,6 +1,6 @@
 @echo off
 taskkill /f /im Application.exe 2>nul
-call "d:\New folder\.vsconfig\VC\Auxiliary\Build\vcvarsall.bat" x64
+call "d:\MSCV\VC\Auxiliary\Build\vcvarsall.bat" x64
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/light_culling.comp -o shaders/light_culling.spv
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/frustum_cull.comp -o shaders/frustum_cull.spv
 "C:\VulkanSDK\1.4.341.1\Bin\glslc.exe" -fshader-stage=comp shaders/build_indirect_commands.comp -o shaders/build_indirect_commands.spv

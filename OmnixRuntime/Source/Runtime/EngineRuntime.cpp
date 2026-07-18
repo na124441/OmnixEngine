@@ -1,0 +1,934 @@
+#include "Runtime/EngineRuntime.h"
+#include "Editor/EditorLayer.h"
+#include "Gameplay/GameMode.h"
+#include "Gameplay/GameplayEventBus.h"
+#include "Runtime/Audio/AudioSystem.h"
+#include "Gameplay/Save/GameplaySaveSystem.h"
+#include "Runtime/RuntimeContext.h"
+#include "Runtime/AssetRegistry.h"
+#include "Runtime/World/WorldManager.h"
+#include "Runtime/RuntimeState.h"
+#include "Runtime/AllocationDiagnostics.h"
+#include "Runtime/OwnershipValidation.h"
+#include "Runtime/RuntimeStageTracker.h"
+#include "Runtime/ProfilingHooks.h"
+#include "Core/Diagnostics/Diagnostics.h"
+#include "Core/Diagnostics/Assert.h"
+#include "Core/Diagnostics/Validation.h"
+#include "Core/Memory/AllocationTracker.h"
+#include "Core/Memory/AllocatorValidation.h"
+#include "Core/Diagnostics/StressTest.h"
+#include "Runtime/AssetRegistryTests.h"
+#include "Runtime/FormatTests.h"
+#include "Runtime/TextureImportTests.h"
+#include "Runtime/MeshImportTests.h"
+#include "Runtime/AssetCacheTests.h"
+#include "Runtime/AssetLoadingStressTests.h"
+#include "Runtime/HotReloadTests.h"
+#include "Runtime/PackageTests.h"
+#include "Runtime/GeometryHandleTests.h"
+#include "Runtime/GoldenImageTests.h"
+#include <cstdlib>
+
+#include "Physics/Public/PhysicsWorld.h"
+#include "Physics/Public/PhysicsDebugDraw.h"
+
+// Subsystem Concrete Headers
+#include "Runtime/ModuleManager.h"
+#include "Runtime/ServiceRegistry.h"
+#include "Runtime/PluginManager.h"
+#include "Runtime/ConfigSystem.h"
+#include "Runtime/EventBus.h"
+#include "Runtime/CVarSystem.h"
+#include "Runtime/RuntimeConsole.h"
+#include "Runtime/TimeManager.h"
+#include "Core/World.h"
+#include "ECS/GroundSectionSystem.h"
+#include "Input/InputManager.h"
+#include "EventManagement/EventManager.h"
+#include "Systems/Scheduler/SystemScheduler.h"
+#include "Scene/SceneManager.h"
+#include "RenderingEngine/Runtime/engine/EngineLoop.h"
+#include "RenderingEngine/Runtime/Resources/AssetCache.h"
+#include "Serializer/ECS/SchemaRegistry.h"
+#include "Physics/Public/PhysicsWorld.h"
+#include "Gameplay/Systems/InteractionSystem.h"
+#include "ECS/BoundsUpdateSystem.h"
+#include "ECS/ZoneMembershipSystem.h"
+
+#include "Core/Logger.h"
+#include "Core/Timer.h"
+
+#include <iostream>
+#include <chrono>
+
+namespace eng::runtime {
+
+    EngineRuntime::EngineRuntime() {
+        m_State.store(RuntimeState::Uninitialized, std::memory_order_relaxed);
+    }
+
+    EngineRuntime::~EngineRuntime() {
+        Shutdown();
+    }
+
+    void EngineRuntime::InputThreadWorker() {
+        while (m_InputThreadRunning.load(std::memory_order_relaxed)) {
+            std::string line;
+            if (std::getline(std::cin, line)) {
+                // If input is active, process it
+                if (m_Input) {
+                    // We can post CLI commands here or push to input system queue
+                    // For compatibility, we can trigger rebindings or gameplay commands
+                    if (line == "quit") {
+                        LOG_INFO("[Runtime] CLI input requested shutdown.");
+                        if (m_Renderer) {
+                            static_cast<EngineLoop*>(m_Renderer.get())->RequestExit("CLI input command: quit");
+                        }
+                        m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
+                    }
+                }
+            }
+        }
+    }
+
+    bool EngineRuntime::Initialize(int argc, char* argv[]) {
+        m_State.store(RuntimeState::Initializing, std::memory_order_relaxed);
+        LOG_INFO("[Runtime] Beginning EngineRuntime Initialization...");
+
+        bool failECS = false;
+        bool failRenderer = false;
+        bool testMemory = false;
+        bool testStress = false;
+        bool testAssets = false;
+        bool testFormats = false;
+        bool testTextures = false;
+        bool testMeshes = false;
+        bool testLoad = false;
+        bool testReload = false;
+        bool testPackage = false;
+        bool testGolden = false;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i]) {
+                std::string arg(argv[i]);
+                if (arg == "--test-fail-ecs") {
+                    failECS = true;
+                } else if (arg == "--test-fail-renderer") {
+                    failRenderer = true;
+                } else if (arg == "--test-memory") {
+                    testMemory = true;
+                } else if (arg == "--test-stress") {
+                    testStress = true;
+                } else if (arg == "--test-assets") {
+                    testAssets = true;
+                } else if (arg == "--test-formats") {
+                    testFormats = true;
+                } else if (arg == "--test-textures") {
+                    testTextures = true;
+                } else if (arg == "--test-meshes") {
+                    testMeshes = true;
+                } else if (arg == "--test-load") {
+                    testLoad = true;
+                } else if (arg == "--test-reload") {
+                    testReload = true;
+                } else if (arg == "--test-package") {
+                    testPackage = true;
+                } else if (arg == "--test-rvg-golden") {
+                    testGolden = true;
+                } else if (arg == "--editor") {
+                    m_Context.mode = RuntimeMode::Editor;
+                }
+            }
+        }
+
+        auto ExitTest = [](bool success) {
+            eng::memory::s_AllocationHookEnabled = false;
+            std::exit(success ? 0 : 1);
+        };
+
+        if (testMemory) {
+            // Run stress tests
+            bool success = eng::memory::RunMemoryValidationTests();
+            ExitTest(success);
+        }
+
+        if (testStress) {
+            // Run runtime stress tests
+            bool success = eng::diagnostics::RunRuntimeStressTests();
+            ExitTest(success);
+        }
+
+        if (testAssets) {
+            // Run asset registry tests & geometry handle tests
+            bool success = eng::runtime::RunAssetRegistryTests();
+            if (success) {
+                success = eng::renderer::RunGeometryHandleTests();
+            }
+            ExitTest(success);
+        }
+
+        if (testGolden) {
+            // Run golden-image comparison test
+            bool success = eng::renderer::RunGoldenImageTests();
+            ExitTest(success);
+        }
+
+        if (testFormats) {
+            // Run format validation tests
+            bool success = eng::runtime::RunFormatTests();
+            ExitTest(success);
+        }
+
+        if (testTextures) {
+            // Run texture import tests
+            bool success = eng::runtime::RunTextureImportTests();
+            ExitTest(success);
+        }
+
+        if (testMeshes) {
+            // Run mesh import tests
+            bool success = eng::runtime::RunMeshImportTests();
+            ExitTest(success);
+        }
+
+        if (testLoad) {
+            // Run asset loading cache and stress tests
+            bool success = eng::runtime::RunAssetCacheTests() && eng::runtime::RunAssetLoadingStressTests();
+            ExitTest(success);
+        }
+
+        if (testReload) {
+            // Run hot reload tests
+            bool success = eng::runtime::RunTextureReloadTests() &&
+                           eng::runtime::RunShaderReloadTests() &&
+                           eng::runtime::RunMeshReloadTests() &&
+                           eng::runtime::RunHotReloadStressTests();
+            ExitTest(success);
+        }
+
+        if (testPackage) {
+            // Run package pipeline validation tests
+            bool success = eng::runtime::RunPackageTests();
+            ExitTest(success);
+        }
+
+        if (failECS) {
+            OMNIX_FATAL_ASSERT(false, "Forced ECS failure via CLI argument --test-fail-ecs");
+        }
+        
+        auto startTime = std::chrono::high_resolution_clock::now();
+
+        // 1. Core Services (Logger and Timer are static and already initialized)
+        Timer::Init();
+
+        // Initialize Core Subsystems
+        m_ConfigSystem = std::make_unique<ConfigSystem>();
+        m_ConfigSystem->Initialize(argc, argv);
+
+        m_CVarSystem = std::make_unique<CVarSystem>();
+        
+        m_RuntimeConsole = std::make_unique<RuntimeConsole>();
+        m_RuntimeConsole->Initialize(m_CVarSystem.get());
+
+        m_TimeManager = std::make_unique<TimeManager>();
+        m_TimeManager->Initialize();
+
+        m_ModuleManager = std::make_unique<ModuleManager>();
+        m_ServiceRegistry = std::make_unique<ServiceRegistry>();
+        m_PluginManager = std::make_unique<PluginManager>();
+        m_EventBus = std::make_unique<EventBus>();
+
+        // 2. Input System Initialization
+        m_Input = std::make_unique<InputManager>();
+        TrackAllocation("Input", sizeof(InputManager));
+        RegisterSystemStartup("Input");
+        m_Input->Initialize();
+
+        // Event System Initialization
+        m_EventManager = std::make_unique<Omnix::EventManager>();
+        TrackAllocation("Events", sizeof(Omnix::EventManager));
+        RegisterSystemStartup("Events");
+
+        // Gameplay Event Bus Initialization
+        m_GameplayEventBus = std::make_unique<GameplayEventBus>(m_EventManager.get());
+        TrackAllocation("GameplayEvents", sizeof(GameplayEventBus));
+
+        m_AudioSystem = std::make_unique<AudioSystem>();
+        TrackAllocation("Audio", sizeof(AudioSystem));
+
+        m_GameplaySaveSystem = std::make_unique<GameplaySaveSystem>();
+        TrackAllocation("SaveSystem", sizeof(GameplaySaveSystem));
+
+        // 3. Spawning CLI Input Thread
+        // The editor is a GUI application; stdin can be redirected, closed, or contain
+        // stale console input. Do not let it control editor lifetime.
+        if (m_Context.mode != RuntimeMode::Editor) {
+            m_InputThreadRunning.store(true, std::memory_order_relaxed);
+            m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
+        }
+
+        // Metadata Schema Registry
+        m_SchemaRegistry = std::make_unique<ComponentSchemaRegistry>();
+        TrackAllocation("SchemaRegistry", sizeof(ComponentSchemaRegistry));
+
+        // 4. ECS World Initialization
+        auto world = std::make_unique<World>();
+        TrackAllocation("ECS", sizeof(World));
+        RegisterSystemStartup("ECS");
+        world->Initialize();
+        m_ECS = std::move(world); // Keep owning pointer in m_ECS!
+
+        // 5. Scheduler Initialization
+        m_Scheduler = std::make_unique<SystemScheduler>();
+        TrackAllocation("Scheduler", sizeof(SystemScheduler));
+        RegisterSystemStartup("Scheduler");
+        m_Scheduler->Initialize();
+
+        // 6. Renderer (EngineLoop) Initialization
+        auto rendererLoop = std::make_unique<EngineLoop>();
+        TrackAllocation("Renderer", sizeof(EngineLoop));
+        RegisterSystemStartup("Renderer");
+        rendererLoop->SetExternalWorld(static_cast<World*>(m_ECS.get()));
+        
+        if (failRenderer) {
+            LOG_ERROR("[Runtime] Renderer Initialization failed (forced via CLI argument --test-fail-renderer)!");
+            m_Renderer = std::move(rendererLoop);
+            Shutdown();
+            return false;
+        }
+
+        eng::core::Result renderResult = rendererLoop->Initialize();
+        if (renderResult.IsFailure()) {
+            LOG_ERROR("[Runtime] Renderer Initialization failed!");
+            m_Renderer = std::move(rendererLoop);
+            Shutdown();
+            return false;
+        }
+        m_Renderer = std::move(rendererLoop);
+
+        // Initialize PhysicsWorld
+        m_PhysicsWorld = std::make_unique<eng::physics::PhysicsWorld>();
+        TrackAllocation("PhysicsWorld", sizeof(eng::physics::PhysicsWorld));
+        RegisterSystemStartup("PhysicsWorld");
+        m_PhysicsWorld->Initialize();
+
+        // 7. Assets Initialization (Retrieve from device or create)
+        m_Assets = std::make_unique<AssetCache>(nullptr);
+        TrackAllocation("Assets", sizeof(AssetCache));
+        RegisterSystemStartup("Assets");
+
+        m_AssetRegistry = std::make_unique<AssetRegistry>();
+        m_AssetRegistry->LoadRegistry("AssetRegistry.json");
+        m_AssetRegistry->ScanProjectAssets();
+        if (m_AssetRegistry->GetAssets().empty()) {
+            m_AssetRegistry->RegisterAsset("Assets/Models/cube.obj", AssetType::Mesh);
+            m_AssetRegistry->RegisterAsset("Assets/Models/pyramid.obj", AssetType::Mesh);
+            m_AssetRegistry->RegisterAsset("Assets/Materials/brick.omnixmat", AssetType::Material);
+            m_AssetRegistry->RegisterAsset("Assets/Materials/wood.omnixmat", AssetType::Material);
+            m_AssetRegistry->RegisterAsset("Assets/Textures/brick_albedo.png", AssetType::Texture);
+            m_AssetRegistry->RegisterAsset("Assets/Textures/wood_albedo.png", AssetType::Texture);
+            m_AssetRegistry->SaveRegistry("AssetRegistry.json");
+        }
+
+        // 8. Scene System (refactored to standard instanced class)
+        auto sceneManager = std::make_unique<SceneManager>(&m_ECS->getCoordinator());
+        sceneManager->SetAssetRegistry(m_AssetRegistry.get());
+        m_Scenes = std::move(sceneManager);
+        TrackAllocation("Scene", sizeof(SceneManager));
+        RegisterSystemStartup("Scene");
+
+        // WorldManager Subsystem Initialization
+        m_WorldManager = std::make_unique<Omnix::WorldManager>(m_Assets.get(), m_AssetRegistry.get(), m_Scenes.get());
+        TrackAllocation("WorldManager", sizeof(Omnix::WorldManager));
+        RegisterSystemStartup("WorldManager");
+
+        // 9. Populate Context
+        m_Context.renderer = m_Renderer.get();
+        m_Context.physicsWorld = m_PhysicsWorld.get();
+        m_Context.assets = m_Assets.get();
+        m_Context.assetRegistry = m_AssetRegistry.get();
+        
+        auto* loop = dynamic_cast<EngineLoop*>(m_Renderer.get());
+        if (loop) {
+            loop->SetAssetRegistry(m_AssetRegistry.get());
+        }
+
+        m_Context.scenes = m_Scenes.get();
+        m_Context.scheduler = m_Scheduler.get();
+        m_Context.ecs = m_ECS.get();
+        m_Context.input = m_Input.get();
+        m_Context.events = m_EventManager.get();
+        m_Context.gameplayEventBus = m_GameplayEventBus.get();
+        m_Context.audioSystem = m_AudioSystem.get();
+        m_Context.saveSystem = m_GameplaySaveSystem.get();
+        m_Context.worldManager = m_WorldManager.get();
+        m_Context.moduleManager = m_ModuleManager.get();
+        m_Context.serviceRegistry = m_ServiceRegistry.get();
+        m_Context.pluginManager = m_PluginManager.get();
+        m_Context.configSystem = m_ConfigSystem.get();
+        m_Context.eventBus = m_EventBus.get();
+        m_Context.cvarSystem = m_CVarSystem.get();
+        m_Context.runtimeConsole = m_RuntimeConsole.get();
+        m_Context.timeManager = m_TimeManager.get();
+        m_GameplaySaveSystem->Initialize(&m_Context);
+        m_Context.timing = &m_Timing;
+        m_Context.currentStage = &m_CurrentStage;
+
+        m_Context.swapECS = [this](std::unique_ptr<eng::runtime::IECSWorld> newECS) {
+            return this->SetECS(std::move(newECS));
+        };
+
+        // Initialize AudioSystem
+        RegisterSystemStartup("Audio");
+        if (!m_AudioSystem->Initialize(&m_Context)) {
+            LOG_ERROR("[Runtime] AudioSystem initialization failed!");
+            Shutdown();
+            return false;
+        }
+
+        // 10. Editor Layer Subsystem Initialization
+        if (m_Context.mode == RuntimeMode::Editor) {
+            m_Editor = std::make_unique<EditorLayer>();
+            TrackAllocation("Editor", sizeof(EditorLayer));
+            RegisterSystemStartup("Editor");
+            if (!m_Editor->Initialize(&m_Context)) {
+                LOG_ERROR("[Runtime] Editor initialization failed!");
+                Shutdown();
+                return false;
+            }
+        }
+
+        // Initialize dynamic modules registered so far
+        if (!m_ModuleManager->InitializeModules(m_Context)) {
+            LOG_ERROR("[Runtime] Module initialization failed!");
+            Shutdown();
+            return false;
+        }
+
+        auto endTime = std::chrono::high_resolution_clock::now();
+        m_StartupTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+        
+        LOG_INFO("[Runtime] EngineRuntime Initialized Successfully in %.2f ms", m_StartupTimeMs);
+        m_State.store(RuntimeState::Running, std::memory_order_relaxed);
+        return true;
+    }
+
+    void LogFrameDiagnostics(double dtSeconds);
+
+    void EngineRuntime::Run() {
+        if (GetState() != RuntimeState::Running) {
+            LOG_ERROR("[Runtime] Run() called on uninitialized runtime!");
+            return;
+        }
+
+        LOG_INFO("[Runtime] Engine entering main loop");
+        
+        using Clock = std::chrono::high_resolution_clock;
+        auto lastFrameTimePoint = Clock::now();
+        uint64_t frameIdx = 0;
+
+        while (IsRunning()) {
+            auto frameStart = Clock::now();
+            
+            // Calculate Delta Time
+            double dt = std::chrono::duration<double>(frameStart - lastFrameTimePoint).count();
+            lastFrameTimePoint = frameStart;
+
+            m_TimeManager->Update(static_cast<float>(dt));
+            float smoothDt = m_TimeManager->GetDeltaTime();
+
+            // Track active scene changes for physics registrations
+            static Scene* lastActiveScene = nullptr;
+            static SceneManager::TransitionState lastTransitionState = SceneManager::TransitionState::Running;
+            SceneManager* sceneMgr = dynamic_cast<SceneManager*>(m_Scenes.get());
+            Scene* currentActiveScene = sceneMgr ? sceneMgr->GetActiveScene() : nullptr;
+            SceneManager::TransitionState currentTransitionState = sceneMgr ? sceneMgr->GetTransitionState() : SceneManager::TransitionState::Running;
+            bool sceneChanged = (currentActiveScene != lastActiveScene) || 
+                                (currentTransitionState == SceneManager::TransitionState::Running && lastTransitionState != SceneManager::TransitionState::Running);
+            if (sceneChanged) {
+                lastActiveScene = currentActiveScene;
+                lastTransitionState = currentTransitionState;
+                if (m_PhysicsWorld && m_ECS) {
+                    m_PhysicsWorld->RegisterStaticColliders(m_ECS->getCoordinator());
+                    eng::physics::PhysicsDebugDraw::ClearDebugVisuals();
+                }
+            }
+
+            auto* rendererLoop = dynamic_cast<EngineLoop*>(m_Renderer.get());
+            if (rendererLoop && rendererLoop->GetSceneRenderer()) {
+                rendererLoop->GetSceneRenderer()->SetActiveScene(currentActiveScene);
+            }
+
+            // Frame Begin Stage
+            m_CurrentStage = FrameStage::FrameBegin;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("FrameBegin");
+                eng::core::g_Profiler.BeginFrame(frameIdx++);
+                if (m_ConfigSystem) {
+                    m_ConfigSystem->CheckForHotReload();
+                }
+            }
+
+            if (m_Editor) {
+                m_Editor->BeginFrame();
+            }
+
+            // Input Stage
+            m_CurrentStage = FrameStage::Input;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("Input");
+                if (m_Input) {
+                    m_Input->Update();
+                }
+            }
+
+            // Events Stage
+            m_CurrentStage = FrameStage::Events;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("Events");
+                if (m_EventManager) {
+                    m_EventManager->processQueue();
+                }
+                if (m_EventBus) {
+                    m_EventBus->ProcessQueue();
+                }
+            }
+
+            // PreUpdate Stage
+            m_CurrentStage = FrameStage::PreUpdate;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("PreUpdate");
+            }
+
+            // Update Stage
+            m_CurrentStage = FrameStage::Update;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            auto updateStart = Clock::now();
+            {
+                OMNIX_PROFILE_SCOPE("Update");
+                if (m_Scheduler) {
+                    static_cast<SystemScheduler*>(m_Scheduler.get())->RunPending();
+                }
+                if (m_Scenes) {
+                    m_Scenes->Update(smoothDt);
+                }
+                if (m_WorldManager) {
+                    m_WorldManager->Update(m_Context, smoothDt);
+                }
+                if (m_ECS) {
+                    m_ECS->Update(smoothDt);
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        if (auto zoneMemberSys = world->GetSystem<ZoneMembershipSystem>()) {
+                            zoneMemberSys->Update(smoothDt, m_ECS->getCoordinator(), m_WorldManager.get());
+                        }
+                        if (auto groundSys = world->GetSystem<GroundSectionSystem>()) {
+                            groundSys->Update(smoothDt, m_ECS->getCoordinator());
+                        }
+                    }
+
+                    bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
+                                          (m_Context.mode == RuntimeMode::Editor && 
+                                           (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                            m_Context.editorSimulationState == EditorSimulationState::Step));
+                    if (shouldSimulate) {
+                        auto& coordinator = m_ECS->getCoordinator();
+                        auto* world = dynamic_cast<World*>(m_ECS.get());
+                        if (world) {
+                            if (auto playerSys = world->GetSystem<PlayerSystem>()) {
+                                playerSys->Update(smoothDt, coordinator, m_Input.get());
+                            }
+                            if (auto physicsSys = world->GetSystem<PhysicsSystem>()) {
+                                physicsSys->Update(smoothDt, coordinator);
+                            }
+                        }
+                    }
+                }
+                if (m_ModuleManager) {
+                    m_ModuleManager->TickModules(smoothDt);
+                }
+                if (m_AudioSystem) {
+                    m_AudioSystem->Update(smoothDt);
+                }
+            }
+            auto updateEnd = Clock::now();
+            m_Timing.updateTime = std::chrono::duration<double>(updateEnd - updateStart).count();
+
+            // PostUpdate Stage
+            m_CurrentStage = FrameStage::PostUpdate;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("PostUpdate");
+            }
+
+            // Physics Stage
+            m_CurrentStage = FrameStage::Physics;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("Physics");
+                bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
+                                      (m_Context.mode == RuntimeMode::Editor && 
+                                       (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                        m_Context.editorSimulationState == EditorSimulationState::Step));
+                if (shouldSimulate && m_PhysicsWorld) {
+                    m_PhysicsWorld->FixedUpdate(smoothDt);
+                    auto& coordinator = m_ECS->getCoordinator();
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        auto playerControllerSys = coordinator.GetSystemByName("class eng::runtime::PlayerControllerSystem");
+                        auto triggerSys = world->GetSystem<TriggerSystem>();
+
+                        int steps = m_PhysicsWorld->GetStepsThisFrame();
+                        float fixedDt = m_PhysicsWorld->GetFixedTimestep();
+                        for (int i = 0; i < steps; ++i) {
+                            if (playerControllerSys) {
+                                playerControllerSys->FixedUpdate(m_PhysicsWorld.get(), coordinator, fixedDt);
+                            }
+                            if (triggerSys) {
+                                triggerSys->FixedUpdate(m_Context, fixedDt);
+                            }
+                        }
+                    }
+                } else {
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        if (auto triggerSys = world->GetSystem<TriggerSystem>()) {
+                            triggerSys->ClearOverlaps();
+                        }
+                    }
+                }
+            }
+            // Interaction Stage (Play Mode only)
+            {
+                bool shouldSimulate = (m_Context.mode == RuntimeMode::Game) ||
+                                      (m_Context.mode == RuntimeMode::Editor && 
+                                       (m_Context.editorSimulationState == EditorSimulationState::Play ||
+                                        m_Context.editorSimulationState == EditorSimulationState::Step));
+                if (shouldSimulate && m_ECS) {
+                    auto* world = dynamic_cast<World*>(m_ECS.get());
+                    if (world) {
+                        if (auto interactionSys = world->GetSystem<InteractionSystem>()) {
+                            interactionSys->Update(static_cast<float>(dt), m_Context);
+                        }
+                    }
+                }
+            }
+
+            // Flush gameplay events
+            if (m_Context.gameplayEventBus) {
+                m_Context.gameplayEventBus->FlushEvents();
+            }
+
+            // Bounds Update Stage — runs every frame (editor + game)
+            // so world-space AABBs are always fresh for debug draw / culling.
+            if (m_ECS) {
+                auto* world = dynamic_cast<World*>(m_ECS.get());
+                if (world) {
+                    if (auto boundsSys = world->GetSystem<BoundsUpdateSystem>()) {
+                        boundsSys->Update(static_cast<float>(dt), m_ECS->getCoordinator());
+                    }
+                }
+            }
+
+            // GameMode Tick
+            if (m_Context.gameMode) {
+                m_Context.gameMode->Tick(static_cast<float>(dt));
+            }
+
+            if (m_Context.editorSimulationState == EditorSimulationState::Step) {
+                m_Context.editorSimulationState = EditorSimulationState::Pause;
+            }
+
+            // Animation Stage
+            m_CurrentStage = FrameStage::Animation;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("Animation");
+            }
+
+            // RenderPreparation Stage
+            m_CurrentStage = FrameStage::RenderPreparation;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("RenderPreparation");
+            }
+
+            // Render Stage
+            m_CurrentStage = FrameStage::Render;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            
+            if (m_Editor) {
+                try {
+                    m_Editor->Render();
+                } catch (const std::exception& e) {
+                    LOG_ERROR("[Runtime] Exception in EditorLayer::Render: %s", e.what());
+                    throw;
+                }
+            }
+
+            auto renderStart = Clock::now();
+            {
+                OMNIX_PROFILE_SCOPE("Render");
+                if (m_Renderer) {
+                    try {
+                        m_Renderer->BeginFrame(dt);
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::BeginFrame: %s", e.what());
+                        throw;
+                    }
+                    try {
+                        m_Renderer->Render();
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::Render: %s", e.what());
+                        throw;
+                    }
+                    try {
+                        m_Renderer->EndFrame();
+                    } catch (const std::exception& e) {
+                        LOG_ERROR("[Runtime] Exception in Renderer::EndFrame: %s", e.what());
+                        throw;
+                    }
+                }
+            }
+            auto renderEnd = Clock::now();
+            m_Timing.renderTime = std::chrono::duration<double>(renderEnd - renderStart).count();
+
+            if (m_Editor) {
+                try {
+                    m_Editor->EndFrame();
+                } catch (const std::exception& e) {
+                    LOG_ERROR("[Runtime] Exception in EditorLayer::EndFrame: %s", e.what());
+                    throw;
+                }
+            }
+
+            // Frame End Stage
+            m_CurrentStage = FrameStage::FrameEnd;
+            RuntimeStageTracker::SetCurrentStage(m_CurrentStage);
+            {
+                OMNIX_PROFILE_SCOPE("FrameEnd");
+                eng::core::g_Profiler.EndFrame();
+            }
+
+            // Check if renderer requested exit
+            if (m_Renderer && !static_cast<EngineLoop*>(m_Renderer.get())->IsRunning()) {
+                auto* engineLoop = static_cast<EngineLoop*>(m_Renderer.get());
+                LOG_INFO("[Runtime] Main loop stopping because renderer is not running. HasStarted={}, ExitRequested={}",
+                         engineLoop->HasStarted() ? "true" : "false",
+                         engineLoop->HasExitRequest() ? "true" : "false");
+                m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
+            }
+
+            auto frameEnd = Clock::now();
+            m_Timing.frameTime = std::chrono::duration<double>(frameEnd - frameStart).count();
+            m_Timing.deltaTime = dt;
+
+            // Frame diagnostics / logging
+            LogFrameDiagnostics(m_Timing.deltaTime);
+
+            // Print timing logs occasionally to see the breakdown
+            static uint64_t s_LoggedFrames = 0;
+            if (++s_LoggedFrames % 300 == 0) {
+                LOG_DEBUG("[Loop] Frame breakdown - Frame: %.2fms, Update: %.2fms, Render: %.2fms",
+                          m_Timing.frameTime * 1000.0, m_Timing.updateTime * 1000.0, m_Timing.renderTime * 1000.0);
+
+                if (m_ECS) {
+                    eng::diagnostics::ReportSubsystemHealth("ECS", std::to_string(m_ECS->getCoordinator().GetLivingEntityCount()) + " living entities");
+                }
+                if (m_Renderer) {
+                    bool isRunning = static_cast<EngineLoop*>(m_Renderer.get())->IsRunning();
+                    eng::diagnostics::ReportSubsystemHealth("Renderer", isRunning ? "Running" : "Stopped");
+                }
+                if (m_Assets) {
+                    eng::diagnostics::ReportSubsystemHealth("Assets", "Active");
+                }
+                eng::diagnostics::PrintDiagnosticsReport();
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+
+        LOG_INFO("[Runtime] Engine main loop exited with state {}", static_cast<int>(GetState()));
+    }
+
+    void EngineRuntime::Shutdown() {
+        RuntimeState currentState = GetState();
+        if (currentState == RuntimeState::Uninitialized) {
+            return;
+        }
+        if (currentState == RuntimeState::Running) {
+            LOG_WARN("[Runtime] Ignoring Shutdown() while main loop is still running; request exit through EngineLoop::RequestExit().");
+            return;
+        }
+
+        m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
+        LOG_INFO("[Runtime] Beginning EngineRuntime Shutdown...");
+
+        // 1. Stop CLI Input Thread
+        m_InputThreadRunning.store(false, std::memory_order_relaxed);
+        if (m_InputThread.joinable()) {
+            m_InputThread.detach();
+        }
+
+        // Editor Shutdown
+        if (m_Editor) {
+            RegisterSystemShutdown("Editor");
+            m_Editor->Shutdown();
+            m_Editor.reset();
+            TrackDeallocation("Editor", sizeof(EditorLayer));
+        }
+
+        // Audio Shutdown
+        if (m_AudioSystem) {
+            RegisterSystemShutdown("Audio");
+            m_AudioSystem->Shutdown();
+            m_AudioSystem.reset();
+            TrackDeallocation("Audio", sizeof(AudioSystem));
+        }
+
+        // Save System Shutdown
+        if (m_GameplaySaveSystem) {
+            m_GameplaySaveSystem.reset();
+            TrackDeallocation("SaveSystem", sizeof(GameplaySaveSystem));
+        }
+
+        // PhysicsWorld Shutdown
+        if (m_PhysicsWorld) {
+            RegisterSystemShutdown("PhysicsWorld");
+            m_PhysicsWorld->Shutdown();
+            m_PhysicsWorld.reset();
+            TrackDeallocation("PhysicsWorld", sizeof(eng::physics::PhysicsWorld));
+        }
+
+        // WorldManager Shutdown
+        if (m_WorldManager) {
+            RegisterSystemShutdown("WorldManager");
+            m_WorldManager.reset();
+            TrackDeallocation("WorldManager", sizeof(Omnix::WorldManager));
+        }
+
+        // 2. Scene Shutdown
+        if (m_Scenes) {
+            RegisterSystemShutdown("Scene");
+            m_Scenes.reset();
+            TrackDeallocation("Scene", sizeof(SceneManager));
+        }
+
+        // 3. Assets Shutdown
+        if (m_Assets) {
+            RegisterSystemShutdown("Assets");
+            m_Assets.reset();
+            TrackDeallocation("Assets", sizeof(AssetCache));
+        }
+
+        // 4. Renderer Shutdown
+        if (m_Renderer) {
+            RegisterSystemShutdown("Renderer");
+            m_Renderer->Shutdown();
+            m_Renderer.reset();
+            TrackDeallocation("Renderer", sizeof(EngineLoop));
+        }
+
+        // 5. Scheduler Shutdown
+        if (m_Scheduler) {
+            RegisterSystemShutdown("Scheduler");
+            m_Scheduler->Shutdown();
+            m_Scheduler.reset();
+            TrackDeallocation("Scheduler", sizeof(SystemScheduler));
+        }
+
+        // 6. ECS Shutdown (Now safely owned by EngineRuntime!)
+        if (m_ECS) {
+            RegisterSystemShutdown("ECS");
+            m_ECS->Shutdown();
+            m_ECS.reset();
+            TrackDeallocation("ECS", sizeof(World));
+        }
+
+        // Schema Registry Shutdown
+        if (m_SchemaRegistry) {
+            m_SchemaRegistry.reset();
+            TrackDeallocation("SchemaRegistry", sizeof(ComponentSchemaRegistry));
+        }
+
+        // 7. Input Shutdown
+        if (m_Input) {
+            RegisterSystemShutdown("Input");
+            m_Input.reset();
+            TrackDeallocation("Input", sizeof(InputManager));
+        }
+
+        // Event System Shutdown
+        if (m_EventManager) {
+            RegisterSystemShutdown("Events");
+            m_EventManager.reset();
+            TrackDeallocation("Events", sizeof(Omnix::EventManager));
+        }
+
+        // Shutdown dynamic modules and custom core subsystems
+        if (m_ModuleManager) {
+            m_ModuleManager->ShutdownModules();
+            m_ModuleManager.reset();
+        }
+
+        if (m_PluginManager) {
+            m_PluginManager->UnloadAll();
+            m_PluginManager.reset();
+        }
+
+        if (m_RuntimeConsole) {
+            m_RuntimeConsole->Shutdown();
+            m_RuntimeConsole.reset();
+        }
+
+        if (m_ConfigSystem) {
+            m_ConfigSystem->Shutdown();
+            m_ConfigSystem.reset();
+        }
+
+        m_CVarSystem.reset();
+        m_TimeManager.reset();
+        m_ServiceRegistry.reset();
+        m_EventBus.reset();
+
+        LOG_INFO("[Runtime] EngineRuntime Subsystem Shutdown Complete.");
+
+        // Run validation and leak checks
+        ValidateExecutionSequence();
+        ReportMemoryLeaks();
+        eng::memory::AllocationTracker::DumpLeakReport();
+
+        // Disable global tracking hooks to avoid deadlock during static/global variable destruction
+        eng::memory::s_AllocationHookEnabled = false;
+
+        m_State.store(RuntimeState::Uninitialized, std::memory_order_relaxed);
+    }
+
+    std::unique_ptr<eng::runtime::IECSWorld> EngineRuntime::SetECS(std::unique_ptr<eng::runtime::IECSWorld> ecs) {
+        if (!ecs) return nullptr;
+
+        auto oldECS = std::move(m_ECS);
+        m_ECS = std::move(ecs);
+        m_Context.ecs = m_ECS.get();
+
+        if (m_Renderer) {
+            auto* rendererLoop = dynamic_cast<EngineLoop*>(m_Renderer.get());
+            if (rendererLoop) {
+                rendererLoop->SetExternalWorld(static_cast<World*>(m_ECS.get()));
+            }
+        }
+
+        if (m_Scenes) {
+            auto* sceneMgr = dynamic_cast<SceneManager*>(m_Scenes.get());
+            if (sceneMgr) {
+                sceneMgr->SetCoordinator(&m_ECS->getCoordinator());
+            }
+        }
+        return oldECS;
+    }
+
+} // namespace eng::runtime
