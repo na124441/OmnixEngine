@@ -3,10 +3,11 @@
 #include "Editor/EditorDirtyState.h"
 #include "ECS/ECSComponents.h"
 
+#include "Runtime/RuntimeContext.h"
+
 namespace eng::runtime {
 
     class AssetRegistry;
-    struct RuntimeContext;
 
     class ComponentWidgets {
     public:

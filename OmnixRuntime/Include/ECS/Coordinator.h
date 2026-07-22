@@ -135,10 +135,21 @@ public:
         if constexpr (std::is_same_v<T, eng::runtime::ZoneMembershipComponent>) return ZONE_MEMBERSHIP_COMPONENT;
         if constexpr (std::is_same_v<T, eng::runtime::GroundSectionComponent>) return GROUND_SECTION_COMPONENT;
         if constexpr (std::is_same_v<T, BoundsComponent>) return BOUNDS_COMPONENT;
+        if constexpr (std::is_same_v<T, HierarchyComponent>) return HIERARCHY_COMPONENT;
         
         // This should not happen if all components are registered and known to the serializer
         CORE_LOG_FATAL("ECS: Attempted to get type ID for unknown component type!");
         return 0; // Unreachable due to LOG_FATAL
+    }
+
+    template<typename T>
+    bool IsComponentRegistered() const {
+        return m_ComponentManager->IsComponentRegistered<T>();
+    }
+
+    template<typename T>
+    bool HasComponent(Entity entity) const {
+        return m_EntityManager->GetSignature(entity).test(const_cast<Coordinator*>(this)->GetComponentType<T>());
     }
 
     // New: Get the component signature for an entity

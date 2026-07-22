@@ -6,12 +6,17 @@
 #include <filesystem>
 #include <vector>
 
+namespace eng::core
+{
+    struct RuntimeContext;
+}
+
 namespace eng::runtime
 {
     class IAssetManager;
     class AssetRegistry;
     class ISceneManager;
-    struct RuntimeContext;
+    using eng::core::RuntimeContext;
 }
 
 class Coordinator;
@@ -65,5 +70,9 @@ namespace Omnix
         // Tracks all entities loaded from zone scenes to destroy them on UnloadWorld()
         std::vector<uint32_t> m_ZoneEntities;
     };
+}
+
+namespace eng::runtime {
+    using WorldManager = ::Omnix::WorldManager;
 }
 

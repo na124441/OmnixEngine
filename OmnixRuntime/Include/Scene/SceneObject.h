@@ -86,6 +86,7 @@ public:
      * @param child Child object to add
      */
     void AddChild(SceneObject* child);
+    void AddChild(std::shared_ptr<SceneObject> child);
 
     //========================================================================
     // HIERARCHY MANAGEMENT
@@ -382,10 +383,15 @@ private:
     // Hierarchy
     SceneObject* parent_;              // Parent object (nullptr if root)
     std::vector<SceneObject*> children_;  // Child objects
+    std::vector<std::shared_ptr<SceneObject>> m_OwnedChildren; // Retained child ownership
 
     // State flags
     bool initialized_;        // Has Initialize() been called?
 };
+
+namespace eng::scene {
+    using SceneObject = ::SceneObject;
+}
 
 //============================================================================
 // END OF FILE

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "Core/Memory/IAllocator.h"
 
 namespace eng::memory {
 
@@ -8,7 +9,7 @@ namespace eng::memory {
      * @class FreeListAllocator
      * @brief A general-purpose coalescing allocator that manages block allocation from a fixed arena (T1.2.4).
      */
-    class FreeListAllocator {
+    class FreeListAllocator : public IAllocator {
     public:
         enum class AllocationPolicy {
             FindFirst,
@@ -17,15 +18,15 @@ namespace eng::memory {
 
         FreeListAllocator(size_t capacity, AllocationPolicy policy = AllocationPolicy::FindFirst);
         FreeListAllocator(void* base, size_t capacity, AllocationPolicy policy = AllocationPolicy::FindFirst);
-        ~FreeListAllocator();
+        ~FreeListAllocator() override;
 
         FreeListAllocator(const FreeListAllocator&) = delete;
         FreeListAllocator& operator=(const FreeListAllocator&) = delete;
         FreeListAllocator(FreeListAllocator&& other) noexcept;
         FreeListAllocator& operator=(FreeListAllocator&& other) noexcept;
 
-        void* Allocate(size_t size, size_t alignment = alignof(std::max_align_t));
-        void Free(void* ptr);
+        void* Allocate(size_t size, size_t alignment = alignof(std::max_align_t)) override;
+        void Free(void* ptr) override;
         void Reset();
 
         [[nodiscard]] size_t GetCapacity() const noexcept { return m_Capacity; }

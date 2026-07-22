@@ -13,17 +13,6 @@
         },
         {
             "dependencies": [],
-            "handle": 15570065021787186981,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Materials/brick.omnixmat",
-            "type": "Material"
-        },
-        {
-            "dependencies": [],
             "handle": 14563795593874495022,
             "importTimestamp": 0,
             "importedPath": "Assets/Meshes/mount.blend1.omnixmesh",
@@ -46,6 +35,17 @@
         },
         {
             "dependencies": [],
+            "handle": 15570065021787186981,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/brick.omnixmat",
+            "type": "Material"
+        },
+        {
+            "dependencies": [],
             "handle": 16528957509826817816,
             "importTimestamp": 0,
             "importedPath": "",
@@ -53,6 +53,17 @@
             "isImported": false,
             "sourceMissing": false,
             "sourcePath": "Assets/Models/sphere.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 519101999989861967,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Meshes/mount.blend1.obj",
             "type": "Mesh"
         },
         {
@@ -65,17 +76,6 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Materials/default.omnixmat",
             "type": "Material"
-        },
-        {
-            "dependencies": [],
-            "handle": 519101999989861967,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Meshes/mount.blend1.obj",
-            "type": "Mesh"
         },
         {
             "dependencies": [],

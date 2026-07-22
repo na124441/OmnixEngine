@@ -17,4 +17,12 @@ namespace eng::physics {
         float distance = 0.0f;
     };
 
+    struct SweepHit {
+        bool hit = false;
+        Entity entity = 0;
+        Vector3 position = { 0.0f, 0.0f, 0.0f };
+        Vector3 normal = { 0.0f, 0.0f, 0.0f };
+        float distance = 0.0f;
+    };
+
 } // namespace eng::physics

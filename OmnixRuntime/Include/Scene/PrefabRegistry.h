@@ -143,6 +143,10 @@ private:
     std::string prefabDirectory_;  // Directory containing prefab files
 };
 
+namespace eng::scene {
+    using PrefabRegistry = ::PrefabRegistry;
+}
+
 //============================================================================
 // END OF FILE
 //===============================================================

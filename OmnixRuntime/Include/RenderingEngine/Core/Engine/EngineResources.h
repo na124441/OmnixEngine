@@ -112,6 +112,19 @@ struct EngineResources {
     void createPerFrameResources();           // creates UBO + descriptor pool per frame
     void destroyPerFrameResources();
 
+    // Synchronization helpers (binary semaphores & fence coordination)
+    VkSemaphore GetImageAvailableSemaphore(uint32_t frameIndex) const;
+    VkSemaphore GetRenderFinishedSemaphore(uint32_t frameIndex) const;
+    VkFence GetInFlightFence(uint32_t frameIndex) const;
+    bool WaitForFence(uint32_t frameIndex, uint64_t timeout = UINT64_MAX) const;
+    bool ResetFence(uint32_t frameIndex) const;
+
+    // Command buffer recording, submission & queue synchronization helpers
+    static bool BeginCommandBuffer(VkCommandBuffer cmd, VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    static bool EndCommandBuffer(VkCommandBuffer cmd);
+    static bool SubmitCommandBuffer(VkQueue queue, VkCommandBuffer cmd, VkSemaphore waitSemaphore = VK_NULL_HANDLE, VkSemaphore signalSemaphore = VK_NULL_HANDLE, VkFence fence = VK_NULL_HANDLE);
+    void ResetCommandPool(uint32_t frameIndex);
+
     // Helpers
     VkCommandBuffer beginSingleTimeCommands() const;
     void           endSingleTimeCommands(VkCommandBuffer cmd) const;

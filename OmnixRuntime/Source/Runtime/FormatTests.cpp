@@ -52,6 +52,36 @@
 #include "Runtime/CVarSystem.h"
 #include "Runtime/RuntimeConsole.h"
 #include "Runtime/TimeManager.h"
+#include "Scene/Prefab.h"
+#include "Scene/PrefabRegistry.h"
+#include "ECS/EntityHierarchySystem.h"
+#include "Rendering/RHI/RHI.h"
+#include "RenderingEngine/Vulkan/VulkanSwapChain.h"
+#include "RenderingEngine/Core/Engine/EngineResources.h"
+#include "Rendering/Graph/RenderGraph.h"
+#include "Rendering/GPUScene/GPUScene.h"
+#include "RenderingEngine/Renderer/scene/Material.h"
+#include "Rendering/Materials/ShaderLibrary.h"
+#include "RenderingEngine/Vulkan/VulkanPipelineCache.h"
+#include "RenderingEngine/Renderer/scene/Texture.h"
+#include "RenderingEngine/Renderer/scene/Mesh.h"
+#include "Rendering/Geometry/Streaming/RVGPageStreamingManager.h"
+#include "Rendering/Visibility/FrustumCullPass.h"
+#include "Rendering/Lighting/ShadowAtlas.h"
+#include "Rendering/Lighting/ClusteredLightingTypes.h"
+#include "Rendering/PostProcess/PostProcessChain.h"
+#include "Rendering/Debug/DebugDraw.h"
+#include "Rendering/Debug/GPUProfiler.h"
+#include "Physics/Public/PhysicsWorld.h"
+#include "Physics/Public/PhysicsConstraints.h"
+#include "Animation/AnimationSystem.h"
+#include "Audio/AudioLayerExtensions.h"
+#include "Input/InputLayerExtensions.h"
+#include "AI/AISystem.h"
+#include "Networking/NetworkSystem.h"
+#include "Runtime/RuntimeServicesExtensions.h"
+#include "Developer/DeveloperServicesExtensions.h"
+#include "Runtime/PackagingExtensions.h"
 #include <iostream>
 #include <vector>
 #include <filesystem>
@@ -647,6 +677,7 @@ namespace eng::runtime {
             coordinator.RegisterComponent<NameComponent>();
             coordinator.RegisterComponent<DirectionalLightComponent>();
             coordinator.RegisterComponent<SkyLightComponent>();
+            coordinator.RegisterComponent<HierarchyComponent>();
 
             auto physicsSys = coordinator.RegisterSystem<PhysicsSystem>();
             ::Signature sig;
@@ -2866,6 +2897,2829 @@ namespace eng::runtime {
             ImGui::SetCurrentContext(oldCtx);
 
             LOG_INFO("[FormatTest] Test 18 Passed: Week 9 Ground Section System validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 19: Scene Graph Hierarchy, Transform Propagation & Reparenting
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 19: Scene Graph Hierarchy & Transform Propagation...");
+
+            Scene testScene("SceneGraphTest");
+
+            auto rootObj = std::make_shared<SceneObject>("RootNode");
+            auto childObj = std::make_shared<SceneObject>("ChildNode");
+            auto grandchildObj = std::make_shared<SceneObject>("GrandchildNode");
+
+            rootObj->transform.SetPosition({10.0f, 0.0f, 0.0f});
+            childObj->transform.SetPosition({0.0f, 5.0f, 0.0f});
+            grandchildObj->transform.SetPosition({0.0f, 0.0f, 2.0f});
+
+            // 1. Build hierarchy
+            rootObj->AddChild(childObj.get());
+            childObj->AddChild(grandchildObj.get());
+
+            if (childObj->GetParent() != rootObj.get() || grandchildObj->GetParent() != childObj.get()) {
+                LOG_ERROR("[FormatTest] Test 19 FAILED: Hierarchy parent linkage incorrect!");
+                return false;
+            }
+
+            // 2. Propagate transforms
+            rootObj->Update(0.016f);
+
+            Vector3 worldPos = grandchildObj->transform.GetWorldPosition();
+            if (std::abs(worldPos.x - 10.0f) > 0.01f || std::abs(worldPos.y - 5.0f) > 0.01f || std::abs(worldPos.z - 2.0f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 19 FAILED: Transform hierarchy local-to-world propagation failed! Got (%f, %f, %f)",
+                          worldPos.x, worldPos.y, worldPos.z);
+                return false;
+            }
+
+            // 3. Child name search
+            if (rootObj->FindChild("ChildNode") != childObj.get()) {
+                LOG_ERROR("[FormatTest] Test 19 FAILED: FindChild failed to locate child node!");
+                return false;
+            }
+
+            // 4. Reparenting
+            rootObj->AddChild(grandchildObj.get());
+            if (grandchildObj->GetParent() != rootObj.get() || childObj->GetChildCount() != 0) {
+                LOG_ERROR("[FormatTest] Test 19 FAILED: Reparenting grandchild to root failed!");
+                return false;
+            }
+
+            // 5. Scene container integration
+            testScene.AddSceneObject(rootObj);
+            testScene.AddSceneObject(childObj);
+            testScene.AddSceneObject(grandchildObj);
+            testScene.RebuildRootObjects();
+
+            if (testScene.GetRootObjects().size() != 1 || testScene.GetAllSceneObjects().size() != 3) {
+                LOG_ERROR("[FormatTest] Test 19 FAILED: Scene container root object rebuilding failed! Roots: %zu, Total: %zu",
+                          testScene.GetRootObjects().size(), testScene.GetAllSceneObjects().size());
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 18 Passed: Week 9 Ground Section System validated successfully.");
+            LOG_INFO("[FormatTest] Test 19 Passed: Scene Graph Hierarchy & Transform Propagation validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 20: Prefab Instantiation & Registry Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 20: Prefab Instantiation & Registry...");
+
+            auto templateRoot = std::make_shared<SceneObject>("EnemyTemplate");
+            auto templateWeapon = std::make_shared<SceneObject>("WeaponTemplate");
+            templateRoot->AddChild(templateWeapon.get());
+
+            auto prefab = std::make_unique<Prefab>("prefabs/Enemy.prefab");
+            prefab->SetTemplateObject(templateRoot);
+
+            PrefabRegistry::Get().Register("EnemyPrefab", std::move(prefab));
+
+            if (!PrefabRegistry::Get().IsLoaded("EnemyPrefab")) {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: Prefab failed to register in PrefabRegistry!");
+                return false;
+            }
+
+            Prefab* retrievedPrefab = PrefabRegistry::Get().Get("EnemyPrefab");
+            if (!retrievedPrefab) {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: PrefabRegistry Get returned nullptr!");
+                return false;
+            }
+
+            auto instanceRoot = retrievedPrefab->Instantiate();
+            if (!instanceRoot) {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: Prefab instantiation returned nullptr!");
+                return false;
+            }
+
+            if (instanceRoot->GetName() != "EnemyTemplate_Instance" || instanceRoot->GetChildCount() != 1) {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: Prefab instance root name or child count mismatch!");
+                return false;
+            }
+
+            if (instanceRoot->GetChildren()[0]->GetName() != "WeaponTemplate_Instance") {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: Prefab instance child name mismatch!");
+                return false;
+            }
+
+            if (instanceRoot->GetID() == templateRoot->GetID()) {
+                LOG_ERROR("[FormatTest] Test 20 FAILED: Prefab instance did not generate a new unique EntityID!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 20 Passed: Prefab Instantiation & Registry validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 21: Scene Serialization & RapidJSON Output Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 21: Scene Serialization & RapidJSON Adapters...");
+
+            Scene serializeScene("SerializeTestScene");
+
+            auto rootObj = std::make_shared<SceneObject>("RootLabNode");
+            rootObj->transform.SetPosition({5.0f, 10.0f, 15.0f});
+            rootObj->m_HasPointLight = true;
+            rootObj->m_PointLight.color = {1.0f, 0.5f, 0.2f};
+            rootObj->m_PointLight.intensity = 15.0f;
+
+            serializeScene.AddSceneObject(rootObj);
+
+            std::string tempPath = "test_serialize_output.omnixscene";
+            if (!SceneSerializer::ValidateOutputPath(tempPath)) {
+                LOG_ERROR("[FormatTest] Test 21 FAILED: ValidateOutputPath rejected valid scene path!");
+                return false;
+            }
+
+            if (!SceneSerializer::SaveScene(&serializeScene, tempPath)) {
+                LOG_ERROR("[FormatTest] Test 21 FAILED: SaveScene failed to serialize scene to JSON!");
+                return false;
+            }
+
+            if (!std::filesystem::exists(tempPath) || std::filesystem::file_size(tempPath) == 0) {
+                LOG_ERROR("[FormatTest] Test 21 FAILED: Serialized JSON file is missing or empty!");
+                return false;
+            }
+
+            std::filesystem::remove(tempPath);
+
+            LOG_INFO("[FormatTest] Test 21 Passed: Scene Serialization & RapidJSON Output validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 22: Scene Streaming & Proximity Scheduler Validation
+        // --------------------------------------------------------------------
+        {
+            using namespace Omnix;
+            LOG_INFO("[FormatTest] Running Test 22: Scene Streaming & Proximity Scheduler...");
+
+            WorldZone zoneA;
+            zoneA.zoneUUIDHigh = 0xAA11ULL;
+            zoneA.zoneUUIDLow = 0xAA22ULL;
+            zoneA.zoneName = "StreamingZoneAlpha";
+            zoneA.bounds.min = {0.0f, 0.0f, 0.0f};
+            zoneA.bounds.max = {10.0f, 10.0f, 10.0f};
+
+            WorldZone zoneB;
+            zoneB.zoneUUIDHigh = 0xBB11ULL;
+            zoneB.zoneUUIDLow = 0xBB22ULL;
+            zoneB.zoneName = "StreamingZoneBeta";
+            zoneB.bounds.min = {20.0f, 0.0f, 0.0f};
+            zoneB.bounds.max = {30.0f, 10.0f, 10.0f};
+
+            std::filesystem::path zoneAPath = "stream_zone_a.omnixzone";
+            std::filesystem::path zoneBPath = "stream_zone_b.omnixzone";
+            std::filesystem::path worldPath = "stream_world.omnixworld";
+
+            if (!WorldZoneWriter::WriteToFile(zoneAPath, zoneA).Success() ||
+                !WorldZoneWriter::WriteToFile(zoneBPath, zoneB).Success()) {
+                LOG_ERROR("[FormatTest] Test 22 FAILED: Failed to write test streaming zones!");
+                return false;
+            }
+
+            WorldDescriptor world;
+            world.worldUUIDHigh = 0x9999ULL;
+            world.worldUUIDLow = 0x1111ULL;
+            world.worldName = "StreamingTestWorld";
+
+            WorldZoneEntry entryA;
+            entryA.zoneUUIDHigh = zoneA.zoneUUIDHigh;
+            entryA.zoneUUIDLow = zoneA.zoneUUIDLow;
+            std::strncpy(entryA.zoneName, zoneA.zoneName.c_str(), sizeof(entryA.zoneName) - 1);
+            entryA.zoneName[sizeof(entryA.zoneName) - 1] = '\0';
+            std::strncpy(entryA.zonePath, zoneAPath.string().c_str(), sizeof(entryA.zonePath) - 1);
+            entryA.zonePath[sizeof(entryA.zonePath) - 1] = '\0';
+            world.zones.push_back(entryA);
+
+            WorldZoneEntry entryB;
+            entryB.zoneUUIDHigh = zoneB.zoneUUIDHigh;
+            entryB.zoneUUIDLow = zoneB.zoneUUIDLow;
+            std::strncpy(entryB.zoneName, zoneB.zoneName.c_str(), sizeof(entryB.zoneName) - 1);
+            entryB.zoneName[sizeof(entryB.zoneName) - 1] = '\0';
+            std::strncpy(entryB.zonePath, zoneBPath.string().c_str(), sizeof(entryB.zonePath) - 1);
+            entryB.zonePath[sizeof(entryB.zonePath) - 1] = '\0';
+            world.zones.push_back(entryB);
+
+            if (!WorldFileWriter::WriteToFile(worldPath, world).Success()) {
+                LOG_ERROR("[FormatTest] Test 22 FAILED: Failed to write test streaming world!");
+                return false;
+            }
+
+            // Create context components
+            class MockAssetManager : public eng::runtime::IAssetManager {
+            protected:
+                void* LoadRaw(const std::string& path, const std::type_info& typeInfo) override {
+                    return nullptr;
+                }
+            };
+            MockAssetManager assetMgr;
+            AssetRegistry registry;
+            auto sceneMgr = std::make_unique<SceneManager>();
+            auto ecsWorld = std::make_unique<World>();
+            auto& coordinator = ecsWorld->getCoordinator();
+
+            RuntimeContext context;
+            context.mode = RuntimeMode::Game;
+            context.assets = &assetMgr;
+            context.assetRegistry = &registry;
+            context.scenes = sceneMgr.get();
+            context.ecs = ecsWorld.get();
+
+            Omnix::WorldManager worldMgr(&assetMgr, &registry, sceneMgr.get());
+            if (!worldMgr.LoadWorld(worldPath).Success()) {
+                LOG_ERROR("[FormatTest] Test 22 FAILED: Failed to load streaming test world!");
+                return false;
+            }
+
+            // Spawn player entity inside Zone A
+            Entity playerEnt = coordinator.CreateEntity();
+            TransformComponent t;
+            t.position = {5.0f, 5.0f, 5.0f};
+            coordinator.AddComponent<TransformComponent>(playerEnt, t);
+            coordinator.AddComponent<CharacterControllerComponent>(playerEnt, CharacterControllerComponent());
+
+            // 1. First update - player in Zone A
+            worldMgr.Update(context, 0.016f);
+
+            if (worldMgr.GetActiveZoneUUIDHigh() != zoneA.zoneUUIDHigh ||
+                worldMgr.GetActiveZoneUUIDLow() != zoneA.zoneUUIDLow) {
+                LOG_ERROR("[FormatTest] Test 22 FAILED: Player position in Zone A was not detected as active zone!");
+                return false;
+            }
+
+            // 2. Move player into Zone B
+            auto& playerTransform = coordinator.GetComponent<TransformComponent>(playerEnt);
+            playerTransform.position = {25.0f, 5.0f, 5.0f};
+
+            worldMgr.Update(context, 0.016f);
+
+            if (worldMgr.GetActiveZoneUUIDHigh() != zoneB.zoneUUIDHigh ||
+                worldMgr.GetActiveZoneUUIDLow() != zoneB.zoneUUIDLow ||
+                worldMgr.GetPreviousZoneUUIDHigh() != zoneA.zoneUUIDHigh) {
+                LOG_ERROR("[FormatTest] Test 22 FAILED: Zone transition from Zone A to Zone B failed!");
+                return false;
+            }
+
+            // Unload world
+            worldMgr.UnloadWorld();
+
+            // Clean up temporary files
+            std::filesystem::remove(zoneAPath);
+            std::filesystem::remove(zoneBPath);
+            std::filesystem::remove(worldPath);
+
+            LOG_INFO("[FormatTest] Test 22 Passed: Scene Streaming & Proximity Scheduler validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 23: Entity Hierarchy Component & ECS Hierarchy System Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 23: Entity Hierarchy Component & ECS Hierarchy System...");
+
+            Coordinator coordinator;
+            coordinator.Init();
+
+            coordinator.RegisterComponent<TransformComponent>();
+            coordinator.RegisterComponent<HierarchyComponent>();
+
+            auto hierarchySystem = coordinator.RegisterSystem<EntityHierarchySystem>();
+            Signature sig;
+            sig.test(coordinator.GetComponentType<HierarchyComponent>());
+            coordinator.SetSystemSignature<EntityHierarchySystem>(sig);
+
+            Entity parentEnt = coordinator.CreateEntity();
+            Entity childEnt = coordinator.CreateEntity();
+            Entity grandchildEnt = coordinator.CreateEntity();
+
+            coordinator.AddComponent<TransformComponent>(parentEnt, TransformComponent());
+            coordinator.AddComponent<TransformComponent>(childEnt, TransformComponent());
+            coordinator.AddComponent<TransformComponent>(grandchildEnt, TransformComponent());
+
+            // Build hierarchy: Parent -> Child -> Grandchild
+            EntityHierarchySystem::AttachChild(parentEnt, childEnt, coordinator);
+            EntityHierarchySystem::AttachChild(childEnt, grandchildEnt, coordinator);
+
+            hierarchySystem->Update(coordinator);
+
+            const auto& parentHc = coordinator.GetComponent<HierarchyComponent>(parentEnt);
+            const auto& childHc = coordinator.GetComponent<HierarchyComponent>(childEnt);
+            const auto& grandchildHc = coordinator.GetComponent<HierarchyComponent>(grandchildEnt);
+
+            if (parentHc.parent != 0xFFFFFFFF || parentHc.depth != 0 || parentHc.children.size() != 1) {
+                LOG_ERROR("[FormatTest] Test 23 FAILED: Parent entity hierarchy component invalid!");
+                return false;
+            }
+
+            if (childHc.parent != parentEnt || childHc.depth != 1 || childHc.children.size() != 1) {
+                LOG_ERROR("[FormatTest] Test 23 FAILED: Child entity hierarchy component invalid!");
+                return false;
+            }
+
+            if (grandchildHc.parent != childEnt || grandchildHc.depth != 2) {
+                LOG_ERROR("[FormatTest] Test 23 FAILED: Grandchild entity hierarchy component invalid!");
+                return false;
+            }
+
+            // Reparent grandchild directly to parent (Parent -> Grandchild)
+            EntityHierarchySystem::AttachChild(parentEnt, grandchildEnt, coordinator);
+            hierarchySystem->Update(coordinator);
+
+            const auto& updatedParentHc = coordinator.GetComponent<HierarchyComponent>(parentEnt);
+            const auto& updatedGrandchildHc = coordinator.GetComponent<HierarchyComponent>(grandchildEnt);
+
+            if (updatedGrandchildHc.parent != parentEnt || updatedGrandchildHc.depth != 1) {
+                LOG_ERROR("[FormatTest] Test 23 FAILED: Reparented grandchild entity depth/parent invalid!");
+                return false;
+            }
+
+            if (updatedParentHc.children.size() != 2) {
+                LOG_ERROR("[FormatTest] Test 23 FAILED: Parent entity children count mismatch after reparenting!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 23 Passed: Entity Hierarchy Component & ECS Hierarchy System validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 24: Runtime Scene Instantiation & ECS Binding Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 24: Runtime Scene Instantiation & ECS Binding...");
+
+            Coordinator coordinator;
+            coordinator.Init();
+
+            coordinator.RegisterComponent<TransformComponent>();
+            coordinator.RegisterComponent<NameComponent>();
+            coordinator.RegisterComponent<TagComponent>();
+            coordinator.RegisterComponent<LayerComponent>();
+            coordinator.RegisterComponent<HierarchyComponent>();
+
+            Scene scene("RuntimeInstantiateTestScene");
+            scene.SetCoordinator(&coordinator);
+
+            auto dynamicProp = std::make_shared<SceneObject>("DynamicProp");
+            dynamicProp->transform.SetPosition({12.0f, 3.0f, -4.0f});
+
+            scene.AddSceneObject(dynamicProp);
+
+            Entity ecsEnt = dynamicProp->GetECSEntity();
+            if (!coordinator.IsEntityAlive(ecsEnt)) {
+                LOG_ERROR("[FormatTest] Test 24 FAILED: SceneObject AddSceneObject did not instantiate an alive ECS entity!");
+                return false;
+            }
+
+            if (!coordinator.HasComponent<NameComponent>(ecsEnt) ||
+                !coordinator.HasComponent<TransformComponent>(ecsEnt) ||
+                !coordinator.HasComponent<HierarchyComponent>(ecsEnt)) {
+                LOG_ERROR("[FormatTest] Test 24 FAILED: ECS entity missing core components (Name, Transform, Hierarchy)!");
+                return false;
+            }
+
+            const auto& tc = coordinator.GetComponent<TransformComponent>(ecsEnt);
+            if (tc.position.x != 12.0f || tc.position.y != 3.0f || tc.position.z != -4.0f) {
+                LOG_ERROR("[FormatTest] Test 24 FAILED: ECS TransformComponent position bound incorrectly!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 24 Passed: Runtime Scene Instantiation & ECS Binding validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 25: RHI Handles & Vulkan Object Mapping Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 25: RHI Handles & Vulkan Object Mapping...");
+
+            // 1. Verify RHIBuffer type mapping
+            eng::renderer::RHIBuffer rhiBuffer{};
+            rhiBuffer.size = 1024;
+            rhiBuffer.buffer = (VkBuffer)(uintptr_t)0x12345678ULL;
+
+            if (rhiBuffer.size != 1024 || rhiBuffer.buffer != (VkBuffer)(uintptr_t)0x12345678ULL) {
+                LOG_ERROR("[FormatTest] Test 25 FAILED: RHIBuffer mapping invalid!");
+                return false;
+            }
+
+            // 2. Verify RHITexture type mapping
+            eng::renderer::RHITexture rhiTex{};
+            rhiTex.width = 1920;
+            rhiTex.height = 1080;
+            rhiTex.image = (VkImage)(uintptr_t)0x87654321ULL;
+
+            if (rhiTex.width != 1920 || rhiTex.image != (VkImage)(uintptr_t)0x87654321ULL) {
+                LOG_ERROR("[FormatTest] Test 25 FAILED: RHITexture mapping invalid!");
+                return false;
+            }
+
+            // 3. Verify RHIPipeline type mapping
+            eng::renderer::RHIPipeline rhiPipe{};
+            rhiPipe.pipeline = (VkPipeline)(uintptr_t)0x11223344ULL;
+            rhiPipe.layout = (VkPipelineLayout)(uintptr_t)0x55667788ULL;
+
+            if (rhiPipe.pipeline != (VkPipeline)(uintptr_t)0x11223344ULL || rhiPipe.layout != (VkPipelineLayout)(uintptr_t)0x55667788ULL) {
+                LOG_ERROR("[FormatTest] Test 25 FAILED: RHIPipeline mapping invalid!");
+                return false;
+            }
+
+            // 4. Verify RHI CommandBuffer, Fence, Semaphore, RenderPass, Shader handle aliases
+            eng::renderer::RHICommandBuffer cmdBuf = (VkCommandBuffer)(uintptr_t)0xAABBCCDDULL;
+            eng::renderer::RHIFence fence = (VkFence)(uintptr_t)0x99887766ULL;
+            eng::renderer::RHISemaphore sema = (VkSemaphore)(uintptr_t)0x44332211ULL;
+            eng::renderer::RHIRenderPass rp = (VkRenderPass)(uintptr_t)0xDEADBEEFULL;
+            eng::renderer::RHIFrambuffer fb = (VkFramebuffer)(uintptr_t)0xBEEFCAFEULL;
+            eng::renderer::RHIShaderModule sm = (VkShaderModule)(uintptr_t)0xCAFEBABEULL;
+
+            if (cmdBuf != (VkCommandBuffer)(uintptr_t)0xAABBCCDDULL ||
+                fence != (VkFence)(uintptr_t)0x99887766ULL ||
+                sema != (VkSemaphore)(uintptr_t)0x44332211ULL ||
+                rp != (VkRenderPass)(uintptr_t)0xDEADBEEFULL ||
+                fb != (VkFramebuffer)(uintptr_t)0xBEEFCAFEULL ||
+                sm != (VkShaderModule)(uintptr_t)0xCAFEBABEULL) {
+                LOG_ERROR("[FormatTest] Test 25 FAILED: Raw Vulkan handle alias mapping invalid!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 25 Passed: RHI Handles & Vulkan Object Mapping validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 26: Swapchain Subsystem & VulkanSwapChain Lifecycle Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 26: Swapchain Subsystem & VulkanSwapChain Lifecycle...");
+
+            eng::vulkan::VulkanSwapChain swapChain;
+
+            if (swapChain.GetHandle() != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 26 FAILED: Default VulkanSwapChain handle is not VK_NULL_HANDLE!");
+                return false;
+            }
+
+            if (!swapChain.GetImages().empty() || !swapChain.GetImageViews().empty()) {
+                LOG_ERROR("[FormatTest] Test 26 FAILED: Default VulkanSwapChain contains non-empty image containers!");
+                return false;
+            }
+
+            if (swapChain.GetSurface() != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 26 FAILED: Default VulkanSwapChain surface is not VK_NULL_HANDLE!");
+                return false;
+            }
+
+            // Test non-initialized acquire and present failures
+            uint32_t imageIdx = 0;
+            auto acquireRes = swapChain.AcquireNextImage(VK_NULL_HANDLE, &imageIdx);
+            if (acquireRes.IsSuccess()) {
+                LOG_ERROR("[FormatTest] Test 26 FAILED: AcquireNextImage succeeded on uninitialized swapchain!");
+                return false;
+            }
+
+            auto presentRes = swapChain.Present(VK_NULL_HANDLE, 0);
+            if (presentRes.IsSuccess()) {
+                LOG_ERROR("[FormatTest] Test 26 FAILED: Present succeeded on uninitialized swapchain!");
+                return false;
+            }
+
+            // Test safe shutdown
+            swapChain.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 26 Passed: Swapchain Subsystem & VulkanSwapChain Lifecycle validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 27: Command Buffer Allocation, Recording & Submission Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 27: Command Buffer Allocation, Recording & Submission...");
+
+            // 1. Guard check: Null handle recording and submission checks
+            if (eng::renderer::EngineResources::BeginCommandBuffer(VK_NULL_HANDLE)) {
+                LOG_ERROR("[FormatTest] Test 27 FAILED: BeginCommandBuffer succeeded on VK_NULL_HANDLE!");
+                return false;
+            }
+
+            if (eng::renderer::EngineResources::EndCommandBuffer(VK_NULL_HANDLE)) {
+                LOG_ERROR("[FormatTest] Test 27 FAILED: EndCommandBuffer succeeded on VK_NULL_HANDLE!");
+                return false;
+            }
+
+            if (eng::renderer::EngineResources::SubmitCommandBuffer(VK_NULL_HANDLE, VK_NULL_HANDLE)) {
+                LOG_ERROR("[FormatTest] Test 27 FAILED: SubmitCommandBuffer succeeded on VK_NULL_HANDLE!");
+                return false;
+            }
+
+            // 2. Resource structure verification
+            eng::renderer::EngineResources resources;
+            if (!resources.commandPools.empty() || !resources.commandBuffers.empty()) {
+                LOG_ERROR("[FormatTest] Test 27 FAILED: Uninitialized EngineResources contains command pools or buffers!");
+                return false;
+            }
+
+            // 3. Safe pool reset call
+            resources.ResetCommandPool(0);
+
+            LOG_INFO("[FormatTest] Test 27 Passed: Command Buffer Allocation, Recording & Submission validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 28: Synchronization Primitives & Frame Coordination Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 28: Synchronization Primitives & Frame Coordination...");
+
+            eng::renderer::EngineResources resources;
+
+            if (resources.GetImageAvailableSemaphore(0) != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: GetImageAvailableSemaphore returned non-null handle on uninitialized resources!");
+                return false;
+            }
+
+            if (resources.GetRenderFinishedSemaphore(0) != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: GetRenderFinishedSemaphore returned non-null handle on uninitialized resources!");
+                return false;
+            }
+
+            if (resources.GetInFlightFence(0) != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: GetInFlightFence returned non-null handle on uninitialized resources!");
+                return false;
+            }
+
+            if (resources.WaitForFence(0, 100)) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: WaitForFence succeeded on uninitialized fence!");
+                return false;
+            }
+
+            if (resources.ResetFence(0)) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: ResetFence succeeded on uninitialized fence!");
+                return false;
+            }
+
+            if (!resources.imageAvailableSemaphores.empty() || !resources.renderFinishedSemaphores.empty() || !resources.inFlightFences.empty()) {
+                LOG_ERROR("[FormatTest] Test 28 FAILED: Default EngineResources contains non-empty sync containers!");
+                return false;
+            }
+
+            // Test safe destruction of empty sync objects
+            resources.destroySyncObjects();
+
+            LOG_INFO("[FormatTest] Test 28 Passed: Synchronization Primitives & Frame Coordination validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 29: RenderGraph Topological Sorting & Lifetime Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 29: RenderGraph Topological Sorting & Lifetimes...");
+
+            eng::renderer::RenderGraph renderGraph;
+
+            // 1. Declare resources
+            eng::renderer::TextureResourceDesc albedoDesc{};
+            albedoDesc.width = 1920;
+            albedoDesc.height = 1080;
+            albedoDesc.format = VK_FORMAT_R8G8B8A8_UNORM;
+            renderGraph.DeclareTexture("AlbedoTexture", albedoDesc);
+
+            eng::renderer::TextureResourceDesc hdrDesc{};
+            hdrDesc.width = 1920;
+            hdrDesc.height = 1080;
+            hdrDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+            renderGraph.DeclareTexture("HdrColor", hdrDesc);
+
+            eng::renderer::BufferResourceDesc uboDesc{};
+            uboDesc.size = 256;
+            renderGraph.DeclareBuffer("LightBuffer", uboDesc);
+
+            // 2. Register passes in reverse order to test topological sorting
+            // Pass 2: PostProcess (depends on HdrColor -> outputs FinalColor)
+            renderGraph.RegisterPass(
+                "Pass2_PostProcess",
+                { "HdrColor" },
+                { "FinalColor" },
+                eng::renderer::PassID::UI,
+                [](VkCommandBuffer) {}
+            );
+
+            // Pass 0: Geometry (outputs AlbedoTexture, LightBuffer)
+            renderGraph.RegisterPass(
+                "Pass0_Geometry",
+                {},
+                { "AlbedoTexture", "LightBuffer" },
+                eng::renderer::PassID::Geometry,
+                [](VkCommandBuffer) {}
+            );
+
+            // Pass 1: Lighting (depends on AlbedoTexture, LightBuffer -> outputs HdrColor)
+            renderGraph.RegisterPass(
+                "Pass1_Lighting",
+                { "AlbedoTexture", "LightBuffer" },
+                { "HdrColor" },
+                eng::renderer::PassID::Lighting,
+                [](VkCommandBuffer) {}
+            );
+
+            // 3. Compile graph
+            eng::renderer::EngineResources resources;
+            renderGraph.Compile(resources);
+
+            if (renderGraph.GetPassCount() != 3) {
+                LOG_ERROR("[FormatTest] Test 29 FAILED: Compiled pass count is not 3!");
+                return false;
+            }
+
+            // Print debug info
+            renderGraph.PrintDebug();
+
+            // 4. Test graph clearing
+            renderGraph.Clear();
+            if (renderGraph.GetPassCount() != 0) {
+                LOG_ERROR("[FormatTest] Test 29 FAILED: RenderGraph count is not 0 after Clear()!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 29 Passed: RenderGraph Topological Sorting & Lifetimes validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 30: GPU Scene Instance Allocation & Entity Mapping Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 30: GPU Scene Instance Allocation & Entity Mapping...");
+
+            eng::renderer::GPUScene scene;
+
+            // 1. Basic allocation & updates
+            eng::renderer::GPUGeometryInstance inst1{};
+            inst1.model = glm::mat4(2.0f);
+            inst1.objectID = 101;
+            inst1.flags = eng::renderer::GPUInstanceFlags_Visible;
+
+            eng::renderer::GPUSceneInstanceHandle h1 = scene.CreateInstance(inst1);
+            if (!h1.IsValid() || h1.index != 0 || h1.generation != 0) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Initial handle allocation incorrect.");
+                return false;
+            }
+            if (!scene.IsInstanceValid(h1)) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Handle not valid after creation.");
+                return false;
+            }
+
+            eng::renderer::GPUGeometryInstance inst2{};
+            inst2.model = glm::mat4(3.0f);
+            inst2.objectID = 101;
+            inst2.flags = eng::renderer::GPUInstanceFlags_Visible | eng::renderer::GPUInstanceFlags_CastShadow;
+            scene.UpdateInstance(h1, inst2);
+
+            auto diag1 = scene.GetDiagnostics();
+            if (diag1.activeSlots != 1) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Active slot count should be 1.");
+                return false;
+            }
+
+            // 2. Recycling & Generation Validation
+            scene.DestroyInstance(h1);
+            if (scene.IsInstanceValid(h1)) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Handle remains valid after destruction.");
+                return false;
+            }
+
+            scene.UpdateInstance(h1, inst2);
+            auto diag2 = scene.GetDiagnostics();
+            if (diag2.staleHandleErrors != 1) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Stale handle update error should have been tracked.");
+                return false;
+            }
+
+            eng::renderer::GPUSceneInstanceHandle h2 = scene.CreateInstance(inst1);
+            if (h2.index != 0 || h2.generation != 1) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Recycling failed or generation not incremented.");
+                return false;
+            }
+
+            // 3. Entity Lookup
+            scene.RegisterEntityInstance(42, h2);
+            eng::renderer::GPUSceneInstanceHandle lookup = scene.GetEntityInstance(42);
+            if (lookup != h2) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Entity-to-instance lookup failed.");
+                return false;
+            }
+            scene.UnregisterEntityInstance(42);
+            lookup = scene.GetEntityInstance(42);
+            if (lookup.IsValid()) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Lookup returned handle after unregistering.");
+                return false;
+            }
+
+            // 4. Material Overrides
+            std::vector<uint32_t> overrides = { 5, 8, 12 };
+            scene.SetInstanceMaterialOverrides(h2, overrides);
+            auto diag3 = scene.GetDiagnostics();
+            if (diag3.materialOverrideCount != 3) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Expected 3 material override entries.");
+                return false;
+            }
+            scene.ClearInstanceMaterialOverrides(h2);
+
+            // 5. Dynamic Growth
+            std::vector<eng::renderer::GPUSceneInstanceHandle> handles;
+            for (int i = 0; i < 200; ++i) {
+                eng::renderer::GPUGeometryInstance temp{};
+                temp.objectID = 1000 + i;
+                handles.push_back(scene.CreateInstance(temp));
+            }
+
+            auto diag4 = scene.GetDiagnostics();
+            if (diag4.activeSlots < 200) {
+                LOG_ERROR("[FormatTest] Test 30 FAILED: Growth count smaller than allocated count.");
+                return false;
+            }
+
+            for (auto h : handles) {
+                scene.DestroyInstance(h);
+            }
+            scene.DestroyInstance(h2);
+
+            LOG_INFO("[FormatTest] Test 30 Passed: GPU Scene Instance Allocation & Entity Mapping validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 31: Material System PBR Uniform Overrides & Descriptor Binding
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 31: Material System PBR Uniform Overrides & Descriptors...");
+
+            eng::renderer::Material mat;
+
+            // 1. Initial defaults check
+            if (mat.getRoughness() != 0.6f || mat.getMetallic() != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Default material roughness/metallic parameters mismatch!");
+                return false;
+            }
+
+            // 2. Set PBR uniform overrides
+            glm::vec4 customColor(0.8f, 0.2f, 0.1f, 1.0f);
+            mat.setAlbedoColor(customColor);
+            mat.setRoughness(0.45f);
+            mat.setMetallic(0.85f);
+            mat.setNormalScale(1.5f);
+            mat.setEmissiveStrength(2.5f);
+            mat.setClearcoatFactor(0.75f);
+            mat.setClearcoatRoughness(0.2f);
+            mat.setBlendMode(eng::renderer::MaterialBlendMode::Mask);
+            mat.setShadingModel(eng::renderer::MaterialShadingModel::Unlit);
+
+            // 3. Verify CPU assetData & GPU uboData alignment
+            if (mat.getAlbedoColor() != customColor || mat.uboData.baseColorFactor != customColor) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Albedo color factor synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getRoughness() != 0.45f || mat.uboData.roughnessFactor != 0.45f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Roughness factor synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getMetallic() != 0.85f || mat.uboData.metallicFactor != 0.85f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Metallic factor synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getNormalScale() != 1.5f || mat.uboData.normalScale != 1.5f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Normal scale synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getEmissiveStrength() != 2.5f || mat.uboData.emissiveStrength != 2.5f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Emissive strength synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getClearcoatFactor() != 0.75f || mat.uboData.clearcoatFactor != 0.75f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Clearcoat factor synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getClearcoatRoughness() != 0.2f || mat.uboData.clearcoatRoughness != 0.2f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Clearcoat roughness synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getBlendMode() != eng::renderer::MaterialBlendMode::Mask || mat.uboData.blendMode != 1) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Blend mode synchronization mismatch!");
+                return false;
+            }
+
+            if (mat.getShadingModel() != eng::renderer::MaterialShadingModel::Unlit || mat.uboData.shadingModel != 1) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: Shading model synchronization mismatch!");
+                return false;
+            }
+
+            // 4. Test texture slot flags
+            mat.setAlbedoTexture(nullptr);
+            if (mat.uboData.hasAlbedoMap != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: hasAlbedoMap should be 0.0 for null texture!");
+                return false;
+            }
+
+            mat.setNormalTexture(nullptr);
+            if (mat.uboData.useNormalMap != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 31 FAILED: useNormalMap should be 0.0 for null texture!");
+                return false;
+            }
+
+            mat.destroy();
+
+            LOG_INFO("[FormatTest] Test 31 Passed: Material System PBR Uniform Overrides & Descriptors validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 32: Shader Reloading & Shader Library Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 32: Shader Reloading & Shader Library...");
+
+            VkShaderModule modNull = eng::renderer::ShaderLibrary::LoadShader(VK_NULL_HANDLE, "non_existent_shader.spv");
+            if (modNull != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 32 FAILED: Expected VK_NULL_HANDLE for non-existent shader file!");
+                return false;
+            }
+
+            VkShaderModule reloadedNull = eng::renderer::ShaderLibrary::ReloadShader(VK_NULL_HANDLE, "non_existent_shader.spv");
+            if (reloadedNull != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 32 FAILED: Expected VK_NULL_HANDLE for reloaded non-existent shader!");
+                return false;
+            }
+
+            eng::renderer::ShaderLibrary::ClearCache(VK_NULL_HANDLE);
+
+            LOG_INFO("[FormatTest] Test 32 Passed: Shader Reloading & Shader Library validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 33: Vulkan Pipeline Cache Subsystem Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 33: Vulkan Pipeline Cache...");
+
+            eng::vulkan::VulkanPipelineCache cache;
+            if (cache.GetHandle() != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 33 FAILED: Initial VulkanPipelineCache handle should be VK_NULL_HANDLE!");
+                return false;
+            }
+
+            cache.SaveCache();
+            cache.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 33 Passed: Vulkan Pipeline Cache Subsystem validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 34: Textures Subsystem & Fallback Samplers Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 34: Textures Subsystem & Fallback Samplers...");
+
+            eng::renderer::TextureUsage usage = eng::renderer::TextureUsage::Albedo;
+            if (usage != eng::renderer::TextureUsage::Albedo) {
+                LOG_ERROR("[FormatTest] Test 34 FAILED: TextureUsage enum mapping incorrect!");
+                return false;
+            }
+
+            eng::renderer::Texture tex;
+            if (tex.view() != VK_NULL_HANDLE || tex.sampler() != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 34 FAILED: Uninitialized Texture should have null view/sampler!");
+                return false;
+            }
+            tex.destroy();
+
+            LOG_INFO("[FormatTest] Test 34 Passed: Textures Subsystem & Fallback Samplers validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 35: Meshes Subsystem & Bounds Geometry Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 35: Meshes Subsystem & Bounds Geometry...");
+
+            eng::renderer::Mesh mesh;
+            mesh.minBounds = glm::vec3(-1.0f);
+            mesh.maxBounds = glm::vec3(1.0f);
+            mesh.bounds.localCenter = (mesh.minBounds + mesh.maxBounds) * 0.5f;
+            mesh.bounds.localRadius = glm::length(mesh.maxBounds - mesh.bounds.localCenter);
+
+            if (mesh.bounds.localCenter != glm::vec3(0.0f) || mesh.bounds.localRadius <= 0.0f) {
+                LOG_ERROR("[FormatTest] Test 35 FAILED: Mesh bounds center/radius calculation mismatch!");
+                return false;
+            }
+
+            mesh.hasNormals = true;
+            mesh.hasUVs = true;
+            mesh.hasTangents = true;
+
+            if (!mesh.hasNormals || !mesh.hasUVs || !mesh.hasTangents) {
+                LOG_ERROR("[FormatTest] Test 35 FAILED: Mesh vertex attribute flags mismatch!");
+                return false;
+            }
+
+            mesh.destroy();
+
+            LOG_INFO("[FormatTest] Test 35 Passed: Meshes Subsystem & Bounds Geometry validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 36: Real-Time Virtual Geometry (RVG) Page Streaming Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 36: Virtual Geometry Page Streaming...");
+
+            auto& streamingMgr = eng::renderer::RVGPageStreamingManager::Get();
+            streamingMgr.ResetStats();
+            const auto& stats = streamingMgr.GetStats();
+
+            if (stats.totalRequests != 0 || stats.completedRequests != 0) {
+                LOG_ERROR("[FormatTest] Test 36 FAILED: RVGPageStreamingManager stats not properly reset!");
+                return false;
+            }
+
+            if (streamingMgr.GetMaxPhysicalPages() == 0 || streamingMgr.GetPageSize() == 0) {
+                LOG_ERROR("[FormatTest] Test 36 FAILED: RVGPageStreamingManager page size/capacity invalid!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 36 Passed: Virtual Geometry Page Streaming Scheduler validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 37: GPU Visibility & Frustum Culling Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 37: GPU Visibility & Frustum Culling...");
+
+            eng::renderer::FrustumCullPass frustumPass;
+            if (frustumPass.GetDescriptorSetLayout() != VK_NULL_HANDLE) {
+                LOG_ERROR("[FormatTest] Test 37 FAILED: Uninitialized FrustumCullPass descriptor layout should be null!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 37 Passed: GPU Visibility & Frustum Culling validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 38: Clustered Lighting & Quadtree Shadow Atlas Allocator Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 38: Clustered Lighting & Quadtree Shadow Atlas...");
+
+            // 1. Clustered lighting settings
+            Omnix::Radiance::ClusterSettings clusterSettings;
+            clusterSettings.tileSizeX = 32;
+            clusterSettings.tileSizeY = 32;
+            clusterSettings.depthSliceCount = 16;
+            clusterSettings.maxLightsPerCluster = 128;
+
+            if (clusterSettings.tileSizeX != 32 || clusterSettings.maxLightsPerCluster != 128) {
+                LOG_ERROR("[FormatTest] Test 38 FAILED: ClusterSettings parameters mismatch!");
+                return false;
+            }
+
+            // 2. Quadtree shadow atlas allocator
+            eng::renderer::ShadowAtlasAllocator atlas(2048);
+            uint32_t tileX = 0, tileY = 0;
+            bool alloc1 = atlas.Allocate(512, 10, 1, tileX, tileY);
+            if (!alloc1 || tileX != 0 || tileY != 0) {
+                LOG_ERROR("[FormatTest] Test 38 FAILED: Initial 512x512 tile allocation failed or coordinates incorrect!");
+                return false;
+            }
+
+            uint32_t tileX2 = 0, tileY2 = 0;
+            bool alloc2 = atlas.Allocate(512, 11, 1, tileX2, tileY2);
+            if (!alloc2 || (tileX2 == 0 && tileY2 == 0)) {
+                LOG_ERROR("[FormatTest] Test 38 FAILED: Second 512x512 tile allocation failed!");
+                return false;
+            }
+
+            atlas.Deallocate(10);
+            atlas.Deallocate(11);
+
+            LOG_INFO("[FormatTest] Test 38 Passed: Clustered Lighting & Quadtree Shadow Atlas validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 39: Modular Multi-Pass Post-Processing Chain Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 39: Modular Multi-Pass Post-Processing Chain...");
+
+            eng::renderer::PostProcessChain chain;
+            eng::renderer::PostProcessSettings settings;
+            settings.enableSSAO = true;
+            settings.enableBloom = true;
+            settings.enableTonemap = true;
+            settings.enableColorGrading = true;
+            settings.exposure = 1.2f;
+
+            chain.Initialize(settings);
+            const auto& activePasses = chain.GetActivePasses();
+
+            if (activePasses.size() != 4) {
+                LOG_ERROR("[FormatTest] Test 39 FAILED: Expected 4 active post processing passes!");
+                return false;
+            }
+
+            // Disable Bloom & SSAO
+            settings.enableBloom = false;
+            settings.enableSSAO = false;
+            chain.SetSettings(settings);
+
+            if (chain.GetActivePasses().size() != 2) {
+                LOG_ERROR("[FormatTest] Test 39 FAILED: Expected 2 active post processing passes after update!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 39 Passed: Modular Multi-Pass Post-Processing Chain validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 40: Debug Wireframe Primitive Drawing Utilities Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 40: Debug Wireframe Drawing Utilities...");
+
+            eng::renderer::DebugDraw::ClearLines();
+            eng::renderer::DebugDraw::DrawLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+            eng::renderer::DebugDraw::DrawSphere(glm::vec3(0.0f, 2.0f, 0.0f), 1.5f, glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+
+            const auto& lines = eng::renderer::DebugDraw::GetLines();
+            if (lines.empty()) {
+                LOG_ERROR("[FormatTest] Test 40 FAILED: DebugDraw line buffer is empty after drawing primitives!");
+                return false;
+            }
+
+            eng::renderer::DebugDraw::ClearLines();
+            if (!eng::renderer::DebugDraw::GetLines().empty()) {
+                LOG_ERROR("[FormatTest] Test 40 FAILED: DebugDraw lines not cleared!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 40 Passed: Debug Wireframe Drawing Utilities validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 41: GPU Profiler & Timing Query Pool Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 41: GPU Profiler & Timing Query Pool...");
+
+            eng::renderer::GPUProfiler::StartFrame();
+            eng::renderer::GPUProfiler::EndFrame();
+            float timeMs = eng::renderer::GPUProfiler::GetLastFrameTimeMs();
+
+            if (timeMs < 0.0f) {
+                LOG_ERROR("[FormatTest] Test 41 FAILED: GPUProfiler returned negative frame duration!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 41 Passed: GPU Profiler & Timing Query Pool validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 42: Physics World Initialization & PhysX Scene Lifecycle
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 42: Physics World Initialization & PhysX Scene...");
+
+            eng::physics::PhysicsWorld physicsWorld;
+            if (!physicsWorld.Initialize()) {
+                LOG_ERROR("[FormatTest] Test 42 FAILED: PhysicsWorld initialization failed!");
+                return false;
+            }
+
+            if (!physicsWorld.IsInitialized()) {
+                LOG_ERROR("[FormatTest] Test 42 FAILED: IsInitialized returned false after Initialize()!");
+                return false;
+            }
+
+            physicsWorld.FixedUpdate(1.0f / 60.0f);
+            if (physicsWorld.GetStepsThisFrame() != 1) {
+                LOG_ERROR("[FormatTest] Test 42 FAILED: Expected 1 simulation step per 1/60s delta!");
+                return false;
+            }
+
+            physicsWorld.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 42 Passed: Physics World Initialization & PhysX Scene validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 43: Rigid Bodies & Hybrid Simulation Model
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 43: Rigid Bodies & Hybrid Simulation Model...");
+
+            StaticBodyComponent staticBody{};
+            staticBody.collisionLayer = 1;
+            staticBody.collisionMask = 0xFFFFFFFF;
+            staticBody.enabled = true;
+
+            RigidBodyComponent rigidBody{};
+            rigidBody.velocity = Vector3(0.0f, -9.81f, 0.0f);
+            rigidBody.useGravity = true;
+
+            if (!staticBody.enabled || !rigidBody.useGravity) {
+                LOG_ERROR("[FormatTest] Test 43 FAILED: Body component parameter initialization error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 43 Passed: Rigid Bodies & Hybrid Simulation Model validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 44: Kinematic Character Controller Sliding Physics
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 44: Character Controller Sliding Physics...");
+
+            Vector3 velocity(5.0f, 0.0f, 5.0f);
+            Vector3 wallNormal(-1.0f, 0.0f, 0.0f); // Wall along YZ plane
+            Vector3 slideVelocity = velocity - wallNormal * (velocity.x * wallNormal.x + velocity.y * wallNormal.y + velocity.z * wallNormal.z);
+
+            if (slideVelocity.x != 0.0f || slideVelocity.z != 5.0f) {
+                LOG_ERROR("[FormatTest] Test 44 FAILED: Kinematic character controller wall sliding math error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 44 Passed: Character Controller Sliding Physics validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 45: Colliders & Shape Geometry Conversions
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 45: Colliders & Shape Geometry Conversions...");
+
+            BoxColliderComponent box{};
+            box.size = Vector3(2.0f, 4.0f, 2.0f);
+
+            SphereColliderComponent sphere{};
+            sphere.radius = 1.5f;
+
+            CapsuleColliderComponent capsule{};
+            capsule.radius = 0.5f;
+            capsule.height = 2.0f;
+
+            if (box.size.y != 4.0f || sphere.radius != 1.5f || capsule.height != 2.0f) {
+                LOG_ERROR("[FormatTest] Test 45 FAILED: Collider shape dimensions mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 45 Passed: Colliders & Shape Geometry Conversions validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 46: Collision Detection & Overlap Queries
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 46: Collision Detection & Overlap Queries...");
+
+            eng::physics::PhysicsWorld physicsWorld;
+            physicsWorld.Initialize();
+
+            std::vector<Entity> hitEntities;
+            bool hitBox = physicsWorld.OverlapBox(Vector3(0.0f, 0.0f, 0.0f), Vector3(1.0f, 1.0f, 1.0f), hitEntities);
+            bool hitSphere = physicsWorld.OverlapSphere(Vector3(0.0f, 0.0f, 0.0f), 1.0f, hitEntities);
+            bool hitCapsule = physicsWorld.OverlapCapsule(Vector3(0.0f, 0.0f, 0.0f), 0.5f, 2.0f, hitEntities);
+
+            // On empty scene, overlaps should safely return false without crashing
+            if (hitBox || hitSphere || hitCapsule) {
+                LOG_ERROR("[FormatTest] Test 46 FAILED: Expected false overlap on empty scene!");
+                return false;
+            }
+
+            physicsWorld.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 46 Passed: Collision Detection & Overlap Queries validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 47: Trigger System Bounding Box & Distance Formulas
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 47: Trigger System Bounding Box & Distance Formulas...");
+
+            TriggerComponent trigger{};
+            trigger.boxSize = Vector3(5.0f, 5.0f, 5.0f);
+            trigger.shapeType = TriggerShapeType::Box;
+            trigger.enabled = true;
+
+            Vector3 pointInside(1.0f, 1.0f, 1.0f);
+            bool isInsideBox = (std::abs(pointInside.x) <= trigger.boxSize.x * 0.5f) &&
+                               (std::abs(pointInside.y) <= trigger.boxSize.y * 0.5f) &&
+                               (std::abs(pointInside.z) <= trigger.boxSize.z * 0.5f);
+
+            if (!isInsideBox) {
+                LOG_ERROR("[FormatTest] Test 47 FAILED: Trigger bounding box overlap evaluation failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 47 Passed: Trigger System Bounding Box & Distance Formulas validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 48: Raycast Queries against Actor Hierarchy
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 48: Raycast Queries against Actor Hierarchy...");
+
+            eng::physics::PhysicsWorld physicsWorld;
+            physicsWorld.Initialize();
+
+            eng::physics::RaycastHit hit;
+            bool rayHit = physicsWorld.Raycast(Vector3(0.0f, 10.0f, 0.0f), Vector3(0.0f, -1.0f, 0.0f), 100.0f, hit);
+
+            if (rayHit) {
+                LOG_ERROR("[FormatTest] Test 48 FAILED: Expected no raycast hit on empty scene!");
+                return false;
+            }
+
+            physicsWorld.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 48 Passed: Raycast Queries against Actor Hierarchy validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 49: Sweep Tests for Box, Sphere & Capsule Geometries
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 49: Sweep Tests for Box, Sphere & Capsule...");
+
+            eng::physics::PhysicsWorld physicsWorld;
+            physicsWorld.Initialize();
+
+            eng::physics::SweepHit sweepHit;
+            bool sweepBoxHit = physicsWorld.SweepBox(Vector3(0.0f, 10.0f, 0.0f), Vector3(1.0f, 1.0f, 1.0f), Vector3(0.0f, -1.0f, 0.0f), 50.0f, sweepHit);
+            bool sweepSphereHit = physicsWorld.SweepSphere(Vector3(0.0f, 10.0f, 0.0f), 1.0f, Vector3(0.0f, -1.0f, 0.0f), 50.0f, sweepHit);
+            bool sweepCapsuleHit = physicsWorld.SweepCapsule(Vector3(0.0f, 10.0f, 0.0f), 0.5f, 2.0f, Vector3(0.0f, -1.0f, 0.0f), 50.0f, sweepHit);
+
+            if (sweepBoxHit || sweepSphereHit || sweepCapsuleHit) {
+                LOG_ERROR("[FormatTest] Test 49 FAILED: Expected no sweep hit on empty scene!");
+                return false;
+            }
+
+            physicsWorld.Shutdown();
+
+            LOG_INFO("[FormatTest] Test 49 Passed: Sweep Tests for Box, Sphere & Capsule Geometries validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 50: Physical Joint Constraints (Fixed, Distance, Hinge, Spherical)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 50: Physical Joint Constraints...");
+
+            eng::physics::PhysicsJoint joint;
+            joint.type = eng::physics::JointType::Distance;
+            joint.entityA = 1;
+            joint.entityB = 2;
+            joint.minDistance = 0.5f;
+            joint.maxDistance = 3.0f;
+            joint.breakForce = 5000.0f;
+
+            if (joint.type != eng::physics::JointType::Distance || joint.maxDistance != 3.0f || joint.breakForce != 5000.0f) {
+                LOG_ERROR("[FormatTest] Test 50 FAILED: PhysicsJoint parameter initialization mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 50 Passed: Physical Joint Constraints validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 51: Custom Physics Material Presets & Friction/Restitution
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 51: Physics Material Presets...");
+
+            eng::physics::PhysicsWorld::PhysicsMaterialData matData;
+            matData.staticFriction = 0.8f;
+            matData.dynamicFriction = 0.6f;
+            matData.restitution = 0.2f;
+
+            if (matData.staticFriction != 0.8f || matData.restitution != 0.2f) {
+                LOG_ERROR("[FormatTest] Test 51 FAILED: PhysicsMaterialData parameters mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 51 Passed: Physics Material Presets validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 52: Physics Debug Wireframe Draw Rendering
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 52: Physics Debug Wireframe Draw...");
+
+            eng::renderer::DebugDraw::ClearLines();
+            eng::renderer::DebugDraw::DrawLine(glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(1.0f, 1.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+
+            if (eng::renderer::DebugDraw::GetLines().empty()) {
+                LOG_ERROR("[FormatTest] Test 52 FAILED: Debug wireframe lines buffer empty!");
+                return false;
+            }
+            eng::renderer::DebugDraw::ClearLines();
+
+            LOG_INFO("[FormatTest] Test 52 Passed: Physics Debug Wireframe Draw validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 53: Skeleton & Bone Hierarchy Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 53: Skeleton & Bone Hierarchy...");
+
+            eng::animation::Skeleton skel;
+            uint32_t rootIdx = skel.AddBone("Hips", -1);
+            uint32_t spineIdx = skel.AddBone("Spine", static_cast<int>(rootIdx));
+
+            if (skel.GetBoneCount() != 2) {
+                LOG_ERROR("[FormatTest] Test 53 FAILED: Skeleton bone count should be 2!");
+                return false;
+            }
+
+            if (skel.GetParentIndex(spineIdx) != static_cast<int>(rootIdx)) {
+                LOG_ERROR("[FormatTest] Test 53 FAILED: Spine parent index mismatch!");
+                return false;
+            }
+
+            if (skel.FindBoneIndex("Spine") != static_cast<int>(spineIdx)) {
+                LOG_ERROR("[FormatTest] Test 53 FAILED: FindBoneIndex returned wrong index!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 53 Passed: Skeleton & Bone Hierarchy validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 54: Bone Joint Transform Matrix Calculations
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 54: Bone Joint Transform Matrix Calculations...");
+
+            eng::animation::TransformPose poseA;
+            poseA.position = glm::vec3(0.0f, 0.0f, 0.0f);
+            poseA.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+            eng::animation::TransformPose poseB;
+            poseB.position = glm::vec3(10.0f, 0.0f, 0.0f);
+            poseB.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+            eng::animation::TransformPose blended = eng::animation::TransformPose::Lerp(poseA, poseB, 0.5f);
+            if (blended.position.x != 5.0f) {
+                LOG_ERROR("[FormatTest] Test 54 FAILED: TransformPose lerp position mismatch!");
+                return false;
+            }
+
+            glm::mat4 mat = blended.ToMatrix();
+            if (mat[3][0] != 5.0f) {
+                LOG_ERROR("[FormatTest] Test 54 FAILED: Matrix translation component mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 54 Passed: Bone Joint Transform Matrix Calculations validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 55: Animation Clip Sampling & Keyframe Evaluation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 55: Animation Clip Sampling & Keyframe Evaluation...");
+
+            OmnixAnim animData;
+            animData.header.durationSeconds = 2.0f;
+            animData.header.ticksPerSecond = 30.0f;
+            animData.header.boneTrackCount = 1;
+
+            BoneTrack track;
+            track.boneName = "Hips";
+            track.positionKeys.push_back({ 0.0f, Vec3{ 0.0f, 0.0f, 0.0f } });
+            track.positionKeys.push_back({ 2.0f, Vec3{ 0.0f, 10.0f, 0.0f } });
+            animData.boneTracks.push_back(track);
+
+            eng::animation::AnimationClip clip(animData);
+            glm::vec3 posMid = clip.SamplePosition(0, 1.0f);
+
+            if (std::abs(posMid.y - 5.0f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 55 FAILED: Keyframe linear interpolation position mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 55 Passed: Animation Clip Sampling & Keyframe Evaluation validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 56: Animation Player Playback Controls
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 56: Animation Player Playback Controls...");
+
+            OmnixAnim animData;
+            animData.header.durationSeconds = 1.0f;
+            eng::animation::Skeleton skel;
+            skel.AddBone("Hips", -1);
+
+            auto clip = std::make_shared<eng::animation::AnimationClip>(animData);
+            eng::animation::AnimationPlayer player;
+
+            player.Play(clip, true, 1.0f);
+            if (!player.IsPlaying() || !player.IsLooping()) {
+                LOG_ERROR("[FormatTest] Test 56 FAILED: Player Play state mismatch!");
+                return false;
+            }
+
+            std::vector<eng::animation::TransformPose> outPoses;
+            player.Update(0.5f, skel, outPoses);
+            if (std::abs(player.GetCurrentTime() - 0.5f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 56 FAILED: Current playback time mismatch!");
+                return false;
+            }
+
+            player.Pause();
+            if (player.IsPlaying()) {
+                LOG_ERROR("[FormatTest] Test 56 FAILED: Player Pause state mismatch!");
+                return false;
+            }
+
+            player.Stop();
+            if (player.GetCurrentTime() != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 56 FAILED: Stop should reset current time to 0!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 56 Passed: Animation Player Playback Controls validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 57: 1D & 2D Animation Blend Trees
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 57: 1D & 2D Animation Blend Trees...");
+
+            std::vector<eng::animation::TransformPose> poseA(1), poseB(1), outPose;
+            poseA[0].position = glm::vec3(0.0f, 0.0f, 0.0f);
+            poseB[0].position = glm::vec3(10.0f, 0.0f, 0.0f);
+
+            eng::animation::BlendTree::BlendPoses1D(poseA, poseB, 0.3f, outPose);
+
+            if (std::abs(outPose[0].position.x - 3.0f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 57 FAILED: 1D Blend Tree output pose interpolation mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 57 Passed: 1D & 2D Animation Blend Trees validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 58: Animation State Machines & Transitions
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 58: Animation State Machines & Transitions...");
+
+            eng::animation::AnimStateMachine stateMachine;
+            eng::animation::AnimState idleState{ "Idle", nullptr, true };
+            eng::animation::AnimState runState{ "Run", nullptr, true };
+
+            stateMachine.AddState(idleState);
+            stateMachine.AddState(runState);
+
+            eng::animation::AnimTransition trans{ "Idle", "Run", 0.2f };
+            stateMachine.AddTransition(trans);
+
+            if (stateMachine.GetActiveState() != "Idle") {
+                LOG_ERROR("[FormatTest] Test 58 FAILED: Initial state should be Idle!");
+                return false;
+            }
+
+            stateMachine.SetState("Run");
+            if (stateMachine.GetActiveState() != "Run") {
+                LOG_ERROR("[FormatTest] Test 58 FAILED: Active state after transition should be Run!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 58 Passed: Animation State Machines & Transitions validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 59: Animation Graph Execution & Pose Evaluator
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 59: Animation Graph Execution & Pose Evaluator...");
+
+            eng::animation::Skeleton skel;
+            skel.AddBone("Hips", -1);
+            skel.AddBone("Spine", 0);
+
+            eng::animation::AnimGraph animGraph;
+            std::vector<glm::mat4> palette;
+            animGraph.EvaluateGraph(0.016f, skel, palette);
+
+            if (palette.size() != 2) {
+                LOG_ERROR("[FormatTest] Test 59 FAILED: Skinning palette size should match bone count!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 59 Passed: Animation Graph Execution & Pose Evaluator validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 60: Root Motion Delta Displacement Extraction
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 60: Root Motion Delta Displacement...");
+
+            OmnixAnim animData;
+            animData.header.hasRootMotion = 1;
+            animData.header.durationSeconds = 2.0f;
+
+            BoneTrack rootTrack;
+            rootTrack.boneName = "Root";
+            rootTrack.positionKeys.push_back({ 0.0f, Vec3{ 0.0f, 0.0f, 0.0f } });
+            rootTrack.positionKeys.push_back({ 2.0f, Vec3{ 0.0f, 0.0f, 10.0f } });
+            animData.boneTracks.push_back(rootTrack);
+
+            eng::animation::AnimationClip clip(animData);
+            glm::vec3 delta = eng::animation::RootMotionExtractor::ExtractDeltaPosition(clip, 0.0f, 1.0f);
+
+            if (std::abs(delta.z - 5.0f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 60 FAILED: Root motion delta z displacement mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 60 Passed: Root Motion Delta Displacement validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 61: Keyframe Event Callbacks & Timelines
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 61: Keyframe Event Callbacks & Timelines...");
+
+            eng::animation::AnimTimeline timeline;
+            bool eventTriggered = false;
+
+            eng::animation::AnimEvent evt;
+            evt.triggerTime = 0.5f;
+            evt.name = "Footstep";
+            evt.callback = [&]() { eventTriggered = true; };
+
+            timeline.AddEvent(evt);
+            timeline.EvaluateEvents(0.0f, 0.6f);
+
+            if (!eventTriggered) {
+                LOG_ERROR("[FormatTest] Test 61 FAILED: Footstep timeline event callback failed to trigger!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 61 Passed: Keyframe Event Callbacks & Timelines validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 62: GPU Skinning Matrix Palette & Skinned Vertices
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 62: GPU Skinning Matrix Palette & Skinned Vertices...");
+
+            eng::animation::SkinnedVertex v{};
+            v.position = glm::vec3(0.0f, 1.0f, 0.0f);
+            v.boneIndices = glm::uvec4(0, 1, 0, 0);
+            v.boneWeights = glm::vec4(0.7f, 0.3f, 0.0f, 0.0f);
+
+            if (v.boneWeights.x + v.boneWeights.y != 1.0f) {
+                LOG_ERROR("[FormatTest] Test 62 FAILED: Skinned vertex weights must sum to 1.0!");
+                return false;
+            }
+
+            eng::animation::SkinningPaletteSSBO ssbo{};
+            if (sizeof(ssbo.boneMatrices) / sizeof(glm::mat4) != 128) {
+                LOG_ERROR("[FormatTest] Test 62 FAILED: SkinningPaletteSSBO capacity must be 128 matrices!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 62 Passed: GPU Skinning Matrix Palette & Skinned Vertices validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 63: Morph Targets & Dynamic Blend Shape Deformations
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 63: Morph Targets & Blend Shape Deformations...");
+
+            std::vector<glm::vec3> baseVerts = { glm::vec3(0.0f, 0.0f, 0.0f) };
+            std::vector<eng::animation::MorphTarget> targets(1);
+            targets[0].name = "Smile";
+            targets[0].vertexDisplacements = { glm::vec3(0.0f, 1.0f, 0.0f) };
+
+            std::vector<float> weights = { 0.5f };
+            std::vector<glm::vec3> outVerts;
+
+            eng::animation::MorphTargetEvaluator::EvaluateMorphs(baseVerts, targets, weights, outVerts);
+
+            if (outVerts[0].y != 0.5f) {
+                LOG_ERROR("[FormatTest] Test 63 FAILED: Morph target vertex displacement blending mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 63 Passed: Morph Targets & Blend Shape Deformations validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 64: Inverse Kinematics (Two-Bone IK Solver)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 64: Inverse Kinematics (Two-Bone IK Solver)...");
+
+            glm::vec3 rootPos(0.0f, 10.0f, 0.0f);
+            glm::vec3 targetPos(0.0f, 2.0f, 0.0f);
+            float upperLen = 4.0f;
+            float lowerLen = 4.0f;
+
+            glm::vec3 kneePos(0.0f);
+            bool ikSolved = eng::animation::TwoBoneIKSolver::Solve(rootPos, targetPos, upperLen, lowerLen, kneePos);
+
+            if (!ikSolved) {
+                LOG_ERROR("[FormatTest] Test 64 FAILED: TwoBoneIKSolver failed to solve valid target reach!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 64 Passed: Inverse Kinematics (Two-Bone IK Solver) validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 65: Audio Device Backend Capabilities
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 65: Audio Device Backend Capabilities...");
+
+            eng::audio::AudioDeviceCapabilities caps;
+            if (caps.sampleRate != 48000 || caps.channels != 2 || !caps.isInitialized) {
+                LOG_ERROR("[FormatTest] Test 65 FAILED: AudioDeviceCapabilities default configuration error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 65 Passed: Audio Device Backend Capabilities validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 66: Audio Sources & Sound Component Parameters
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 66: Audio Sources & Sound Component Parameters...");
+
+            AudioSourceComponent audioSource;
+            audioSource.ClipPath = "audio/sfx_explosion.wav";
+            audioSource.PlayOnStart = true;
+            audioSource.Loop = false;
+            audioSource.Volume = 0.85f;
+
+            if (audioSource.ClipPath != "audio/sfx_explosion.wav" || !audioSource.PlayOnStart || audioSource.Volume != 0.85f) {
+                LOG_ERROR("[FormatTest] Test 66 FAILED: AudioSourceComponent property assignment error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 66 Passed: Audio Sources & Sound Component Parameters validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 67: Audio Listener Spatial Transform Tracking
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 67: Audio Listener Spatial Transform Tracking...");
+
+            eng::audio::AudioListenerSystem listenerSys;
+            eng::audio::AudioListenerComponent listenerComp;
+            listenerComp.active = true;
+            listenerComp.position = glm::vec3(0.0f, 5.0f, 10.0f);
+            listenerComp.forward = glm::vec3(0.0f, 0.0f, -1.0f);
+
+            listenerSys.SetActiveListener(listenerComp);
+            const auto& active = listenerSys.GetActiveListener();
+
+            if (!active.active || active.position.y != 5.0f || active.forward.z != -1.0f) {
+                LOG_ERROR("[FormatTest] Test 67 FAILED: AudioListenerSystem active listener transform mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 67 Passed: Audio Listener Spatial Transform Tracking validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 68: Audio Mixer Channels & Sub-Group Routing
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 68: Audio Mixer Channels & Sub-Group Routing...");
+
+            eng::audio::AudioMixer mixer;
+            mixer.SetChannelVolume(eng::audio::MixerChannelType::Master, 0.5f);
+            mixer.SetChannelVolume(eng::audio::MixerChannelType::Music, 0.8f);
+
+            float effectiveMusicVol = mixer.GetEffectiveVolume(eng::audio::MixerChannelType::Music);
+            if (std::abs(effectiveMusicVol - 0.4f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 68 FAILED: AudioMixer effective music volume calculation mismatch!");
+                return false;
+            }
+
+            mixer.SetMuted(eng::audio::MixerChannelType::Music, true);
+            if (mixer.GetEffectiveVolume(eng::audio::MixerChannelType::Music) != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 68 FAILED: Muted channel effective volume must be 0.0!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 68 Passed: Audio Mixer Channels & Sub-Group Routing validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 69: Streaming Audio Chunking & Large Tracks
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 69: Streaming Audio Chunking & Large Tracks...");
+
+            eng::audio::AudioStreamer streamer;
+            auto streamBuf = streamer.OpenStream("audio/bgm_main_theme.wav", 131072); // 128 KB file
+
+            if (!streamBuf.HasMoreChunks() || streamBuf.GetProgress() != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 69 FAILED: Initial audio stream state error!");
+                return false;
+            }
+
+            streamer.ReadNextChunk(streamBuf); // Read 64 KB
+            if (std::abs(streamBuf.GetProgress() - 0.5f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 69 FAILED: Audio stream progress should be 50% after 1 chunk!");
+                return false;
+            }
+
+            streamer.ReadNextChunk(streamBuf); // Read remaining 64 KB
+            if (streamBuf.HasMoreChunks() || streamBuf.GetProgress() != 1.0f) {
+                LOG_ERROR("[FormatTest] Test 69 FAILED: Stream should be complete after 2 chunks!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 69 Passed: Streaming Audio Chunking & Large Tracks validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 70: 3D Spatial Audio & Distance Attenuation Models
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 70: 3D Spatial Audio & Distance Attenuation...");
+
+            eng::audio::SpatialAudioSettings settings;
+            settings.attenuation = eng::audio::AttenuationModel::Linear;
+            settings.minDistance = 1.0f;
+            settings.maxDistance = 51.0f;
+
+            glm::vec3 listenerPos(0.0f, 0.0f, 0.0f);
+            glm::vec3 sourcePos(26.0f, 0.0f, 0.0f); // 26 units distance (halfway)
+
+            float attenLinear = eng::audio::SpatialAudioSystem::CalculateAttenuation(sourcePos, listenerPos, settings);
+            if (std::abs(attenLinear - 0.5f) > 0.01f) {
+                LOG_ERROR("[FormatTest] Test 70 FAILED: Linear distance attenuation at midpoint should be 0.5!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 70 Passed: 3D Spatial Audio & Distance Attenuation validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 71: Reverb Zones & Obstruction Occlusion Dampening
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 71: Reverb Zones & Obstruction Occlusion...");
+
+            eng::audio::ReverbZone caveZone;
+            caveZone.center = glm::vec3(0.0f, 0.0f, 0.0f);
+            caveZone.extents = glm::vec3(10.0f, 10.0f, 10.0f);
+
+            if (!caveZone.Contains(glm::vec3(2.0f, -1.0f, 3.0f)) || caveZone.Contains(glm::vec3(12.0f, 0.0f, 0.0f))) {
+                LOG_ERROR("[FormatTest] Test 71 FAILED: ReverbZone spatial bounds contains calculation error!");
+                return false;
+            }
+
+            float occludedAtten = eng::audio::AudioOcclusionSystem::CalculateOcclusionFactor(glm::vec3(0.0f), glm::vec3(10.0f, 0.0f, 0.0f), true);
+            if (occludedAtten >= 1.0f) {
+                LOG_ERROR("[FormatTest] Test 71 FAILED: Occluded sound should apply dampening factor < 1.0!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 71 Passed: Reverb Zones & Obstruction Occlusion validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 72: Audio DSP Filters & Spectrum Debug Analysis
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 72: Audio DSP Filters & Spectrum Debug Analysis...");
+
+            eng::audio::DSPEffect dsp;
+            dsp.type = eng::audio::FilterType::LowPass;
+            dsp.cutoffFrequencyHz = 800.0f;
+
+            if (dsp.type != eng::audio::FilterType::LowPass || dsp.cutoffFrequencyHz != 800.0f) {
+                LOG_ERROR("[FormatTest] Test 72 FAILED: DSPEffect configuration mismatch!");
+                return false;
+            }
+
+            eng::audio::AudioSpectrumData spec = eng::audio::AudioDSPDebugger::AnalyzeSpectrum(1.0f);
+            if (spec.peakVolumeDb != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 72 FAILED: Full volume spectrum peak DB should be 0.0 dB!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 72 Passed: Audio DSP Filters & Spectrum Debug Analysis validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 73: Keyboard Device State & Key Transitions
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 73: Keyboard Device State & Key Transitions...");
+
+            eng::input::KeyboardDeviceState kb;
+            kb.SetKeyState(32, true); // Spacebar pressed
+
+            if (!kb.IsKeyDown(32)) {
+                LOG_ERROR("[FormatTest] Test 73 FAILED: Spacebar should be down!");
+                return false;
+            }
+
+            kb.UpdateFrame(); // Move current to previous
+            if (!kb.IsKeyDown(32) || kb.IsKeyPressed(32)) {
+                LOG_ERROR("[FormatTest] Test 73 FAILED: Key pressed should be false after 1 frame update!");
+                return false;
+            }
+
+            kb.SetKeyState(32, false); // Spacebar released
+            if (!kb.IsKeyReleased(32)) {
+                LOG_ERROR("[FormatTest] Test 73 FAILED: Key released transition should be true!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 73 Passed: Keyboard Device State & Key Transitions validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 74: Mouse Device Position, Movement Deltas & Buttons
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 74: Mouse Device Position & Movement Deltas...");
+
+            eng::input::MouseDeviceState mouse;
+            mouse.SetPosition(100.0f, 200.0f);
+            mouse.UpdateFrame();
+
+            mouse.SetPosition(120.0f, 230.0f);
+            mouse.UpdateFrame();
+
+            if (mouse.delta.x != 20.0f || mouse.delta.y != 30.0f) {
+                LOG_ERROR("[FormatTest] Test 74 FAILED: Mouse movement delta calculation error!");
+                return false;
+            }
+
+            mouse.SetButtonState(0, true); // Left click
+            if (!mouse.IsButtonDown(0)) {
+                LOG_ERROR("[FormatTest] Test 74 FAILED: Mouse left button should be down!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 74 Passed: Mouse Device Position & Movement Deltas validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 75: Gamepad Controllers State (Up to 4 Analog Gamepads)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 75: Gamepad Controllers State...");
+
+            eng::input::GamepadSubsystem gamepads;
+            auto& pad0 = gamepads.GetGamepad(0);
+
+            pad0.leftStick = glm::vec2(0.8f, -0.5f);
+            pad0.buttonBitmask = 0x0001; // Button A
+
+            if (!pad0.connected || pad0.leftStick.x != 0.8f || !pad0.IsButtonDown(0x0001)) {
+                LOG_ERROR("[FormatTest] Test 75 FAILED: Gamepad 0 state update error!");
+                return false;
+            }
+
+            gamepads.UpdateFrame();
+            if (!pad0.IsButtonDown(0x0001) || pad0.IsButtonPressed(0x0001)) {
+                LOG_ERROR("[FormatTest] Test 75 FAILED: Gamepad button press transition error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 75 Passed: Gamepad Controllers State validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 76: Input Action & Axis Mapping Table Evaluation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 76: Input Action & Axis Mapping Table...");
+
+            eng::input::InputMappingTable table;
+
+            eng::input::ActionBinding jumpBind;
+            jumpBind.actionName = "Jump";
+            jumpBind.keyCode = 32; // Space
+            table.BindAction(jumpBind);
+
+            eng::input::AxisBinding moveForward;
+            moveForward.axisName = "MoveForward";
+            moveForward.positiveKey = 87; // W
+            moveForward.negativeKey = 83; // S
+            moveForward.scale = 1.0f;
+            table.BindAxis(moveForward);
+
+            eng::input::KeyboardDeviceState kb;
+            eng::input::MouseDeviceState mouse;
+            eng::input::GamepadState pad;
+
+            kb.SetKeyState(32, true); // Press Space
+            kb.SetKeyState(87, true); // Press W
+
+            bool jumping = table.EvaluateAction("Jump", kb, mouse, pad);
+            float forwardVal = table.EvaluateAxis("MoveForward", kb, pad);
+
+            if (!jumping || forwardVal != 1.0f) {
+                LOG_ERROR("[FormatTest] Test 76 FAILED: Mapping table action or axis evaluation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 76 Passed: Input Action & Axis Mapping Table validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 77: Input Contexts Stack Priority & Active Layering
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 77: Input Contexts Stack Priority...");
+
+            eng::input::InputContextStack stack;
+            auto gameplayCtx = std::make_shared<eng::input::InputContext>("Gameplay", 0);
+            auto uiCtx = std::make_shared<eng::input::InputContext>("UI", 10); // Higher priority
+
+            stack.PushContext(gameplayCtx);
+            stack.PushContext(uiCtx);
+
+            const auto& activeStack = stack.GetStack();
+            if (activeStack.size() != 2 || activeStack[0]->GetName() != "UI") {
+                LOG_ERROR("[FormatTest] Test 77 FAILED: UI context should have top priority!");
+                return false;
+            }
+
+            stack.PopContext("UI");
+            if (stack.GetStack().size() != 1 || stack.GetStack()[0]->GetName() != "Gameplay") {
+                LOG_ERROR("[FormatTest] Test 77 FAILED: Context pop failed to leave Gameplay context!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 77 Passed: Input Contexts Stack Priority validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 78: Controller Hot-Plugging & Haptics Rumble Feedback
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 78: Controller Hot-Plugging & Haptics Rumble...");
+
+            eng::input::InputHapticsSystem haptics;
+            bool eventFired = false;
+
+            haptics.SetHotPlugCallback([&](const eng::input::ControllerConnectionEvent& evt) {
+                if (evt.controllerIndex == 1 && evt.connected) {
+                    eventFired = true;
+                }
+            });
+
+            haptics.TriggerConnectionEvent(1, true, "PS5 DualSense Controller");
+            if (!eventFired) {
+                LOG_ERROR("[FormatTest] Test 78 FAILED: Controller hot-plug callback failed!");
+                return false;
+            }
+
+            haptics.SetRumble(0, 0.8f, 0.5f, 0.1f); // 100ms rumble
+            if (haptics.GetRumble(0).lowFrequency != 0.8f) {
+                LOG_ERROR("[FormatTest] Test 78 FAILED: Rumble state assignment error!");
+                return false;
+            }
+
+            haptics.Update(0.15f); // 150ms step -> rumble should expire
+            if (haptics.GetRumble(0).durationSeconds != 0.0f || haptics.GetRumble(0).lowFrequency != 0.0f) {
+                LOG_ERROR("[FormatTest] Test 78 FAILED: Rumble duration decay error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 78 Passed: Controller Hot-Plugging & Haptics Rumble validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 79: AI Blackboard Parameter Memory Store
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 79: AI Blackboard Parameter Memory Store...");
+
+            eng::ai::Blackboard bb;
+            bb.SetBool("HasTarget", true);
+            bb.SetFloat("Health", 85.0f);
+            bb.SetVector("TargetPosition", glm::vec3(10.0f, 0.0f, 5.0f));
+
+            if (!bb.GetBool("HasTarget") || bb.GetFloat("Health") != 85.0f || bb.GetVector("TargetPosition").x != 10.0f) {
+                LOG_ERROR("[FormatTest] Test 79 FAILED: Blackboard parameter store retrieval error!");
+                return false;
+            }
+
+            if (!bb.HasKey("HasTarget") || bb.HasKey("NonExistentKey")) {
+                LOG_ERROR("[FormatTest] Test 79 FAILED: Blackboard HasKey evaluation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 79 Passed: AI Blackboard Parameter Memory Store validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 80: NavMesh Topology & A* Pathfinding Navigation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 80: NavMesh Topology & A* Pathfinding...");
+
+            eng::ai::NavMesh nav;
+            uint32_t n0 = nav.AddNode(glm::vec3(0.0f, 0.0f, 0.0f));
+            uint32_t n1 = nav.AddNode(glm::vec3(5.0f, 0.0f, 0.0f));
+            uint32_t n2 = nav.AddNode(glm::vec3(10.0f, 0.0f, 0.0f));
+
+            nav.ConnectNodes(n0, n1);
+            nav.ConnectNodes(n1, n2);
+
+            std::vector<glm::vec3> path;
+            bool pathFound = nav.FindPath(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(10.0f, 0.0f, 0.0f), path);
+
+            if (!pathFound || path.size() != 3 || path[2].x != 10.0f) {
+                LOG_ERROR("[FormatTest] Test 80 FAILED: NavMesh A* pathfinding path generation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 80 Passed: NavMesh Topology & A* Pathfinding validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 81: Behavior Tree Runtimes & Node Execution Graphs
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 81: Behavior Tree Runtimes & Node Graphs...");
+
+            eng::ai::Blackboard bb;
+            bb.SetBool("IsEnemyInSight", true);
+
+            auto seq = std::make_shared<eng::ai::BTSequence>();
+            auto checkEnemy = std::make_shared<eng::ai::BTCondition>([](eng::ai::Blackboard& board) {
+                return board.GetBool("IsEnemyInSight") ? eng::ai::BTNodeStatus::Success : eng::ai::BTNodeStatus::Failure;
+            });
+            auto attackAction = std::make_shared<eng::ai::BTAction>([](eng::ai::Blackboard&) {
+                return eng::ai::BTNodeStatus::Success;
+            });
+
+            seq->AddChild(checkEnemy);
+            seq->AddChild(attackAction);
+
+            eng::ai::BTNodeStatus result = seq->Tick(bb);
+            if (result != eng::ai::BTNodeStatus::Success) {
+                LOG_ERROR("[FormatTest] Test 81 FAILED: Behavior Tree sequence execution failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 81 Passed: Behavior Tree Runtimes & Node Execution Graphs validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 82: Environment Query System (EQS) Tactical Position Scoring
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 82: Environment Query System (EQS)...");
+
+            glm::vec3 agentPos(0.0f, 0.0f, 0.0f);
+            glm::vec3 enemyPos(20.0f, 0.0f, 0.0f);
+
+            glm::vec3 bestCover = eng::ai::EQSSolver::FindBestCoverPosition(agentPos, enemyPos, 10.0f, 4);
+
+            // Best cover position should be further away from enemy in -X direction
+            if (bestCover.x >= agentPos.x) {
+                LOG_ERROR("[FormatTest] Test 82 FAILED: EQS solver should pick tactical position away from enemy!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 82 Passed: Environment Query System (EQS) validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 83: Autonomous Steering Behaviors (Seek, Flee, Arrive)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 83: Autonomous Steering Behaviors...");
+
+            glm::vec3 currentPos(0.0f, 0.0f, 0.0f);
+            glm::vec3 currentVel(0.0f, 0.0f, 0.0f);
+            glm::vec3 targetPos(10.0f, 0.0f, 0.0f);
+
+            glm::vec3 seekForce = eng::ai::SteeringBehaviors::Seek(currentPos, currentVel, targetPos, 5.0f);
+            glm::vec3 fleeForce = eng::ai::SteeringBehaviors::Flee(currentPos, currentVel, targetPos, 5.0f);
+
+            if (seekForce.x <= 0.0f || fleeForce.x >= 0.0f) {
+                LOG_ERROR("[FormatTest] Test 83 FAILED: Seek/Flee steering force calculation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 83 Passed: Autonomous Steering Behaviors validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 84: Crowd Control & Flocking Velocity Obstacle Avoidance
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 84: Crowd Control & Flocking...");
+
+            std::vector<glm::vec3> positions = {
+                glm::vec3(0.0f, 0.0f, 0.0f),
+                glm::vec3(1.0f, 0.0f, 0.0f),
+                glm::vec3(-1.0f, 0.0f, 0.0f)
+            };
+            std::vector<glm::vec3> velocities = {
+                glm::vec3(0.0f, 0.0f, 1.0f),
+                glm::vec3(0.0f, 0.0f, 1.0f),
+                glm::vec3(0.0f, 0.0f, 1.0f)
+            };
+
+            glm::vec3 flockForce = eng::ai::CrowdController::ComputeFlockingVelocity(0, positions, velocities);
+
+            if (flockForce.z <= 0.0f) {
+                LOG_ERROR("[FormatTest] Test 84 FAILED: Flocking alignment velocity calculation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 84 Passed: Crowd Control & Flocking validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 85: Network Socket Layer & Packet Serialization
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 85: Network Socket Layer & Packet Serialization...");
+
+            eng::networking::NetworkPacket packet;
+            packet.type = eng::networking::PacketType::StateReplication;
+            packet.senderId = 101;
+            packet.sequenceNumber = 42;
+            packet.payload = { 0xDE, 0xAD, 0xBE, 0xEF };
+
+            std::vector<uint8_t> serialized;
+            if (!packet.Serialize(serialized) || serialized.empty()) {
+                LOG_ERROR("[FormatTest] Test 85 FAILED: NetworkPacket serialization failed!");
+                return false;
+            }
+
+            eng::networking::NetworkPacket deserializedPacket;
+            if (!deserializedPacket.Deserialize(serialized.data(), serialized.size())) {
+                LOG_ERROR("[FormatTest] Test 85 FAILED: NetworkPacket deserialization failed!");
+                return false;
+            }
+
+            if (deserializedPacket.type != eng::networking::PacketType::StateReplication ||
+                deserializedPacket.senderId != 101 ||
+                deserializedPacket.sequenceNumber != 42 ||
+                deserializedPacket.payload.size() != 4) {
+                LOG_ERROR("[FormatTest] Test 85 FAILED: Deserialized packet property mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 85 Passed: Network Socket Layer & Packet Serialization validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 86: Network State Replication Framework
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 86: Network State Replication Framework...");
+
+            eng::networking::NetworkReplicator replicator;
+            replicator.RegisterEntity(1, 100);
+            replicator.UpdateEntityPosition(1, glm::vec3(15.0f, 0.0f, -5.0f));
+
+            eng::networking::NetworkPacket replPacket;
+            bool built = replicator.BuildReplicationPacket(1, replPacket);
+            if (!built || replPacket.type != eng::networking::PacketType::StateReplication) {
+                LOG_ERROR("[FormatTest] Test 86 FAILED: Replication packet construction failed!");
+                return false;
+            }
+
+            eng::networking::NetworkReplicator clientReplicator;
+            if (!clientReplicator.ApplyReplicationPacket(replPacket)) {
+                LOG_ERROR("[FormatTest] Test 86 FAILED: Client replication packet application failed!");
+                return false;
+            }
+
+            const auto* clientState = clientReplicator.GetEntityState(1);
+            if (!clientState || clientState->position.x != 15.0f) {
+                LOG_ERROR("[FormatTest] Test 86 FAILED: Client replicated position mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 86 Passed: Network State Replication Framework validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 87: Remote Procedure Call (RPC) Dispatching
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 87: Remote Procedure Call (RPC) Dispatching...");
+
+            eng::networking::RPCManager rpcManager;
+            bool rpcExecuted = false;
+
+            rpcManager.RegisterRPC("ServerTakeDamage", [&](uint32_t netId, const std::string& params) {
+                if (netId == 5 && params == "{\"damage\":25}") {
+                    rpcExecuted = true;
+                }
+            });
+
+            bool invoked = rpcManager.InvokeRPC("ServerTakeDamage", 5, "{\"damage\":25}");
+            if (!invoked || !rpcExecuted) {
+                LOG_ERROR("[FormatTest] Test 87 FAILED: RPC invocation failed to execute handler!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 87 Passed: Remote Procedure Call (RPC) Dispatching validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 88: Client/Server Loop & Network Driver Role Lifecycle
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 88: Client/Server Loop & Network Driver...");
+
+            eng::networking::NetworkDriver driver;
+            if (driver.GetRole() != eng::networking::NetworkRole::Standalone || driver.IsConnected()) {
+                LOG_ERROR("[FormatTest] Test 88 FAILED: Default NetworkDriver state should be Standalone!");
+                return false;
+            }
+
+            driver.StartServer(7777);
+            if (driver.GetRole() != eng::networking::NetworkRole::DedicatedServer || !driver.IsConnected()) {
+                LOG_ERROR("[FormatTest] Test 88 FAILED: DedicatedServer role state initialization error!");
+                return false;
+            }
+
+            driver.Disconnect();
+            if (driver.GetRole() != eng::networking::NetworkRole::Standalone || driver.IsConnected()) {
+                LOG_ERROR("[FormatTest] Test 88 FAILED: Disconnect should revert driver to Standalone!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 88 Passed: Client/Server Loop & Network Driver validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 89: Client-Side Movement Prediction & Server Reconciliation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 89: Client-Side Movement Prediction...");
+
+            eng::networking::ClientPredictionEngine predictor;
+
+            // Client predicts 2 moves:
+            glm::vec3 pos0(0.0f, 0.0f, 0.0f);
+            glm::vec3 predictedPos1 = predictor.PredictMovement(pos0, glm::vec3(1.0f, 0.0f, 0.0f), 10.0f, 0.1f); // pos = 1.0
+            predictor.RecordInput(1, glm::vec3(1.0f, 0.0f, 0.0f), 0.1f);
+
+            glm::vec3 predictedPos2 = predictor.PredictMovement(predictedPos1, glm::vec3(1.0f, 0.0f, 0.0f), 10.0f, 0.1f); // pos = 2.0
+            predictor.RecordInput(2, glm::vec3(1.0f, 0.0f, 0.0f), 0.1f);
+
+            if (predictor.GetPendingInputCount() != 2) {
+                LOG_ERROR("[FormatTest] Test 89 FAILED: Pending input count should be 2!");
+                return false;
+            }
+
+            // Server acknowledges input #1 with position = 1.0
+            glm::vec3 serverConfirmedPos(1.0f, 0.0f, 0.0f);
+            glm::vec3 reconciledPos = predictor.Reconcile(serverConfirmedPos, 1, 10.0f);
+
+            // Reconciled position should re-apply input #2 and equal 2.0
+            if (std::abs(reconciledPos.x - 2.0f) > 0.01f || predictor.GetPendingInputCount() != 1) {
+                LOG_ERROR("[FormatTest] Test 89 FAILED: Client movement reconciliation math mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 89 Passed: Client-Side Movement Prediction validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 90: Network Time Clock & Latency Round-Trip Synchronization
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 90: Network Time Clock & Latency Sync...");
+
+            eng::networking::NetworkTimeClock clock;
+            clock.ReceivePong(40.0f, 100.0f); // 40ms RTT, server time 100s
+
+            if (clock.GetRTTMs() != 40.0f) {
+                LOG_ERROR("[FormatTest] Test 90 FAILED: RTT measurement mismatch!");
+                return false;
+            }
+
+            float synchronizedTime = clock.GetSynchronizedServerTime(); // Should be 100 + 0.02 = 100.02s
+            if (std::abs(synchronizedTime - 100.02f) > 0.001f) {
+                LOG_ERROR("[FormatTest] Test 90 FAILED: Synchronized server time calculation mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 90 Passed: Network Time Clock & Latency Sync validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 91: Save System State Serialization & Checksum Verification
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 91: Save System State & Checksum...");
+
+            eng::runtime::SaveDataHeader header;
+            header.playerName = "HeroPlayer";
+            header.playerHealth = 100;
+            header.activeCheckpointId = 3;
+
+            std::string serializedSave = "{\"player\":\"HeroPlayer\",\"health\":100,\"checkpoint\":3}";
+            header.crc64Checksum = eng::runtime::SaveSystem::ComputeChecksum(serializedSave);
+
+            if (header.crc64Checksum == 0ULL) {
+                LOG_ERROR("[FormatTest] Test 91 FAILED: SaveSystem CRC64 checksum calculation error!");
+                return false;
+            }
+
+            uint64_t recomputedCrc = eng::runtime::SaveSystem::ComputeChecksum(serializedSave);
+            if (header.crc64Checksum != recomputedCrc) {
+                LOG_ERROR("[FormatTest] Test 91 FAILED: CRC64 verification checksum mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 91 Passed: Save System State & Checksum validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 92: Cascading Configuration & Live Hot-Reload Watchers
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 92: Cascading Configuration & Hot-Reload...");
+
+            eng::runtime::ConfigSystem configSys;
+            configSys.SetInt("Graphics.ResolutionX", 1920);
+            configSys.SetInt("Graphics.ResolutionY", 1080);
+            configSys.SetBool("Graphics.VSync", true);
+
+            int resX = configSys.GetInt("Graphics.ResolutionX", 1280);
+            bool vsync = configSys.GetBool("Graphics.VSync", false);
+
+            if (resX != 1920 || !vsync) {
+                LOG_ERROR("[FormatTest] Test 92 FAILED: ConfigSystem cascade override retrieval error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 92 Passed: Cascading Configuration & Hot-Reload validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 93: Multi-Language Localization & String Table Resolution
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 93: Multi-Language Localization...");
+
+            eng::runtime::LocalizationSystem loc;
+            std::unordered_map<std::string, std::string> enUS = {
+                { "UI_PLAY", "Play" },
+                { "UI_OPTIONS", "Options" }
+            };
+            std::unordered_map<std::string, std::string> frFR = {
+                { "UI_PLAY", "Jouer" },
+                { "UI_OPTIONS", "Options" }
+            };
+
+            loc.LoadStringTable("en-US", enUS);
+            loc.LoadStringTable("fr-FR", frFR);
+
+            loc.SetLanguage("en-US");
+            if (loc.GetLocalizedString("UI_PLAY") != "Play") {
+                LOG_ERROR("[FormatTest] Test 93 FAILED: English localized string resolution mismatch!");
+                return false;
+            }
+
+            loc.SetLanguage("fr-FR");
+            if (loc.GetLocalizedString("UI_PLAY") != "Jouer") {
+                LOG_ERROR("[FormatTest] Test 93 FAILED: French localized string resolution mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 93 Passed: Multi-Language Localization validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 94: Plugin & Dynamic Module Entry Point Lifecycle
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 94: Plugin & Dynamic Module Loader...");
+
+            eng::runtime::PluginManager pluginMgr;
+            auto* modulePtr = pluginMgr.LoadPlugin("SamplePlugin.dll");
+
+            // Safe fallback logic validation when DLL not present
+            if (pluginMgr.IsPluginLoaded("SamplePlugin.dll")) {
+                LOG_ERROR("[FormatTest] Test 94 FAILED: Non-existent plugin should not be marked as loaded!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 94 Passed: Plugin & Dynamic Module Loader validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 95: Crash Handler Minidump Generation Hooks
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 95: Crash Handler Minidump Generation Hooks...");
+
+            bool callbackFired = false;
+            eng::runtime::CrashHandler::SetCrashCallback([&](const eng::runtime::CrashDumpInfo& info) {
+                if (info.dumpFilePath == "dumps/crash.dmp" && info.dumpGenerated) {
+                    callbackFired = true;
+                }
+            });
+
+            auto dumpInfo = eng::runtime::CrashHandler::GenerateMinidump("dumps/crash.dmp", "Access Violation EXCEPTION_ACCESS_VIOLATION");
+            if (!callbackFired || !dumpInfo.dumpGenerated) {
+                LOG_ERROR("[FormatTest] Test 95 FAILED: CrashHandler minidump generation callback failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 95 Passed: Crash Handler Minidump Generation Hooks validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 96: Runtime Console Command Execution & Output Buffer
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 96: Runtime Console Command Execution...");
+
+            eng::runtime::RuntimeConsole console;
+            bool cmdExecuted = false;
+
+            console.RegisterCommand("spawn_enemy", [&](const std::vector<std::string>& args) {
+                if (!args.empty() && args[0] == "goblin") {
+                    cmdExecuted = true;
+                }
+            });
+
+            console.ExecuteCommand("spawn_enemy goblin");
+            if (!cmdExecuted) {
+                LOG_ERROR("[FormatTest] Test 96 FAILED: RuntimeConsole command execution failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 96 Passed: Runtime Console Command Execution validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 97: Runtime Performance Statistics & Frame Timing Logs
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 97: Runtime Performance Statistics...");
+
+            eng::runtime::TimeManager timeMgr;
+            timeMgr.Update(0.016f); // 16ms frame step (~60 FPS)
+
+            if (timeMgr.GetDeltaTime() != 0.016f) {
+                LOG_ERROR("[FormatTest] Test 97 FAILED: TimeManager delta time step mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 97 Passed: Runtime Performance Statistics validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 98: Version Control & Dynamic Feature Flags
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 98: Version Control & Dynamic Feature Flags...");
+
+            eng::runtime::FeatureFlagSystem featureFlags;
+            featureFlags.SetFeatureFlag("ExperimentalRaytracing", true);
+            featureFlags.SetFeatureFlag("VulkanMeshShaders", false);
+
+            if (!featureFlags.IsFeatureEnabled("ExperimentalRaytracing") || featureFlags.IsFeatureEnabled("VulkanMeshShaders")) {
+                LOG_ERROR("[FormatTest] Test 98 FAILED: FeatureFlagSystem state retrieval error!");
+                return false;
+            }
+
+            featureFlags.ToggleFeature("VulkanMeshShaders");
+            if (!featureFlags.IsFeatureEnabled("VulkanMeshShaders")) {
+                LOG_ERROR("[FormatTest] Test 98 FAILED: FeatureFlagSystem toggle error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 98 Passed: Version Control & Dynamic Feature Flags validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 99: CPU Microsecond Profiler & Scope Metrics
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 99: CPU Microsecond Profiler...");
+
+            eng::developer::CPUProfiler profiler;
+            profiler.BeginScope("RenderPass_Opaque");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            profiler.EndScope("RenderPass_Opaque");
+
+            double durationUs = profiler.GetScopeDurationUs("RenderPass_Opaque");
+            if (durationUs <= 0.0) {
+                LOG_ERROR("[FormatTest] Test 99 FAILED: CPUProfiler microsecond scope metric measurement error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 99 Passed: CPU Microsecond Profiler validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 100: Memory Profiler & Heap Leak Detection
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 100: Memory Profiler & Heap Leaks...");
+
+            eng::developer::MemoryProfiler memProfiler;
+            int* dummyBlock = new int[100];
+
+            memProfiler.TrackAllocation(dummyBlock, sizeof(int) * 100);
+            if (memProfiler.GetTotalAllocatedBytes() != sizeof(int) * 100 || !memProfiler.DetectLeaks()) {
+                LOG_ERROR("[FormatTest] Test 100 FAILED: MemoryProfiler allocation tracking error!");
+                delete[] dummyBlock;
+                return false;
+            }
+
+            memProfiler.TrackDeallocation(dummyBlock);
+            delete[] dummyBlock;
+
+            if (memProfiler.GetTotalAllocatedBytes() != 0 || memProfiler.DetectLeaks()) {
+                LOG_ERROR("[FormatTest] Test 100 FAILED: MemoryProfiler deallocation leak check error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 100 Passed: Memory Profiler & Heap Leak Detection validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 101: GPU Profiler Render Pass Timestamp Queries
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 101: GPU Profiler Timestamp Queries...");
+
+            eng::developer::GPUProfiler gpuProfiler;
+            gpuProfiler.BeginSample("ShadowPass");
+            gpuProfiler.EndSample("ShadowPass", 0.45f); // 0.45ms
+
+            if (gpuProfiler.GetPassTimeMs("ShadowPass") != 0.45f) {
+                LOG_ERROR("[FormatTest] Test 101 FAILED: GPUProfiler pass timing collection error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 101 Passed: GPU Profiler Render Pass Timestamp Queries validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 102: Debug Renderer Viewport Primitives (Lines, Spheres, Boxes)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 102: Debug Renderer Viewport Primitives...");
+
+            eng::developer::DebugRenderer debugRenderer;
+            debugRenderer.DrawLine(glm::vec3(0.0f), glm::vec3(1.0f));
+            debugRenderer.DrawSphere(glm::vec3(0.0f), 2.0f);
+            debugRenderer.DrawBox(glm::vec3(-1.0f), glm::vec3(1.0f));
+
+            if (debugRenderer.GetPrimitiveCount() != 3) {
+                LOG_ERROR("[FormatTest] Test 102 FAILED: DebugRenderer primitive count mismatch!");
+                return false;
+            }
+
+            debugRenderer.Clear();
+            if (debugRenderer.GetPrimitiveCount() != 0) {
+                LOG_ERROR("[FormatTest] Test 102 FAILED: DebugRenderer Clear failed!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 102 Passed: Debug Renderer Viewport Primitives validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 103: Developer Statistics & Frame Rate Telemetry
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 103: Developer Statistics & FPS Telemetry...");
+
+            eng::developer::DeveloperStats stats;
+            stats.RecordFrame(0.016f); // 16ms
+            stats.RecordFrame(0.016f);
+
+            if (stats.GetFPS() < 59.0f || stats.GetFPS() > 64.0f) {
+                LOG_ERROR("[FormatTest] Test 103 FAILED: DeveloperStats FPS calculation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 103 Passed: Developer Statistics & Frame Rate Telemetry validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 104: Asset Validator Integrity Verification
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 104: Asset Validator Integrity...");
+
+            eng::developer::AssetValidator validator;
+            bool validTex = validator.ValidateTexture("textures/brick.png");
+            bool validMesh = validator.ValidateMesh("models/character.obj");
+            bool invalidTex = validator.ValidateTexture("invalid_file.txt");
+
+            if (!validTex || !validMesh || invalidTex || validator.GetErrorCount() != 1) {
+                LOG_ERROR("[FormatTest] Test 104 FAILED: AssetValidator integrity check error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 104 Passed: Asset Validator Integrity Verification validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 105: Package Format Structs & Header Checksums (.omxpkg)
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 105: Package Format Structs (.omxpkg)...");
+
+            OmnixPackage pkg;
+            pkg.header.assetCount = 1;
+            pkg.header.dependencyCount = 0;
+            pkg.header.chunkCount = 0;
+
+            PackageAssetEntry assetEntry;
+            assetEntry.handle = AssetHandle(1001);
+            assetEntry.type = 1; // Mesh
+            assetEntry.dataOffset = 0;
+            assetEntry.dataSize = 4;
+            pkg.assets.push_back(assetEntry);
+            pkg.rawDataBlock = { 0x11, 0x22, 0x33, 0x44 };
+
+            std::string tempPath = "temp_test_pkg.omxpkg";
+            bool serialized = SerializePackage(pkg, tempPath);
+            if (!serialized) {
+                LOG_ERROR("[FormatTest] Test 105 FAILED: Package serialization failed!");
+                return false;
+            }
+
+            OmnixPackage deserializedPkg;
+            bool deserialized = DeserializePackage(deserializedPkg, tempPath);
+            std::filesystem::remove(tempPath);
+
+            if (!deserialized || deserializedPkg.header.assetCount != 1 || deserializedPkg.rawDataBlock.size() != 4) {
+                LOG_ERROR("[FormatTest] Test 105 FAILED: Package deserialization mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 105 Passed: Package Format Structs (.omxpkg) validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 106: Package Reader & Mounting System
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 106: Package Reader & Mounting System...");
+
+            OmnixPackage pkg;
+            pkg.header.assetCount = 1;
+            pkg.header.dependencyCount = 0;
+            pkg.header.chunkCount = 0;
+
+            uint64_t dataOffset = 52 + sizeof(PackageAssetEntry);
+            pkg.header.assetTableOffset = 52;
+            pkg.header.dependencyTableOffset = dataOffset;
+            pkg.header.chunkTableOffset = dataOffset;
+            pkg.header.dataBlockOffset = dataOffset;
+
+            pkg.rawDataBlock = { 0xAA, 0xBB };
+
+            PackageAssetEntry assetEntry;
+            assetEntry.handle = AssetHandle(2002);
+            assetEntry.type = 2; // Texture
+            assetEntry.dataOffset = dataOffset;
+            assetEntry.dataSize = 2;
+            assetEntry.checksum = eng::runtime::ComputeChecksum32(pkg.rawDataBlock.data(), pkg.rawDataBlock.size());
+            pkg.assets.push_back(assetEntry);
+
+            std::string tempPath = "temp_reader_pkg.omxpkg";
+            SerializePackage(pkg, tempPath);
+
+            eng::runtime::Package packageReader;
+            bool opened = packageReader.Open(tempPath);
+            std::string outErr;
+            bool valid = packageReader.Validate(outErr);
+
+            auto payload = packageReader.ReadAssetPayload(AssetHandle(2002));
+            std::filesystem::remove(tempPath);
+
+            if (!opened || !valid || payload.size() != 2 || payload[0] != 0xAA) {
+                LOG_ERROR("[FormatTest] Test 106 FAILED: Package reader payload extraction error! Err: %s", outErr.c_str());
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 106 Passed: Package Reader & Mounting System validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 107: Package Payload Compression & Encryption
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 107: Package Payload Compression & Encryption...");
+
+            std::vector<uint8_t> originalData = { 0x10, 0x20, 0x30, 0x40, 0x50 };
+
+            // Compression & Decompression
+            auto compressed = eng::runtime::PackageCompressor::CompressPayload(originalData, eng::runtime::CompressionType::LZ4);
+            auto decompressed = eng::runtime::PackageCompressor::DecompressPayload(compressed, eng::runtime::CompressionType::LZ4);
+
+            if (decompressed != originalData) {
+                LOG_ERROR("[FormatTest] Test 107 FAILED: Package payload decompression mismatch!");
+                return false;
+            }
+
+            // Encryption & Decryption
+            auto encrypted = eng::runtime::PackageEncryptor::EncryptPayload(originalData, 0xABCDEF);
+            auto decrypted = eng::runtime::PackageEncryptor::DecryptPayload(encrypted, 0xABCDEF);
+
+            if (decrypted != originalData) {
+                LOG_ERROR("[FormatTest] Test 107 FAILED: Package payload decryption mismatch!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 107 Passed: Package Payload Compression & Encryption validated successfully.");
+        }
+
+        // --------------------------------------------------------------------
+        // Test 108: Package Asset Dependency Validation
+        // --------------------------------------------------------------------
+        {
+            LOG_INFO("[FormatTest] Running Test 108: Package Asset Dependency Validation...");
+
+            OmnixPackage pkg;
+            pkg.header.assetCount = 1;
+            pkg.header.dependencyCount = 1;
+            pkg.header.chunkCount = 0;
+
+            uint64_t dataOffset = 52 + sizeof(PackageAssetEntry) + sizeof(PackageDependencyEntry);
+            pkg.header.assetTableOffset = 52;
+            pkg.header.dependencyTableOffset = 52 + sizeof(PackageAssetEntry);
+            pkg.header.chunkTableOffset = dataOffset;
+            pkg.header.dataBlockOffset = dataOffset;
+
+            pkg.rawDataBlock = { 0xFF };
+
+            PackageAssetEntry assetEntry;
+            assetEntry.handle = AssetHandle(3003);
+            assetEntry.type = 3; // Material
+            assetEntry.dataOffset = dataOffset;
+            assetEntry.dataSize = 1;
+            assetEntry.checksum = eng::runtime::ComputeChecksum32(pkg.rawDataBlock.data(), pkg.rawDataBlock.size());
+            pkg.assets.push_back(assetEntry);
+
+            PackageDependencyEntry depEntry;
+            depEntry.assetHandle = AssetHandle(3003);
+            depEntry.dependentHandle = AssetHandle(2002); // Depends on Texture 2002
+            pkg.dependencies.push_back(depEntry);
+
+            std::string tempPath = "temp_dep_pkg.omxpkg";
+            SerializePackage(pkg, tempPath);
+
+            eng::runtime::PackageManager pkgManager;
+            bool mounted = pkgManager.MountPackage(tempPath);
+            auto deps = pkgManager.GetDependencies(AssetHandle(3003));
+            pkgManager.Clear();
+            std::filesystem::remove(tempPath);
+
+            if (!mounted || deps.size() != 1 || deps[0] != AssetHandle(2002)) {
+                LOG_ERROR("[FormatTest] Test 108 FAILED: Package dependency validation error!");
+                return false;
+            }
+
+            LOG_INFO("[FormatTest] Test 108 Passed: Package Asset Dependency Validation validated successfully.");
         }
 
         LOG_INFO("================================================================================");

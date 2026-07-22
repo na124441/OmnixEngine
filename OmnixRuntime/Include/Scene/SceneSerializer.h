@@ -34,3 +34,7 @@ private:
     static void SerializePrefabMetadata(rapidjson::Value& metadataValue, rapidjson::Document::AllocatorType& allocator, std::shared_ptr<Prefab> prefab);
     static void SerializeChildren(rapidjson::Value& childrenValue, rapidjson::Document::AllocatorType& allocator, std::shared_ptr<SceneObject> parent);
 };
+
+namespace eng::scene {
+    using SceneSerializer = ::SceneSerializer;
+}

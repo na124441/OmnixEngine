@@ -1,19 +1,8 @@
 #pragma once
 #include <cstdint>
+#include "Core/Error/ResultCode.h"
 
 namespace eng::core {
-
-    /* --------------------------------------------------------------------
-     * 1️⃣  Enumerated error codes – compact, stable, trivially copyable.
-     * -------------------------------------------------------------------- */
-    enum class ResultCode : uint16_t {
-        Success = 0,          // The “everything is fine” value.
-        Failure,              // Generic failure (catch‑all when a more specific code is not needed).
-        InvalidArgument,     // Caller passed a null pointer, out‑of‑range index, etc.
-        OutOfMemory,          // Allocation request could not be satisfied.
-        NotInitialized,      // An object / subsystem has not been created yet.
-        // ----------  Add more specific codes here as the engine grows ----------
-    };
 
     /* --------------------------------------------------------------------
      * 2️⃣  The `Result` wrapper – provides a convenient, expressive API.

@@ -46,6 +46,7 @@ constexpr ComponentTypeID ZONE_ENTITY_COMPONENT = 36;
 constexpr ComponentTypeID BOUNDS_COMPONENT = 37;
 constexpr ComponentTypeID ZONE_MEMBERSHIP_COMPONENT = 38;
 constexpr ComponentTypeID GROUND_SECTION_COMPONENT = 39;
+constexpr ComponentTypeID HIERARCHY_COMPONENT = 40;
 
 
 

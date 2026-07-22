@@ -45,6 +45,17 @@ VkShaderModule ShaderLibrary::LoadShader(VkDevice device, const std::string& pat
     return shaderModule;
 }
 
+VkShaderModule ShaderLibrary::ReloadShader(VkDevice device, const std::string& path) {
+    auto it = m_Cache.find(path);
+    if (it != m_Cache.end()) {
+        if (it->second != VK_NULL_HANDLE && device != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device, it->second, nullptr);
+        }
+        m_Cache.erase(it);
+    }
+    return LoadShader(device, path);
+}
+
 void ShaderLibrary::ClearCache(VkDevice device) {
     for (auto& pair : m_Cache) {
         if (pair.second != VK_NULL_HANDLE) {

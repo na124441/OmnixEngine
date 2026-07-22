@@ -75,7 +75,7 @@ namespace eng::runtime {
 
         // Initialize timer
         auto timerResult = m_Timer.Start();
-        if (timerResult.IsFailure()) {
+        if (timerResult != eng::core::ResultCode::Success) {
             ENG_LOG_ERROR("Failed to start timer");
             return;
         }

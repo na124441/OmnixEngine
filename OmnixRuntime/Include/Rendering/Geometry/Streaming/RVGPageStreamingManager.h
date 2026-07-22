@@ -3,6 +3,7 @@
 #include <queue>
 #include <mutex>
 #include <thread>
+#include "Core/Platform/Thread.h"
 #include <condition_variable>
 #include <unordered_map>
 #include <atomic>
@@ -142,7 +143,7 @@ private:
     std::vector<PhysicalPageSlot> m_PhysicalSlots;
 
     // Async worker variables
-    std::thread m_WorkerThread;
+    eng::platform::Thread m_WorkerThread;
     std::mutex m_QueueMutex;
     std::condition_variable m_QueueCond;
     std::priority_queue<StreamingJob, std::vector<StreamingJob>, CompareJob> m_JobQueue;

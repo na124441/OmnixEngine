@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <cstdint>
 #include "../Scene/Vector3.h"
 #include "../Scene/Quaternion.h"
@@ -70,6 +71,25 @@ struct TransformComponent {
         , rotation(0, 0, 0, 1)
         , scale(1, 1, 1)
         , dirty(true)
+    {}
+};
+
+/**
+ * @brief HierarchyComponent - Pure ECS Parent/Child Hierarchy Linkage
+ */
+struct HierarchyComponent {
+    uint32_t parent;                 // Parent Entity ID (0xFFFFFFFF / INVALID_ENTITY if root)
+    std::vector<uint32_t> children;  // List of child Entity IDs
+    uint32_t depth;                  // Tree depth level (0 for root)
+
+    HierarchyComponent()
+        : parent(0xFFFFFFFF)
+        , depth(0)
+    {}
+
+    HierarchyComponent(uint32_t parentEntity, uint32_t depthLevel = 0)
+        : parent(parentEntity)
+        , depth(depthLevel)
     {}
 };
 

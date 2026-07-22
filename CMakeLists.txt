@@ -115,6 +115,14 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/Core/Memory/PoolAllocator.cpp
     OmnixRuntime/Source/Core/Memory/StackAllocator.cpp
     OmnixRuntime/Source/Core/Timer.cpp
+    OmnixRuntime/Source/Core/Job/JobSystem.cpp
+    OmnixRuntime/Source/Core/Job/Fiber.cpp
+    OmnixRuntime/Source/Core/Scheduler/SystemScheduler.cpp
+    OmnixRuntime/Source/Core/Scheduler/SystemGraph.cpp
+    OmnixRuntime/Source/Core/IO/BinaryReader.cpp
+    OmnixRuntime/Source/Core/IO/BinaryWriter.cpp
+    OmnixRuntime/Source/Core/IO/FileWatcher.cpp
+    OmnixRuntime/Source/Core/IO/FileSystem.cpp
     OmnixRuntime/Source/ECS/ComponentManager.cpp
     OmnixRuntime/Source/ECS/Coordinator.cpp
     OmnixRuntime/Source/ECS/EntityManager.cpp
@@ -159,7 +167,18 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/RenderingEngine/Core/Engine/DebugLabels.cpp
     OmnixRuntime/Source/RenderingEngine/Core/Engine/EngineResources.cpp
     OmnixRuntime/Source/RenderingEngine/Platform/Time/Timer.cpp
-    OmnixRuntime/Source/RenderingEngine/Platform/window/Window.cpp
+    OmnixRuntime/Source/Core/Platform/Window.cpp
+    OmnixRuntime/Source/Core/Platform/Monitor.cpp
+    OmnixRuntime/Source/Core/Platform/Input.cpp
+    OmnixRuntime/Source/Core/Platform/PlatformFileSystem.cpp
+    OmnixRuntime/Source/Core/Platform/DynamicLibrary.cpp
+    OmnixRuntime/Source/Core/Platform/Clipboard.cpp
+    OmnixRuntime/Source/Core/Platform/Timer.cpp
+    OmnixRuntime/Source/Core/Platform/Thread.cpp
+    OmnixRuntime/Source/Core/Engine/EngineRuntime.cpp
+    OmnixRuntime/Source/Core/Engine/Layer.cpp
+    OmnixRuntime/Source/Core/Engine/LayerStack.cpp
+    OmnixRuntime/Source/Core/Engine/ModuleManager.cpp
     OmnixRuntime/Source/RenderingEngine/Renderer/gltf/GltfModel.cpp
     OmnixRuntime/Source/RenderingEngine/Renderer/scene/Material.cpp
     OmnixRuntime/Source/RenderingEngine/Renderer/scene/Mesh.cpp
@@ -172,6 +191,7 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanDevice.cpp
     OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanInstance.cpp
     OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanMemory.cpp
+    OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanPipelineCache.cpp
     OmnixRuntime/Source/RenderingEngine/Vulkan/VulkanSwapChain.cpp
     OmnixRuntime/Source/Runtime/AllocationDiagnostics.cpp
     OmnixRuntime/Source/Runtime/AssetCacheTests.cpp
@@ -185,9 +205,23 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/Runtime/BinaryWriter.cpp
     OmnixRuntime/Source/Runtime/CVarSystem.cpp
     OmnixRuntime/Source/Runtime/ConfigSystem.cpp
-    OmnixRuntime/Source/Runtime/EngineRuntime.cpp
     OmnixRuntime/Source/Runtime/FileWatcher.cpp
     OmnixRuntime/Source/Runtime/FormatTests.cpp
+    OmnixRuntime/Source/Runtime/ContainerTests.cpp
+    OmnixRuntime/Source/Runtime/ErrorTests.cpp
+    OmnixRuntime/Source/Runtime/MathTests.cpp
+    OmnixRuntime/Source/Runtime/JobTests.cpp
+    OmnixRuntime/Source/Runtime/SchedulerTests.cpp
+    OmnixRuntime/Source/Runtime/FileTests.cpp
+    OmnixRuntime/Source/Runtime/WindowTests.cpp
+    OmnixRuntime/Source/Runtime/MonitorTests.cpp
+    OmnixRuntime/Source/Runtime/InputTests.cpp
+    OmnixRuntime/Source/Runtime/PlatformFileSystemTests.cpp
+    OmnixRuntime/Source/Runtime/DynamicLibraryTests.cpp
+    OmnixRuntime/Source/Runtime/ClipboardTests.cpp
+    OmnixRuntime/Source/Runtime/TimerTests.cpp
+    OmnixRuntime/Source/Runtime/ThreadTests.cpp
+    OmnixRuntime/Source/Runtime/LayerTests.cpp
     OmnixRuntime/Source/Runtime/GLTFImporter.cpp
     OmnixRuntime/Source/Runtime/GPUSceneTests.cpp
     OmnixRuntime/Source/Runtime/GeometryArenaTests.cpp
@@ -198,7 +232,6 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/Runtime/MeshImportTests.cpp
     OmnixRuntime/Source/Runtime/MeshImporter.cpp
     OmnixRuntime/Source/Runtime/MeshReloadTests.cpp
-    OmnixRuntime/Source/Runtime/ModuleManager.cpp
     OmnixRuntime/Source/Runtime/OBJImporter.cpp
     OmnixRuntime/Source/Runtime/OwnershipValidation.cpp
     OmnixRuntime/Source/Runtime/Package.cpp
@@ -213,8 +246,8 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/Runtime/TextureImportTests.cpp
     OmnixRuntime/Source/Runtime/TextureImporter.cpp
     OmnixRuntime/Source/Runtime/TextureReloadTests.cpp
-    OmnixRuntime/Source/Runtime/TimeManager.cpp
-    OmnixRuntime/Source/Runtime/UUIDSystem.cpp
+    OmnixRuntime/Source/Core/Time/TimeManager.cpp
+    OmnixRuntime/Source/Core/UUID/UUID.cpp
     OmnixRuntime/Source/Runtime/World/WorldFileReader.cpp
     OmnixRuntime/Source/Runtime/World/WorldFileWriter.cpp
     OmnixRuntime/Source/Runtime/World/WorldManager.cpp
@@ -238,18 +271,18 @@ add_library(OmnixRuntime STATIC
     OmnixRuntime/Source/Serializer/ECS/Snapshot/ComponentSnapshot.cpp
     OmnixRuntime/Source/Serializer/ECS/Snapshot/ECSSnapshot.cpp
     OmnixRuntime/Source/Serializer/ECS/Snapshot/FieldSnapshot.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaDeserializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaSerializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaSnapshot.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Delta/DeltaTracker.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryDeserializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryReader.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinarySerializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Binary/BinaryWriter.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/NormalDeserializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/NormalSerializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Text/TextDeserializer.cpp
-    OmnixRuntime/Source/Serializer/Serialization/Normal/Text/TextSerializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Delta/DeltaDeserializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Delta/DeltaSerializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Delta/DeltaSnapshot.cpp
+    OmnixRuntime/Source/Core/Serialization/Delta/DeltaTracker.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Binary/BinaryDeserializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Binary/BinaryReader.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Binary/BinarySerializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Binary/BinaryWriter.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/NormalDeserializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/NormalSerializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Text/TextDeserializer.cpp
+    OmnixRuntime/Source/Core/Serialization/Normal/Text/TextSerializer.cpp
     RenderingEngine/ThirdParty/tinyglf/tiny_gltf_impl.cpp
     ThirdParty/ImGuizmo/ImGuizmo.cpp
 )

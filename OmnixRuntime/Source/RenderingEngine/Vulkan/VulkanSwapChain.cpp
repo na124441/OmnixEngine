@@ -13,6 +13,7 @@ namespace eng::vulkan {
 
     eng::core::Result VulkanSwapChain::Initialize(VulkanDevice* device, VkSurfaceKHR surface, uint32_t width, uint32_t height) {
         m_Device = device;
+        m_Surface = surface;
 
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device->GetPhysicalDevice(), surface, &capabilities);
@@ -96,8 +97,53 @@ namespace eng::vulkan {
 
         m_ImageFormat = surfaceFormat.format;
         m_Extent = extent;
+        m_PresentMode = presentMode;
 
         return CreateImageViews();
+    }
+
+    eng::core::Result VulkanSwapChain::AcquireNextImage(VkSemaphore presentCompleteSemaphore, uint32_t* imageIndex, uint64_t timeout) {
+        if (!m_Device || m_SwapChain == VK_NULL_HANDLE || !imageIndex) {
+            return eng::core::Result(eng::core::ResultCode::Failure);
+        }
+
+        VkResult result = vkAcquireNextImageKHR(m_Device->GetHandle(), m_SwapChain, timeout, presentCompleteSemaphore, VK_NULL_HANDLE, imageIndex);
+        if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+            return eng::core::Result();
+        }
+        return eng::core::Result(eng::core::ResultCode::Failure);
+    }
+
+    eng::core::Result VulkanSwapChain::Present(VkQueue presentQueue, uint32_t imageIndex, VkSemaphore renderCompleteSemaphore) {
+        if (!m_Device || m_SwapChain == VK_NULL_HANDLE || presentQueue == VK_NULL_HANDLE) {
+            return eng::core::Result(eng::core::ResultCode::Failure);
+        }
+
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = (renderCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+        presentInfo.pWaitSemaphores = (renderCompleteSemaphore != VK_NULL_HANDLE) ? &renderCompleteSemaphore : nullptr;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &m_SwapChain;
+        presentInfo.pImageIndices = &imageIndex;
+
+        VkResult result = vkQueuePresentKHR(presentQueue, &presentInfo);
+        if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+            return eng::core::Result();
+        }
+        return eng::core::Result(eng::core::ResultCode::Failure);
+    }
+
+    eng::core::Result VulkanSwapChain::Recreate(uint32_t width, uint32_t height) {
+        if (!m_Device || m_Surface == VK_NULL_HANDLE) {
+            return eng::core::Result(eng::core::ResultCode::Failure);
+        }
+
+        VulkanDevice* device = m_Device;
+        VkSurfaceKHR surface = m_Surface;
+
+        Shutdown();
+        return Initialize(device, surface, width, height);
     }
 
     eng::core::Result VulkanSwapChain::CreateImageViews() {

@@ -5,10 +5,11 @@
 class SceneManager;
 class Scene;
 
+#include "Runtime/RuntimeContext.h"
+
 namespace eng::runtime {
     class EditorDirtyState;
     class EditorSelection;
-    struct RuntimeContext;
 
     class EditorFileService {
     public:

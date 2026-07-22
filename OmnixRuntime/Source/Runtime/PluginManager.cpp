@@ -20,26 +20,18 @@ namespace eng::runtime {
             return nullptr;
         }
 
-#ifdef _WIN32
-        HMODULE handle = LoadLibraryA(path.c_str());
-        if (!handle) {
-            CORE_LOG_ERROR("[PluginManager] Failed to load dynamic library: %s (Error code: %lu)",
-                           path.c_str(), GetLastError());
+        eng::platform::DynamicLibrary handle;
+        auto loadRes = eng::platform::DynamicLibrary::Load(path, handle);
+        if (loadRes != eng::core::ResultCode::Success) {
+            CORE_LOG_ERROR("[PluginManager] Failed to load dynamic library: %s", path.c_str());
             return nullptr;
         }
 
-        auto getInfo = reinterpret_cast<GetPluginInfoFn>(GetProcAddress(handle, "GetPluginInfo"));
+        auto getInfo = reinterpret_cast<GetPluginInfoFn>(handle.GetSymbol("GetPluginInfo"));
         if (!getInfo) {
             CORE_LOG_ERROR("[PluginManager] Symbol 'GetPluginInfo' not found in plugin: %s", path.c_str());
-            FreeLibrary(handle);
             return nullptr;
         }
-#else
-        HMODULE handle = nullptr;
-        GetPluginInfoFn getInfo = nullptr;
-        CORE_LOG_ERROR("[PluginManager] Dynamic library loading not implemented on this platform: %s", path.c_str());
-        return nullptr;
-#endif
 
         PluginInfo info = getInfo();
 
@@ -47,9 +39,6 @@ namespace eng::runtime {
         if (info.abiVersion != ENGINE_ABI_VERSION) {
             CORE_LOG_ERROR("[PluginManager] Plugin ABI mismatch for %s. Expected: 0x%08X, Found: 0x%08X",
                            path.c_str(), ENGINE_ABI_VERSION, info.abiVersion);
-#ifdef _WIN32
-            FreeLibrary(handle);
-#endif
             return nullptr;
         }
 
@@ -58,7 +47,7 @@ namespace eng::runtime {
 
         LoadedPlugin plugin{};
         plugin.path = path;
-        plugin.handle = handle;
+        plugin.handle = std::move(handle);
         plugin.info = info;
 
         IModule* mod = nullptr;
@@ -69,7 +58,7 @@ namespace eng::runtime {
             }
         }
 
-        m_Plugins[path] = plugin;
+        m_Plugins[path] = std::move(plugin);
         return mod;
     }
 
@@ -92,11 +81,7 @@ namespace eng::runtime {
 
         CORE_LOG_INFO("[PluginManager] Unloading plugin: %s", plugin.info.name);
 
-#ifdef _WIN32
-        if (plugin.handle) {
-            FreeLibrary(plugin.handle);
-        }
-#endif
+        plugin.handle.Unload();
 
         m_Plugins.erase(it);
         return true;
@@ -115,11 +100,7 @@ namespace eng::runtime {
             }
             plugin.activeModules.clear();
 
-#ifdef _WIN32
-            if (plugin.handle) {
-                FreeLibrary(plugin.handle);
-            }
-#endif
+            plugin.handle.Unload();
             it = m_Plugins.erase(it);
         }
     }

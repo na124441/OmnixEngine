@@ -133,7 +133,16 @@ namespace Omnix {
         outDescriptor.entryPoint = entryPoint;
         outDescriptor.zones = zones;
         outDescriptor.dependencies = dependencies;
-
         return WorldFileResult::Ok();
+    }
+
+    eng::core::Expected<WorldDescriptor, WorldFileError> WorldFileReader::ReadWorld(const std::filesystem::path& inputPath)
+    {
+        WorldDescriptor desc;
+        WorldFileResult res = ReadFromFile(inputPath, desc);
+        if (res.Success()) {
+            return desc;
+        }
+        return res.error;
     }
 }

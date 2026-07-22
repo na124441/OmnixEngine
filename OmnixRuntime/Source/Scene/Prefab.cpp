@@ -156,7 +156,7 @@ void Prefab::RebuildChildren(SceneObject* source, SceneObject* destination) {
 
             if (childCopy) {
                 // Add to destination's children
-                destination->AddChild(childCopy.get());
+                destination->AddChild(childCopy);
 
                 std::cout << "[Prefab]       Added child: "
                           << childCopy->GetName() << std::endl;

@@ -11,3 +11,7 @@ namespace eng::renderer {
     };
 
 } // namespace eng::renderer
+
+namespace eng::rhi {
+    using Buffer = eng::renderer::RHIBuffer;
+}

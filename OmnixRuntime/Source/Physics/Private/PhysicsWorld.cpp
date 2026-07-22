@@ -60,6 +60,13 @@ namespace eng::physics {
 
         m_StepsThisFrame = 0;
         m_Accumulator += fixedDeltaTime;
+
+        // Cap accumulator to prevent spiral of death during lag spikes
+        constexpr float kMaxAccumulator = 5.0f * (1.0f / 60.0f);
+        if (m_Accumulator > kMaxAccumulator) {
+            m_Accumulator = kMaxAccumulator;
+        }
+
         while (m_Accumulator >= m_FixedTimestep) {
             m_Scene->simulate(m_FixedTimestep);
             m_Scene->fetchResults(true);
@@ -424,6 +431,111 @@ namespace eng::physics {
                 }
             }
             return !outEntities.empty();
+        }
+        return false;
+    }
+
+    bool PhysicsWorld::SweepBox(const Vector3& center, const Vector3& halfExtents, const Vector3& direction, float maxDistance, SweepHit& outHit, uint32_t layer, uint32_t mask) {
+        if (!m_Scene) return false;
+
+        physx::PxVec3 pxDir = ToPxVec3(direction);
+        if (pxDir.magnitudeSquared() < 0.0001f) return false;
+        pxDir.normalize();
+
+        physx::PxBoxGeometry geometry(ToPxVec3(halfExtents));
+        physx::PxTransform pose(ToPxVec3(center));
+
+        PhysicsQueryFilterCallback filterCallback(layer, mask);
+        physx::PxQueryFilterData filterData;
+        filterData.flags |= physx::PxQueryFlag::ePREFILTER;
+
+        physx::PxSweepBuffer hit;
+        bool status = m_Scene->sweep(geometry, pose, pxDir, maxDistance, hit, physx::PxHitFlag::eDEFAULT, filterData, &filterCallback);
+        if (status && hit.hasBlock) {
+            outHit.hit = true;
+            outHit.distance = hit.block.distance;
+            outHit.position = ToVector3(hit.block.position);
+            outHit.normal = ToVector3(hit.block.normal);
+
+            auto it = m_ActorToEntity.find(hit.block.actor);
+            if (it != m_ActorToEntity.end()) {
+                outHit.entity = it->second;
+            } else {
+                outHit.entity = 0;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool PhysicsWorld::SweepSphere(const Vector3& center, float radius, const Vector3& direction, float maxDistance, SweepHit& outHit, uint32_t layer, uint32_t mask) {
+        if (!m_Scene) return false;
+
+        physx::PxVec3 pxDir = ToPxVec3(direction);
+        if (pxDir.magnitudeSquared() < 0.0001f) return false;
+        pxDir.normalize();
+
+        physx::PxSphereGeometry geometry(std::max(radius, 0.001f));
+        physx::PxTransform pose(ToPxVec3(center));
+
+        PhysicsQueryFilterCallback filterCallback(layer, mask);
+        physx::PxQueryFilterData filterData;
+        filterData.flags |= physx::PxQueryFlag::ePREFILTER;
+
+        physx::PxSweepBuffer hit;
+        bool status = m_Scene->sweep(geometry, pose, pxDir, maxDistance, hit, physx::PxHitFlag::eDEFAULT, filterData, &filterCallback);
+        if (status && hit.hasBlock) {
+            outHit.hit = true;
+            outHit.distance = hit.block.distance;
+            outHit.position = ToVector3(hit.block.position);
+            outHit.normal = ToVector3(hit.block.normal);
+
+            auto it = m_ActorToEntity.find(hit.block.actor);
+            if (it != m_ActorToEntity.end()) {
+                outHit.entity = it->second;
+            } else {
+                outHit.entity = 0;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool PhysicsWorld::SweepCapsule(const Vector3& center, float radius, float height, const Vector3& direction, float maxDistance, SweepHit& outHit, uint32_t layer, uint32_t mask) {
+        if (!m_Scene) return false;
+
+        physx::PxVec3 pxDir = ToPxVec3(direction);
+        if (pxDir.magnitudeSquared() < 0.0001f) return false;
+        pxDir.normalize();
+
+        float r = std::max(radius, 0.001f);
+        float h = std::max(height, 2.0f * r);
+        float halfHeight = (h - 2.0f * r) * 0.5f;
+        if (halfHeight < 0.001f) halfHeight = 0.001f;
+
+        physx::PxCapsuleGeometry geometry(r, halfHeight);
+        physx::PxQuat rotZ(physx::PxHalfPi, physx::PxVec3(0.0f, 0.0f, 1.0f));
+        physx::PxTransform pose(ToPxVec3(center), rotZ);
+
+        PhysicsQueryFilterCallback filterCallback(layer, mask);
+        physx::PxQueryFilterData filterData;
+        filterData.flags |= physx::PxQueryFlag::ePREFILTER;
+
+        physx::PxSweepBuffer hit;
+        bool status = m_Scene->sweep(geometry, pose, pxDir, maxDistance, hit, physx::PxHitFlag::eDEFAULT, filterData, &filterCallback);
+        if (status && hit.hasBlock) {
+            outHit.hit = true;
+            outHit.distance = hit.block.distance;
+            outHit.position = ToVector3(hit.block.position);
+            outHit.normal = ToVector3(hit.block.normal);
+
+            auto it = m_ActorToEntity.find(hit.block.actor);
+            if (it != m_ActorToEntity.end()) {
+                outHit.entity = it->second;
+            } else {
+                outHit.entity = 0;
+            }
+            return true;
         }
         return false;
     }

@@ -94,6 +94,7 @@ void SceneManager::InitializeECS() {
     m_Coordinator->RegisterComponent<eng::runtime::ZoneMembershipComponent>();
     m_Coordinator->RegisterComponent<eng::runtime::GroundSectionComponent>();
     m_Coordinator->RegisterComponent<BoundsComponent>();
+    m_Coordinator->RegisterComponent<HierarchyComponent>();
 
     std::cout << "[SceneManager] ECS initialized successfully" << std::endl;
 }
@@ -370,6 +371,9 @@ void SceneManager::CreateNewScene(const std::string& name) {
     }
     activeScene = new Scene(name);
     activeScene->SetFilePath("");
+    if (m_Coordinator) {
+        activeScene->SetCoordinator(m_Coordinator);
+    }
     state = TransitionState::Running;
     std::cout << "[SceneManager] Created new scene: " << name << std::endl;
 

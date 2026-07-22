@@ -6,15 +6,20 @@
 #include "Scene/IDPool.h"
 #include "../ECS/Coordinator.h"
 #include "../ECS/ECSComponents.h"
+#include "ECS/EntityHierarchySystem.h"
 #include "Runtime/World/GroundSectionComponent.h"
 #include <iostream>
-#include <algorithm>
-
 //============================================================================
 // ✅ NEW: ECS INTEGRATION
 //============================================================================
 
 void SceneObject::InitializeWithECS(Coordinator& coordinator) {
+    if (m_ECSEntity != 0 && coordinator.IsEntityAlive(m_ECSEntity)) {
+        std::cout << "[SceneObject] '" << name_
+                  << "' already bound to ECS Entity " << m_ECSEntity << std::endl;
+        return;
+    }
+
     std::cout << "[SceneObject] Initializing '" << name_
               << "' with ECS..." << std::endl;
 
@@ -158,6 +163,15 @@ void SceneObject::InitializeWithECS(Coordinator& coordinator) {
         coordinator.AddComponent(m_ECSEntity, m_ReflectionProbe);
     }
 
+    // 5. Add HierarchyComponent if registered in coordinator
+    if (coordinator.IsComponentRegistered<HierarchyComponent>()) {
+        if (parent_) {
+            eng::runtime::EntityHierarchySystem::AttachChild(parent_->GetID(), m_ECSEntity, coordinator);
+        } else {
+            coordinator.AddComponent(m_ECSEntity, HierarchyComponent(0xFFFFFFFF, 0));
+        }
+    }
+
     std::cout << "[SceneObject] '" << name_
               << "' registered (ECS Entity: " << m_ECSEntity << ")" << std::endl;
 }
@@ -239,6 +253,12 @@ void SceneObject::AddChild(SceneObject* child) {
 
     std::cout << "[SceneObject] - Hierarchy updated. " << name_
               << " now has " << children_.size() << " children" << std::endl;
+}
+
+void SceneObject::AddChild(std::shared_ptr<SceneObject> child) {
+    if (!child) return;
+    m_OwnedChildren.push_back(child);
+    AddChild(child.get());
 }
 
 //============================================================================

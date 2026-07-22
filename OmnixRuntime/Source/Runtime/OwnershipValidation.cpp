@@ -11,14 +11,18 @@ namespace eng::runtime {
     static std::vector<std::string> g_ShutdownSequence;
     static std::mutex g_ValidationMutex;
 
-    // The authoritative sequence of dynamic subsystems
     static const std::vector<std::string> k_AuthoritativeOrder = {
         "Input",
+        "Events",
+        "Renderer",
         "ECS",
         "Scheduler",
-        "Renderer",
+        "PhysicsWorld",
         "Assets",
-        "Scene"
+        "Scene",
+        "WorldManager",
+        "Audio",
+        "Editor"
     };
 
     void RegisterSystemStartup(const std::string& name) {

@@ -1,17 +1,12 @@
-#include <atomic>
+#pragma once
+#include "Core/Threading/Atomic.h"
+
 namespace eng {
 
     template <typename T>
-    using Atomic = std::atomic<T>;
+    using Atomic = eng::core::Atomic<T>;
 
-    template <typename T>
-    inline T AtomicLoad(const Atomic<T>& a, std::memory_order order = std::memory_order_relaxed) {
-        return a.load(order);
-    }
-    template <typename T>
-    inline void AtomicStore(Atomic<T>& a, T desired, std::memory_order order = std::memory_order_relaxed) {
-        a.store(desired, order);
-    }
+    using eng::core::AtomicLoad;
+    using eng::core::AtomicStore;
 
-    // Add any extra helpers needed in the future.
-}
+} // namespace eng

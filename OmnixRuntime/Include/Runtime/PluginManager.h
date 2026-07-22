@@ -5,17 +5,11 @@
 #include <memory>
 #include <unordered_map>
 #include <mutex>
+#include "Core/Platform/DynamicLibrary.h"
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-using HMODULE = void*;
-#endif
+#include "Runtime/IModule.h"
 
 namespace eng::runtime {
-
-    class IModule;
 
     constexpr uint32_t ENGINE_ABI_VERSION = 0x00010000; // v1.0.0 (ABI major/minor/patch)
 
@@ -31,7 +25,7 @@ namespace eng::runtime {
 
     struct LoadedPlugin {
         std::string path;
-        HMODULE handle = nullptr;
+        eng::platform::DynamicLibrary handle;
         PluginInfo info;
         // Track instantiated modules to prevent hot-unload if there are active references
         std::vector<IModule*> activeModules;

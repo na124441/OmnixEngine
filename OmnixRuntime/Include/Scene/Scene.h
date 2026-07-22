@@ -249,6 +249,9 @@ public:
     PointLightProxy GetPointLight(uint32_t entityID) const;
     SpotLightProxy GetSpotLight(uint32_t entityID) const;
 
+    void SetCoordinator(Coordinator* coordinator) { m_Coordinator = coordinator; }
+    Coordinator* GetCoordinator() const { return m_Coordinator; }
+
 private:
     //========================================================================
     // INTERNAL UPDATE HELPERS
@@ -301,6 +304,7 @@ private:
     std::string name_;
     std::string filePath_;
     std::string defaultCamera_;
+    Coordinator* m_Coordinator = nullptr;
 
     // Object storage
     std::vector<std::shared_ptr<SceneObject>> allObjects_;       // All objects in scene
@@ -323,6 +327,10 @@ private:
     // Note: IDPool is typically a singleton, not owned by Scene
     // IDPool* idPo ol_;  // If you want scene-specific ID pools
 };
+
+namespace eng::scene {
+    using Scene = ::Scene;
+}
 
 
 //============================================================================

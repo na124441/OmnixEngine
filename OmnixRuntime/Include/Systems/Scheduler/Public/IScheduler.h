@@ -1,17 +1,11 @@
 #pragma once
-
-#include <functional>
+#include "Core/Scheduler/IScheduler.h"
 
 namespace eng::runtime {
 
-    class IScheduler {
+    class IScheduler : public eng::core::IScheduler {
     public:
-        virtual ~IScheduler() = default;
-        virtual void Initialize() = 0;
-        virtual void Shutdown() = 0;
-
-        // Schedules a task for execution.
-        virtual void Execute(std::function<void()>&& task) = 0;
+        using eng::core::IScheduler::IScheduler;
     };
 
 } // namespace eng::runtime

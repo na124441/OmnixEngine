@@ -3,8 +3,9 @@
 #include "Gameplay/Checkpoints/CheckpointSnapshot.h"
 #include <string>
 
+#include "Runtime/RuntimeContext.h"
+
 namespace eng::runtime {
-    struct RuntimeContext;
 
     class CheckpointSystem
     {

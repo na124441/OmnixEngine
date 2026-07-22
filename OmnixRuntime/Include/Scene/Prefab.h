@@ -135,6 +135,10 @@ private:
     std::shared_ptr<SceneObject> templateObject_;   // Template root object
 };
 
+namespace eng::scene {
+    using Prefab = ::Prefab;
+}
+
 //============================================================================
 // END OF FILE
 //===============================================================

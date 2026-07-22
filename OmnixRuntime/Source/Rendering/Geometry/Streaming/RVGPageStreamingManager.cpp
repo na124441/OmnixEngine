@@ -100,7 +100,7 @@ void RVGPageStreamingManager::Initialize(EngineResources& resources, uint32_t ma
     ResetStats();
 
     // 5. Start background worker thread
-    m_WorkerThread = std::thread(&RVGPageStreamingManager::workerThreadLoop, this);
+    m_WorkerThread = eng::platform::Thread("RVGPageStreamingWorker", -1, &RVGPageStreamingManager::workerThreadLoop, this);
 
     LOG_INFO("RVGPageStreamingManager: Initialization complete.");
 }

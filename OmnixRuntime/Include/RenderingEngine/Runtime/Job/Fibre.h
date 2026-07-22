@@ -1,10 +1,4 @@
-#include <functional>
-class Fiber {
-public:
-    using EntryFn = std::function<void(void*)>;
-    explicit Fiber(EntryFn entry, void* userData);
-    ~Fiber();
+#pragma once
+#include "Core/Job/Fiber.h"
 
-    void SwitchTo();        // transfer execution to this fiber
-    void Yield();           // return to the caller fiber
-};
+using Fiber = eng::core::Fiber;

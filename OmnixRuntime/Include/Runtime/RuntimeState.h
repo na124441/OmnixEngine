@@ -1,27 +1,8 @@
 #pragma once
-
-#include <cstdint>
+#include "Core/Engine/RuntimeState.h"
 
 namespace eng::runtime {
-
-    enum class RuntimeState : uint8_t {
-        Uninitialized = 0,
-        Initializing,
-        Running,
-        Suspended,
-        ShuttingDown
-    };
-
-    enum class RuntimeMode : uint8_t {
-        Game = 0,
-        Editor
-    };
-
-    enum class EditorSimulationState : uint8_t {
-        Edit = 0,
-        Play,
-        Pause,
-        Step
-    };
-
-} // namespace eng::runtime
+    using eng::core::RuntimeState;
+    using eng::core::RuntimeMode;
+    using eng::core::EditorSimulationState;
+}

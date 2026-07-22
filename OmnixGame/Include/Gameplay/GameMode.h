@@ -4,9 +4,10 @@
 #include "Gameplay/GameState.h"
 #include <memory>
 
-// Forward declare RuntimeContext, Entity, and systems
+#include "Runtime/RuntimeContext.h"
+
+// Forward declare Entity and systems
 namespace eng::runtime {
-    struct RuntimeContext;
     class ObjectiveSystem;
     class CheckpointSystem;
     class GameplayHUD;

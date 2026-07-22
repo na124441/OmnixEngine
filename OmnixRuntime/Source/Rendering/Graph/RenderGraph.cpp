@@ -575,16 +575,6 @@ bool RenderGraph::TopologicalSort()
                 if (precedes) break;
             }
 
-            if (!precedes && i < j) {
-                // passA reads a resource passB writes (WAR)
-                for (const auto& inA : passA.inputs) {
-                    for (const auto& outB : passB.outputs) {
-                        if (inA == outB) { precedes = true; break; }
-                    }
-                    if (precedes) break;
-                }
-            }
-
             if (precedes) {
                 adj[i].push_back(j);
                 inDegree[j]++;

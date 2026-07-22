@@ -168,4 +168,14 @@ namespace Omnix
 
         return WorldFileResult::Ok();
     }
+
+    eng::core::Expected<WorldZone, WorldFileError> WorldZoneReader::ReadZone(const std::filesystem::path& inputPath)
+    {
+        WorldZone zone;
+        WorldFileResult res = ReadFromFile(inputPath, zone);
+        if (res.Success()) {
+            return zone;
+        }
+        return res.error;
+    }
 }

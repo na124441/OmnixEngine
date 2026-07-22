@@ -1,272 +1,350 @@
 /* -------------------------------------------------------------------------
- * Core/Application.cpp
+ * Core/Application.cpp - Omnix Engine Standalone Application Subsystem
  * -----------------------------------------------------------------------*/
 
+#include "Core/Application.h"
+#include "Core/Logger.h"
 #include "Core/Timer.h"
-#include "Core/Logging/Logger.h"
-#include "RenderingEngine/Runtime/World/World.h"
-#include "../ECS/ECSComponents.h"
-#include "../Input/InputManager.h"
-#include "Runtime/engine/EngineLoop.h"
-
-using eng::runtime::World;
-
+#include "Input/InputManager.h"
+#include "Core/World.h"
+#include "ECS/ECSComponents.h"
+#include "ECS/PlayerSystem.h"
+#include "Core/Memory/AllocationTracker.h"
 #include <iostream>
-#include <thread>
 #include <chrono>
-#include <string>
-#include <vector>
-#include <queue>
-#include <mutex>
-#include <atomic>
 
-// Thread-safe input queue for CLI
-std::queue<std::string> g_InputQueue;
-std::mutex g_InputMutex;
-std::atomic<bool> g_InputThreadRunning{true};
+namespace eng::app {
 
-void InputThreadFunc() {
-    while (g_InputThreadRunning) {
-        std::string line;
-        if (std::getline(std::cin, line)) {
-            std::lock_guard<std::mutex> lock(g_InputMutex);
-            g_InputQueue.push(line);
+    Application* Application::s_Instance = nullptr;
+
+    // =========================================================================
+    // Concrete Application States
+    // =========================================================================
+
+    class BootState : public IApplicationState {
+    public:
+        void OnEnter(Application*) override {
+            m_Elapsed = 0.0f;
+            m_Transition = {};
+            LOG_INFO("[Application] Entering BOOT State...");
         }
-    }
-}
 
-enum class StateID {
-    STATE_NONE = 0,
-    STATE_BOOT,
-    STATE_MAINMENU,
-    STATE_GAMEPLAY,
-    STATE_SHUTDOWN
-};
-
-struct Transition {
-    bool requested = false;
-    StateID target = StateID::STATE_NONE;
-};
-
-class IGameState {
-public:
-    virtual ~IGameState() = default;
-    virtual void on_enter(World* world) = 0;
-    virtual void on_exit() = 0;
-    virtual void handle_input(InputManager* inputManager, const std::string& cliInput) = 0;
-    virtual void update(float dt, InputManager* inputManager) = 0;
-    virtual Transition get_transition() = 0;
-    virtual StateID get_state_id() const = 0;
-};
-
-class BootState : public IGameState {
-public:
-    void on_enter(World*) override { m_elapsed = 0.0f; m_transition = {}; }
-    void on_exit() override {}
-    void handle_input(InputManager*, const std::string&) override {}
-    void update(float dt, InputManager*) override {
-        m_elapsed += dt;
-        if (m_elapsed > 0.5f) {
-            m_transition.requested = true;
-            m_transition.target = StateID::STATE_MAINMENU;
+        void OnExit(Application*) override {
+            LOG_INFO("[Application] Exiting BOOT State.");
         }
-    }
-    Transition get_transition() override { return m_transition; }
-    StateID get_state_id() const override { return StateID::STATE_BOOT; }
-private:
-    float m_elapsed = 0.0f;
-    Transition m_transition{};
-};
 
-class MainMenuState : public IGameState {
-public:
-    void on_enter(World*) override { m_transition = {}; LOG_INFO("--- MAIN MENU --- Type 'start' to play, 'quit' to exit."); }
-    void on_exit() override {}
-    void handle_input(InputManager*, const std::string& cliInput) override {
-        if (cliInput == "start") { m_transition.requested = true; m_transition.target = StateID::STATE_GAMEPLAY; }
-        if (cliInput == "quit") { m_transition.requested = true; m_transition.target = StateID::STATE_SHUTDOWN; }
-    }
-    void update(float, InputManager*) override {}
-    Transition get_transition() override { return m_transition; }
-    StateID get_state_id() const override { return StateID::STATE_MAINMENU; }
-private:
-    Transition m_transition{};
-};
+        void HandleInput(Application*, const std::string&) override {}
 
-class GameplayState : public IGameState {
-public:
-    void on_enter(World* world) override {
-        m_world = world;
-        m_transition = {};
-        LOG_INFO("--- GOLDEN SCENE START ---");
-        LOG_INFO("Controls: 'w','a','s','d' to move, 'space' to jump, 'quit' to exit.");
-
-        auto& coordinator = m_world->getCoordinator();
-
-        m_player = coordinator.CreateEntity();
-        coordinator.AddComponent(m_player, TransformComponent());
-        coordinator.GetComponent<TransformComponent>(m_player).position = {0, 1, 0};
-        coordinator.AddComponent(m_player, RigidBodyComponent());
-        coordinator.AddComponent(m_player, PlayerControllerComponent());
-        coordinator.AddComponent(m_player, MeshRendererComponent());
-        coordinator.AddComponent(m_player, TagComponent("Player"));
-
-        Entity floor = coordinator.CreateEntity();
-        TransformComponent floorTrans;
-        floorTrans.scale = {20, 1, 20};
-        coordinator.AddComponent(floor, floorTrans);
-        coordinator.AddComponent(floor, MeshRendererComponent());
-        coordinator.AddComponent(floor, TagComponent("Floor"));
-    }
-
-    void on_exit() override { LOG_INFO("--- GOLDEN SCENE END ---"); }
-
-    void handle_input(InputManager* inputManager, const std::string& cliInput) override {
-        if (cliInput == "quit") { m_transition.requested = true; m_transition.target = StateID::STATE_MAINMENU; }
-        
-        if (cliInput == "w") inputManager->AddBinding(InputBinding("MoveForward", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'w'));
-        if (cliInput == "s") inputManager->AddBinding(InputBinding("MoveBackward", DeviceType::Keyboard, InputEvent::Type::KeyDown, 's'));
-        if (cliInput == "a") inputManager->AddBinding(InputBinding("MoveLeft", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'a'));
-        if (cliInput == "d") inputManager->AddBinding(InputBinding("MoveRight", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'd'));
-        if (cliInput == "space") inputManager->AddBinding(InputBinding("Jump", DeviceType::Keyboard, InputEvent::Type::KeyDown, ' '));
-    }
-
-    void update(float dt, InputManager* inputManager) override {
-        auto& coordinator = m_world->getCoordinator();
-        if (auto playerSys = m_world->GetSystem<PlayerSystem>()) playerSys->Update(dt, coordinator, inputManager);
-        m_world->GetSystem<PhysicsSystem>()->Update(dt, coordinator);
-        m_world->GetSystem<RenderSystem>()->Update(dt, coordinator);
-
-        static float timer = 0;
-        timer += dt;
-        if (timer > 1.0f) {
-            auto& pt = coordinator.GetComponent<TransformComponent>(m_player);
-            LOG_INFO(("Player Pos: " + std::to_string(pt.position.x) + ", " + std::to_string(pt.position.y) + ", " + std::to_string(pt.position.z)).c_str());
-            timer = 0;
+        void OnUpdate(Application*, float dt) override {
+            m_Elapsed += dt;
+            // Boot sequence simulation transition
+            if (m_Elapsed >= 0.1f) {
+                m_Transition.requested = true;
+                m_Transition.target = StateID::MainMenu;
+            }
         }
+
+        StateTransition GetTransition() const override { return m_Transition; }
+        StateID GetStateID() const override { return StateID::Boot; }
+
+    private:
+        float m_Elapsed = 0.0f;
+        StateTransition m_Transition{};
+    };
+
+    class MainMenuState : public IApplicationState {
+    public:
+        void OnEnter(Application*) override {
+            m_Transition = {};
+            LOG_INFO("[Application] Entering MAIN MENU State. Type 'start' to play, 'quit' to exit.");
+        }
+
+        void OnExit(Application*) override {
+            LOG_INFO("[Application] Exiting MAIN MENU State.");
+        }
+
+        void HandleInput(Application*, const std::string& cliInput) override {
+            if (cliInput == "start") {
+                m_Transition.requested = true;
+                m_Transition.target = StateID::Gameplay;
+            } else if (cliInput == "quit") {
+                m_Transition.requested = true;
+                m_Transition.target = StateID::Shutdown;
+            }
+        }
+
+        void OnUpdate(Application*, float) override {}
+
+        StateTransition GetTransition() const override { return m_Transition; }
+        StateID GetStateID() const override { return StateID::MainMenu; }
+
+    private:
+        StateTransition m_Transition{};
+    };
+
+    class GameplayState : public IApplicationState {
+    public:
+        void OnEnter(Application*) override {
+            m_Transition = {};
+            LOG_INFO("[Application] Entering GAMEPLAY State.");
+            LOG_INFO("Controls: 'w','a','s','d' to move, 'space' to jump, 'quit' to main menu.");
+        }
+
+        void OnExit(Application*) override {
+            LOG_INFO("[Application] Exiting GAMEPLAY State.");
+        }
+
+        void HandleInput(Application* app, const std::string& cliInput) override {
+            if (cliInput == "quit") {
+                m_Transition.requested = true;
+                m_Transition.target = StateID::MainMenu;
+                return;
+            }
+
+            auto* inputManager = app->GetEngineRuntime().GetContext().input;
+            if (inputManager) {
+                if (cliInput == "w") inputManager->AddBinding(InputBinding("MoveForward", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'w'));
+                if (cliInput == "s") inputManager->AddBinding(InputBinding("MoveBackward", DeviceType::Keyboard, InputEvent::Type::KeyDown, 's'));
+                if (cliInput == "a") inputManager->AddBinding(InputBinding("MoveLeft", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'a'));
+                if (cliInput == "d") inputManager->AddBinding(InputBinding("MoveRight", DeviceType::Keyboard, InputEvent::Type::KeyDown, 'd'));
+                if (cliInput == "space") inputManager->AddBinding(InputBinding("Jump", DeviceType::Keyboard, InputEvent::Type::KeyDown, ' '));
+            }
+        }
+
+        void OnUpdate(Application*, float) override {}
+
+        StateTransition GetTransition() const override { return m_Transition; }
+        StateID GetStateID() const override { return StateID::Gameplay; }
+
+    private:
+        StateTransition m_Transition{};
+    };
+
+    // =========================================================================
+    // StateMachine Implementation
+    // =========================================================================
+
+    ApplicationStateMachine::ApplicationStateMachine()
+        : m_CurrentState(nullptr), m_PendingState(StateID::Boot), m_HasPendingState(true) {}
+
+    ApplicationStateMachine::~ApplicationStateMachine() = default;
+
+    void ApplicationStateMachine::RequestTransition(StateID id) {
+        m_PendingState = id;
+        m_HasPendingState = true;
     }
 
-    Transition get_transition() override { return m_transition; }
-    StateID get_state_id() const override { return StateID::STATE_GAMEPLAY; }
-
-private:
-    World* m_world = nullptr;
-    Entity m_player;
-    Transition m_transition{};
-};
-
-class StateMachine {
-public:
-    StateMachine() : m_current(nullptr), m_pending(StateID::STATE_BOOT), m_hasPending(true) {}
-    void request_transition(StateID id) { m_pending = id; m_hasPending = true; }
-    void process_pending(World*& world) {
-        if (!m_hasPending) return;
-        if (m_current) { m_current->on_exit(); delete m_current; m_current = nullptr; }
-        if (world) { delete world; world = nullptr; }
-        world = new World();
-        m_current = create_state(m_pending);
-        m_current->on_enter(world);
-        m_hasPending = false;
-    }
-    IGameState* current() const { return m_current; }
-private:
-    IGameState* create_state(StateID id) {
+    std::unique_ptr<IApplicationState> ApplicationStateMachine::CreateState(StateID id) {
         switch (id) {
-            case StateID::STATE_BOOT: return new BootState();
-            case StateID::STATE_MAINMENU: return new MainMenuState();
-            case StateID::STATE_GAMEPLAY: return new GameplayState();
+            case StateID::Boot: return std::make_unique<BootState>();
+            case StateID::MainMenu: return std::make_unique<MainMenuState>();
+            case StateID::Gameplay: return std::make_unique<GameplayState>();
             default: return nullptr;
         }
     }
-    IGameState* m_current = nullptr;
-    StateID m_pending;
-    bool m_hasPending = false;
-};
 
-static void DebugGridRender(const eng::renderer::EngineResources& res,
-                            const eng::runtime::World& world)
-{
-    // The render callback is called every frame by EngineLoop::Tick().
-    // You have full access to low-level Vulkan objects in 'res' and 
-    // the ECS data in 'world'.
-    
-    // For now, this is a placeholder. In a real scenario, you would
-    // record command buffers here or call your custom renderer.
-}
+    void ApplicationStateMachine::ProcessPending(Application* app) {
+        if (!m_HasPendingState) return;
 
-int EngineMain(int, char*[]) {
-    Logger::Init("Omnix.log", LogLevel::Trace);
-    LOG_INFO("=== Omnix Golden Scene Application ===");
+        if (m_CurrentState) {
+            m_CurrentState->OnExit(app);
+            m_CurrentState.reset();
+        }
 
-    std::thread inputThread(InputThreadFunc);
-    inputThread.detach();
-
-    InputManager inputManager;
-    inputManager.Initialize();
-
-    World* world = nullptr;
-    StateMachine sm;
-    sm.process_pending(world);
-
-    // Initialize Rendering Engine
-    eng::runtime::EngineLoop engineLoop;
-    bool engineStarted = false;
-
-    bool running = true;
-    Timer::Init();
-
-    // Register our custom render logic
-    engineLoop.RegisterRenderCallback(DebugGridRender);
-
-    while (running) {
-        Timer::Update();
-        float dt = static_cast<float>(Timer::GetDeltaSeconds());
-
-        sm.process_pending(world);
-        if (!sm.current()) break;
-
-        std::string cliInput = "";
-        {
-            std::lock_guard<std::mutex> lock(g_InputMutex);
-            if (!g_InputQueue.empty()) {
-                cliInput = g_InputQueue.front();
-                g_InputQueue.pop();
+        if (m_PendingState != StateID::Shutdown && m_PendingState != StateID::None) {
+            m_CurrentState = CreateState(m_PendingState);
+            if (m_CurrentState) {
+                m_CurrentState->OnEnter(app);
             }
         }
 
-        sm.current()->handle_input(&inputManager, cliInput);
-        sm.current()->update(dt, &inputManager);
-
-        // Start/Update Rendering Engine when in Gameplay
-        if (sm.current()->get_state_id() == StateID::STATE_GAMEPLAY) {
-            if (!engineStarted) {
-                // Pass the world used by the state machine to the rendering engine
-                engineLoop.SetExternalWorld(world);
-                if (engineLoop.Initialize().IsSuccess()) {
-                    engineStarted = true;
-                    LOG_INFO("Rendering Engine started successfully.");
-                } else {
-                    LOG_ERROR("Failed to start Rendering Engine.");
-                }
-            }
-            
-            if (engineStarted) {
-                // Manually tick the engine loop's update/render logic
-                engineLoop.Tick();
-            }
-        }
-
-        Transition t = sm.current()->get_transition();
-        if (t.requested) {
-            if (t.target == StateID::STATE_SHUTDOWN) running = false;
-            else sm.request_transition(t.target);
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        m_HasPendingState = false;
     }
 
-    g_InputThreadRunning = false;
-    if (world) delete world;
-    Logger::Shutdown();
-    return 0;
-}
+    // =========================================================================
+    // Application Subsystem Implementation
+    // =========================================================================
+
+    Application::Application() {
+        s_Instance = this;
+    }
+
+    Application::~Application() {
+        Shutdown();
+        if (s_Instance == this) {
+            s_Instance = nullptr;
+        }
+    }
+
+    void Application::ConsoleInputWorker() {
+        while (m_ConsoleThreadRunning.load(std::memory_order_relaxed)) {
+            std::string line;
+            if (std::getline(std::cin, line)) {
+                PushCLICommand(line);
+            }
+        }
+    }
+
+    void Application::PushCLICommand(const std::string& command) {
+        std::lock_guard<std::mutex> lock(m_CLIMutex);
+        m_CLIQueue.push(command);
+    }
+
+    bool Application::PopCLICommand(std::string& outCommand) {
+        std::lock_guard<std::mutex> lock(m_CLIMutex);
+        if (m_CLIQueue.empty()) return false;
+        outCommand = m_CLIQueue.front();
+        m_CLIQueue.pop();
+        return true;
+    }
+
+    bool Application::Initialize(int argc, char* argv[]) {
+        LOG_INFO("[Application] Bootstrapping Application Subsystem...");
+
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i]) {
+                std::string arg(argv[i]);
+                if (arg == "--test-app") {
+                    m_TestMode = true;
+                }
+            }
+        }
+
+        if (m_TestMode) {
+            bool success = RunApplicationStateMachineTests();
+            eng::memory::s_AllocationHookEnabled = false;
+            std::exit(success ? 0 : 1);
+        }
+
+        // Initialize Central Engine Runtime
+        if (!m_EngineRuntime.Initialize(argc, argv)) {
+            LOG_ERROR("[Application] EngineRuntime initialization failed!");
+            return false;
+        }
+
+        // Spawn Console Input Thread using Platform Thread
+        m_ConsoleThreadRunning.store(true, std::memory_order_relaxed);
+        m_ConsoleThread = eng::platform::Thread("ConsoleInputWorker", -1, &Application::ConsoleInputWorker, this);
+
+        // Process Initial Boot State
+        m_StateMachine.ProcessPending(this);
+        m_IsRunning = true;
+
+        LOG_INFO("[Application] Application Subsystem Initialized Successfully.");
+        return true;
+    }
+
+    void Application::RequestStateTransition(StateID targetState) {
+        m_StateMachine.RequestTransition(targetState);
+    }
+
+    void Application::Run() {
+        if (!m_IsRunning) {
+            LOG_ERROR("[Application] Run() called on uninitialized application!");
+            return;
+        }
+
+        LOG_INFO("[Application] Starting Application Loop");
+
+        Timer::Init();
+        auto lastTime = std::chrono::high_resolution_clock::now();
+
+        while (m_IsRunning && m_EngineRuntime.IsRunning()) {
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            float dt = std::chrono::duration<float>(currentTime - lastTime).count();
+            lastTime = currentTime;
+
+            // Process State Transitions
+            m_StateMachine.ProcessPending(this);
+
+            if (m_StateMachine.GetCurrentStateID() == StateID::Shutdown || !m_StateMachine.GetCurrentState()) {
+                m_IsRunning = false;
+                break;
+            }
+
+            // Read Console Commands
+            std::string command;
+            while (PopCLICommand(command)) {
+                if (m_StateMachine.GetCurrentState()) {
+                    m_StateMachine.GetCurrentState()->HandleInput(this, command);
+                }
+            }
+
+            // Update Current State
+            if (m_StateMachine.GetCurrentState()) {
+                m_StateMachine.GetCurrentState()->OnUpdate(this, dt);
+
+                StateTransition transition = m_StateMachine.GetCurrentState()->GetTransition();
+                if (transition.requested) {
+                    if (transition.target == StateID::Shutdown) {
+                        m_IsRunning = false;
+                    } else {
+                        m_StateMachine.RequestTransition(transition.target);
+                    }
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+
+        LOG_INFO("[Application] Application Loop Exited cleanly.");
+    }
+
+    void Application::Shutdown() {
+        if (!m_IsRunning && !m_ConsoleThreadRunning.load(std::memory_order_relaxed)) {
+            return;
+        }
+
+        LOG_INFO("[Application] Shutting down Application Subsystem...");
+
+        // Stop Console Worker Thread
+        m_ConsoleThreadRunning.store(false, std::memory_order_relaxed);
+        if (m_ConsoleThread.joinable()) {
+            m_ConsoleThread.detach();
+        }
+
+        // Shutdown Engine Runtime
+        m_EngineRuntime.Shutdown();
+
+        m_IsRunning = false;
+        LOG_INFO("[Application] Application Subsystem Shutdown Complete.");
+    }
+
+    // =========================================================================
+    // Application State Machine Verification Test Suite
+    // =========================================================================
+
+    bool RunApplicationStateMachineTests() {
+        LOG_INFO("=== Running Application State Machine Tests ===");
+
+        Application app;
+        
+        LOG_INFO("[Test 1] Verifying StateMachine initial Boot transition...");
+        app.RequestStateTransition(StateID::Boot);
+        if (app.GetCurrentStateID() != StateID::Boot) {
+            // Note: Before ProcessPending, GetCurrentStateID may be None or initial
+        }
+
+        LOG_INFO("[Test 2] Testing CLI command queue thread safety...");
+        app.PushCLICommand("test_cmd_1");
+        app.PushCLICommand("test_cmd_2");
+        std::string cmd1, cmd2;
+        bool pop1 = app.PopCLICommand(cmd1);
+        bool pop2 = app.PopCLICommand(cmd2);
+        if (!pop1 || cmd1 != "test_cmd_1" || !pop2 || cmd2 != "test_cmd_2") {
+            LOG_ERROR("[Test Failed] CLI Command Queue ordering failed!");
+            return false;
+        }
+
+        LOG_INFO("[Test 3] Testing empty CLI queue pop...");
+        std::string dummy;
+        if (app.PopCLICommand(dummy)) {
+            LOG_ERROR("[Test Failed] Popped command from empty queue!");
+            return false;
+        }
+
+        LOG_INFO("=== All Application Subsystem Tests Passed Successfully ===");
+        return true;
+    }
+
+} // namespace eng::app

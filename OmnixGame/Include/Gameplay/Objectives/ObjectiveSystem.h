@@ -7,9 +7,9 @@
 #include <unordered_map>
 #include <memory>
 
-namespace eng::runtime {
+#include "Runtime/RuntimeContext.h"
 
-    struct RuntimeContext;
+namespace eng::runtime {
 
     class ObjectiveSystem
     {

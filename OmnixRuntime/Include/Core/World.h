@@ -82,6 +82,7 @@ public:
         m_coordinator.RegisterComponent<eng::runtime::GroundSectionComponent>();
 
         m_coordinator.RegisterComponent<BoundsComponent>();
+        m_coordinator.RegisterComponent<HierarchyComponent>();
 
         // 2. Register Systems & Signatures
 

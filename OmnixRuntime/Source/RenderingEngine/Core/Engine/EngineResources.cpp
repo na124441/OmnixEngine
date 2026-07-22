@@ -11,6 +11,83 @@
 
 namespace eng::renderer {
 
+VkSemaphore EngineResources::GetImageAvailableSemaphore(uint32_t frameIndex) const {
+    if (frameIndex < imageAvailableSemaphores.size()) {
+        return imageAvailableSemaphores[frameIndex];
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkSemaphore EngineResources::GetRenderFinishedSemaphore(uint32_t frameIndex) const {
+    if (frameIndex < renderFinishedSemaphores.size()) {
+        return renderFinishedSemaphores[frameIndex];
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkFence EngineResources::GetInFlightFence(uint32_t frameIndex) const {
+    if (frameIndex < inFlightFences.size()) {
+        return inFlightFences[frameIndex];
+    }
+    return VK_NULL_HANDLE;
+}
+
+bool EngineResources::WaitForFence(uint32_t frameIndex, uint64_t timeout) const {
+    if (device == VK_NULL_HANDLE || frameIndex >= inFlightFences.size() || inFlightFences[frameIndex] == VK_NULL_HANDLE) {
+        return false;
+    }
+    return vkWaitForFences(device, 1, &inFlightFences[frameIndex], VK_TRUE, timeout) == VK_SUCCESS;
+}
+
+bool EngineResources::ResetFence(uint32_t frameIndex) const {
+    if (device == VK_NULL_HANDLE || frameIndex >= inFlightFences.size() || inFlightFences[frameIndex] == VK_NULL_HANDLE) {
+        return false;
+    }
+    return vkResetFences(device, 1, &inFlightFences[frameIndex]) == VK_SUCCESS;
+}
+
+bool EngineResources::BeginCommandBuffer(VkCommandBuffer cmd, VkCommandBufferUsageFlags flags) {
+    if (cmd == VK_NULL_HANDLE) return false;
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = flags;
+    return vkBeginCommandBuffer(cmd, &beginInfo) == VK_SUCCESS;
+}
+
+bool EngineResources::EndCommandBuffer(VkCommandBuffer cmd) {
+    if (cmd == VK_NULL_HANDLE) return false;
+    return vkEndCommandBuffer(cmd) == VK_SUCCESS;
+}
+
+bool EngineResources::SubmitCommandBuffer(VkQueue queue, VkCommandBuffer cmd, VkSemaphore waitSemaphore, VkSemaphore signalSemaphore, VkFence fence) {
+    if (queue == VK_NULL_HANDLE || cmd == VK_NULL_HANDLE) return false;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    if (waitSemaphore != VK_NULL_HANDLE) {
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &waitSemaphore;
+        submitInfo.pWaitDstStageMask = &waitStage;
+    }
+
+    if (signalSemaphore != VK_NULL_HANDLE) {
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &signalSemaphore;
+    }
+
+    return vkQueueSubmit(queue, 1, &submitInfo, fence) == VK_SUCCESS;
+}
+
+void EngineResources::ResetCommandPool(uint32_t frameIndex) {
+    if (device != VK_NULL_HANDLE && frameIndex < commandPools.size() && commandPools[frameIndex] != VK_NULL_HANDLE) {
+        vkResetCommandPool(device, commandPools[frameIndex], 0);
+    }
+}
+
 VkCommandBuffer EngineResources::beginSingleTimeCommands() const
 {
     VkCommandBufferAllocateInfo allocInfo{};

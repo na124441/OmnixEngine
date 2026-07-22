@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <exception>
 
-#include "Runtime/EngineRuntime.h"
+#include "Core/Application.h"
 #include "Core/Logger.h"
 
 int main(int argc, char* argv[])
@@ -12,30 +12,30 @@ int main(int argc, char* argv[])
 
     try {
         std::cout.setf(std::ios::unitbuf);
-        std::cout << "--- Omnix Engine: Initializing EngineRuntime ---" << std::endl;
+        std::cout << "--- Omnix Engine: Initializing Application ---" << std::endl;
         std::cout.flush();
 
         // 1. Core Logger bootstrap
         Logger::Init("Omnix.log", LogLevel::Trace);
 
-        // 2. Central Runtime Lifecycle
+        // 2. Central Application Lifecycle
         {
-            eng::runtime::EngineRuntime runtime;
-            if (runtime.Initialize(argc, argv)) {
+            eng::app::Application app;
+            if (app.Initialize(argc, argv)) {
                 try {
-                    runtime.Run();
+                    app.Run();
                 }
                 catch (const std::exception& e) {
-                    fprintf(stderr, "FATAL ERROR: Exception inside runtime.Run(): %s\n", e.what());
+                    fprintf(stderr, "FATAL ERROR: Exception inside app.Run(): %s\n", e.what());
                     fflush(stderr);
                 }
                 catch (...) {
-                    fprintf(stderr, "FATAL ERROR: Unknown exception inside runtime.Run()\n");
+                    fprintf(stderr, "FATAL ERROR: Unknown exception inside app.Run()\n");
                     fflush(stderr);
                 }
-                                runtime.Shutdown();
+                app.Shutdown();
             } else {
-                fprintf(stderr, "FATAL ERROR: Failed to initialize EngineRuntime\n");
+                fprintf(stderr, "FATAL ERROR: Failed to initialize Application\n");
             }
         }
 

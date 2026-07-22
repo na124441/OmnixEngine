@@ -9,3 +9,7 @@ namespace eng::renderer {
     };
 
 } // namespace eng::renderer
+
+namespace eng::rhi {
+    using Pipeline = eng::renderer::RHIPipeline;
+}

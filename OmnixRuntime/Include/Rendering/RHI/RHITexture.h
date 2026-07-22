@@ -14,3 +14,8 @@ namespace eng::renderer {
     };
 
 } // namespace eng::renderer
+
+namespace eng::rhi {
+    using Texture = eng::renderer::RHITexture;
+    using Image = eng::renderer::RHITexture;
+}

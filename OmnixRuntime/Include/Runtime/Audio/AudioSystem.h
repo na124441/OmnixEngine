@@ -7,9 +7,13 @@
 #include <vector>
 #include <memory>
 
+namespace eng::core {
+    struct RuntimeContext;
+}
+
 namespace eng::runtime {
 
-    struct RuntimeContext;
+    using eng::core::RuntimeContext;
     struct GameplayEvent;
 
     class AudioSystem

@@ -4,6 +4,8 @@
 #include "Runtime/World/WorldFileResult.h"
 #include <filesystem>
 
+#include "Core/Error/Result.h"
+
 namespace Omnix
 {
     class WorldFileReader
@@ -12,6 +14,10 @@ namespace Omnix
         static WorldFileResult ReadFromFile(
             const std::filesystem::path& inputPath,
             WorldDescriptor& outDescriptor
+        );
+
+        static eng::core::Expected<WorldDescriptor, WorldFileError> ReadWorld(
+            const std::filesystem::path& inputPath
         );
     };
 }

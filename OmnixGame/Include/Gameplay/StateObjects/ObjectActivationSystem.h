@@ -3,9 +3,9 @@
 #include "Gameplay/GameplayEvent.h"
 #include <string>
 
-namespace eng::runtime {
+#include "Runtime/RuntimeContext.h"
 
-    struct RuntimeContext;
+namespace eng::runtime {
 
     class ObjectActivationSystem
     {
