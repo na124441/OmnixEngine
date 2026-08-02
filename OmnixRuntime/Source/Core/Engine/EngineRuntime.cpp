@@ -146,10 +146,15 @@ namespace eng::core {
         bool testTimer = false;
         bool testThreads = false;
         bool testLayers = false;
+        m_Context.mode = RuntimeMode::Editor; // Default to Editor mode
         for (int i = 1; i < argc; ++i) {
             if (argv[i]) {
                 std::string arg(argv[i]);
-                if (arg == "--test-fail-ecs") {
+                if (arg == "--game") {
+                    m_Context.mode = RuntimeMode::Game;
+                } else if (arg == "--editor") {
+                    m_Context.mode = RuntimeMode::Editor;
+                } else if (arg == "--test-fail-ecs") {
                     failECS = true;
                 } else if (arg == "--test-fail-renderer") {
                     failRenderer = true;

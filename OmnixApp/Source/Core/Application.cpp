@@ -244,50 +244,11 @@ namespace eng::app {
             return;
         }
 
-        LOG_INFO("[Application] Starting Application Loop");
-
-        Timer::Init();
-        auto lastTime = std::chrono::high_resolution_clock::now();
-
-        while (m_IsRunning && m_EngineRuntime.IsRunning()) {
-            auto currentTime = std::chrono::high_resolution_clock::now();
-            float dt = std::chrono::duration<float>(currentTime - lastTime).count();
-            lastTime = currentTime;
-
-            // Process State Transitions
-            m_StateMachine.ProcessPending(this);
-
-            if (m_StateMachine.GetCurrentStateID() == StateID::Shutdown || !m_StateMachine.GetCurrentState()) {
-                m_IsRunning = false;
-                break;
-            }
-
-            // Read Console Commands
-            std::string command;
-            while (PopCLICommand(command)) {
-                if (m_StateMachine.GetCurrentState()) {
-                    m_StateMachine.GetCurrentState()->HandleInput(this, command);
-                }
-            }
-
-            // Update Current State
-            if (m_StateMachine.GetCurrentState()) {
-                m_StateMachine.GetCurrentState()->OnUpdate(this, dt);
-
-                StateTransition transition = m_StateMachine.GetCurrentState()->GetTransition();
-                if (transition.requested) {
-                    if (transition.target == StateID::Shutdown) {
-                        m_IsRunning = false;
-                    } else {
-                        m_StateMachine.RequestTransition(transition.target);
-                    }
-                }
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        LOG_INFO("[Application] Starting Engine Runtime Loop...");
+        if (m_EngineRuntime.IsRunning()) {
+            m_EngineRuntime.Run();
         }
-
-        LOG_INFO("[Application] Application Loop Exited cleanly.");
+        LOG_INFO("[Application] Engine Runtime Loop Exited cleanly.");
     }
 
     void Application::Shutdown() {
