@@ -6808,11 +6808,20 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
         return 0;
     }
 
-    if (frameIndex >= m_ObjectIDImages.size() || m_ObjectIDImages[frameIndex] == VK_NULL_HANDLE) {
+    if (frameIndex >= m_ObjectIDHandles.size() || !m_ObjectIDHandles[frameIndex].IsValid()) {
         return 0;
     }
 
-    VkImage gbufferImage = m_ObjectIDImages[frameIndex];
+    RenderTarget* target = m_RenderTargetManager.Get(m_ObjectIDHandles[frameIndex]);
+    if (!target || target->image == VK_NULL_HANDLE) {
+        return 0;
+    }
+
+    VkImage gbufferImage = target->image;
+    VkImageLayout currentLayout = target->currentLayout;
+    if (currentLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
 
     // Create staging buffer (4 bytes for uint32_t pixel)
     VkBuffer stagingBuffer = VK_NULL_HANDLE;
@@ -6820,7 +6829,7 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = 4;
+    bufferInfo.size = sizeof(uint32_t);
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -6829,14 +6838,21 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     VmaAllocationInfo allocationInfo{};
-    VK_CHECK(vmaCreateBuffer(resources.allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, &allocationInfo));
+    VkResult res = vmaCreateBuffer(resources.allocator, &bufferInfo, &allocInfo, &stagingBuffer, &stagingAllocation, &allocationInfo);
+    if (res != VK_SUCCESS || stagingBuffer == VK_NULL_HANDLE) {
+        return 0;
+    }
 
-    // Transition ObjectID layout to TRANSFER_SRC_OPTIMAL, copy, then transition back to SHADER_READ_ONLY_OPTIMAL
+    // Transition ObjectID layout to TRANSFER_SRC_OPTIMAL, copy, then transition back to current layout
     VkCommandBuffer cmd = resources.beginSingleTimeCommands();
+    if (cmd == VK_NULL_HANDLE) {
+        vmaDestroyBuffer(resources.allocator, stagingBuffer, stagingAllocation);
+        return 0;
+    }
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.oldLayout = currentLayout;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -6846,11 +6862,11 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
     vkCmdPipelineBarrier(cmd,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT,
                          0,
                          0, nullptr,
@@ -6871,13 +6887,13 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
     vkCmdCopyImageToBuffer(cmd, gbufferImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = currentLayout;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
 
     vkCmdPipelineBarrier(cmd,
                          VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                          0,
                          0, nullptr,
                          0, nullptr,
@@ -6886,13 +6902,13 @@ uint32_t Renderer::PickEntity(uint32_t x, uint32_t y)
     resources.endSingleTimeCommands(cmd);
 
     // Read data
+    uint32_t entityID = 0;
     uint8_t* mappedData = nullptr;
-    vmaMapMemory(resources.allocator, stagingAllocation, reinterpret_cast<void**>(&mappedData));
+    if (vmaMapMemory(resources.allocator, stagingAllocation, reinterpret_cast<void**>(&mappedData)) == VK_SUCCESS && mappedData != nullptr) {
+        entityID = *reinterpret_cast<uint32_t*>(mappedData);
+        vmaUnmapMemory(resources.allocator, stagingAllocation);
+    }
 
-    // Entity ID is in a dedicated R32_UINT target
-    uint32_t entityID = *reinterpret_cast<uint32_t*>(mappedData);
-
-    vmaUnmapMemory(resources.allocator, stagingAllocation);
     vmaDestroyBuffer(resources.allocator, stagingBuffer, stagingAllocation);
 
     return entityID;
