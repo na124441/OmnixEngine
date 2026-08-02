@@ -1462,16 +1462,20 @@ void Renderer::EndFrame()
         m_RenderDocCaptureRequested = false;
     }
 
-    // Log frame diagnostic report
-    LOG_INFO("Frame " + std::to_string(m_FrameDiagnostics.frameNumber));
-    LOG_INFO("Entities extracted: " + std::to_string(m_FrameDiagnostics.entitiesExtracted));
-    LOG_INFO("Opaque items: " + std::to_string(m_FrameDiagnostics.opaqueItems));
-    LOG_INFO("Transparent items: " + std::to_string(m_FrameDiagnostics.transparentItems));
-    LOG_INFO("Instances uploaded: " + std::to_string(m_FrameDiagnostics.instancesUploaded));
-    LOG_INFO("Draw calls: " + std::to_string(m_FrameDiagnostics.drawCalls));
-    LOG_INFO("Triangles: " + std::to_string(m_FrameDiagnostics.triangles));
-    LOG_INFO("Rejected items: " + std::to_string(m_FrameDiagnostics.rejectedItems));
-    LOG_INFO("Validation errors: " + std::to_string(m_FrameDiagnostics.validationErrors));
+    // Log frame diagnostic report (logged once at startup)
+    static bool s_LogFrameDiagnosticsOnce = false;
+    if (!s_LogFrameDiagnosticsOnce) {
+        LOG_INFO("Frame " + std::to_string(m_FrameDiagnostics.frameNumber));
+        LOG_INFO("Entities extracted: " + std::to_string(m_FrameDiagnostics.entitiesExtracted));
+        LOG_INFO("Opaque items: " + std::to_string(m_FrameDiagnostics.opaqueItems));
+        LOG_INFO("Transparent items: " + std::to_string(m_FrameDiagnostics.transparentItems));
+        LOG_INFO("Instances uploaded: " + std::to_string(m_FrameDiagnostics.instancesUploaded));
+        LOG_INFO("Draw calls: " + std::to_string(m_FrameDiagnostics.drawCalls));
+        LOG_INFO("Triangles: " + std::to_string(m_FrameDiagnostics.triangles));
+        LOG_INFO("Rejected items: " + std::to_string(m_FrameDiagnostics.rejectedItems));
+        LOG_INFO("Validation errors: " + std::to_string(m_FrameDiagnostics.validationErrors));
+        s_LogFrameDiagnosticsOnce = true;
+    }
 
     s_CurrentDiagnostics = nullptr;
 

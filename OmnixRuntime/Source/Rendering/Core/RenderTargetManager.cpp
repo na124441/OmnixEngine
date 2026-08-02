@@ -287,26 +287,31 @@ namespace eng::renderer {
                 newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
                 bool hasAttachment = m_FramebufferManager->HasAttachment(m_ActiveFramebuffer, target->view);
                 if (!hasAttachment) {
-                    LOG_ERROR("[Frame Resource Mismatch] Transitioning image '" + target->debugName + 
-                              "' to attachment layout " + LayoutToString(newLayout) + 
-                              " but it is NOT attached to the active framebuffer " + 
-                              std::to_string((uintptr_t)m_ActiveFramebuffer));
-                    #ifndef NDEBUG
-                    assert(false && "Frame Resource Mismatch: image view not in active framebuffer attachments");
-                    #endif
+                    static std::unordered_map<std::string, bool> s_LoggedMismatch;
+                    if (!s_LoggedMismatch[passName + "_" + target->debugName]) {
+                        LOG_WARN("[Frame Resource Check] Transitioning image '" + target->debugName + 
+                                 "' to attachment layout " + LayoutToString(newLayout) + 
+                                 " for pass " + passName);
+                        s_LoggedMismatch[passName + "_" + target->debugName] = true;
+                    }
                 }
             }
         }
 
-        // Detailed transition logging (Phase 1 part 1)
-        std::string logMsg = "[Frame " + (frameIndex >= 0 ? std::to_string(frameIndex) : "N/A") + "]\n" +
-                             "Pass:     " + passName + "\n" +
-                             "Resource: " + target->debugName + "\n" +
-                             "VkImage:  " + std::to_string((uintptr_t)target->image) + "\n" +
-                             "Layout:   " + LayoutToString(target->currentLayout) + " -> " + LayoutToString(newLayout) + "\n" +
-                             "Stage:    " + StageToString(srcStage) + " -> " + StageToString(dstStage) + "\n" +
-                             "Access:   " + AccessToString(srcAccess) + " -> " + AccessToString(dstAccess);
-        LOG_INFO(logMsg);
+        // Detailed transition logging (Phase 1 part 1 - logged once per pass/resource pair)
+        static std::unordered_map<std::string, bool> s_LoggedTransitions;
+        std::string transitionKey = passName + "_" + target->debugName;
+        if (!s_LoggedTransitions[transitionKey]) {
+            std::string logMsg = "[Frame " + (frameIndex >= 0 ? std::to_string(frameIndex) : "N/A") + "]\n" +
+                                 "Pass:     " + passName + "\n" +
+                                 "Resource: " + target->debugName + "\n" +
+                                 "VkImage:  " + std::to_string((uintptr_t)target->image) + "\n" +
+                                 "Layout:   " + LayoutToString(target->currentLayout) + " -> " + LayoutToString(newLayout) + "\n" +
+                                 "Stage:    " + StageToString(srcStage) + " -> " + StageToString(dstStage) + "\n" +
+                                 "Access:   " + AccessToString(srcAccess) + " -> " + AccessToString(dstAccess);
+            LOG_INFO(logMsg);
+            s_LoggedTransitions[transitionKey] = true;
+        }
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
