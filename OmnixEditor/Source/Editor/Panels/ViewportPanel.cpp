@@ -131,9 +131,9 @@ namespace eng::runtime {
         m_Context = context;
     }
 
-    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, EditorSelection& selection, EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera) {
+    void ViewportPanel::Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, EditorSelection& selection, EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera, std::function<void(AssetHandle)> onCreateEntityFromMesh) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("Viewport", nullptr);
+        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar();
 
         m_IsFocused = ImGui::IsWindowFocused();
@@ -178,6 +178,20 @@ namespace eng::runtime {
             ImGui::Image((ImTextureID)viewportTexture, size, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
         } else {
             ImGui::Text("3D Scene Viewport");
+        }
+
+        // Viewport Drag and Drop Target for Asset Instantiation
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("DRAG_DROP_ASSET_HANDLE")) {
+                if (payload->DataSize == sizeof(uint64_t)) {
+                    uint64_t handleVal = *(const uint64_t*)payload->Data;
+                    AssetHandle handle(handleVal);
+                    if (onCreateEntityFromMesh) {
+                        onCreateEntityFromMesh(handle);
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
         }
 
         // Keyboard hotkeys for changing transform gizmo type (W, E, R)

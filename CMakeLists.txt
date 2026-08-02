@@ -305,6 +305,7 @@ add_library(OmnixEditor STATIC
     OmnixEditor/Source/Editor/EditorSelection.cpp
     OmnixEditor/Source/Editor/EditorTheme.cpp
     OmnixEditor/Source/Editor/Panels/AssetBrowserPanel.cpp
+    OmnixEditor/Source/Editor/Panels/CommandPalette.cpp
     OmnixEditor/Source/Editor/Panels/ConsolePanel.cpp
     OmnixEditor/Source/Editor/Panels/ImportLogPanel.cpp
     OmnixEditor/Source/Editor/Panels/InspectorPanel.cpp

@@ -151,6 +151,12 @@ namespace eng::runtime {
                     }
                 }
 
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("DRAG_DROP_ASSET_HANDLE", &handle.value, sizeof(uint64_t));
+                    ImGui::Text("Asset: %s", filename.c_str());
+                    ImGui::EndDragDropSource();
+                }
+
                 // Column 2: Type
                 ImGui::TableNextColumn();
                 ImGui::Text("%s", AssetTypeToString(meta.type));

@@ -12,6 +12,8 @@
 #include "Editor/Panels/ViewportPanel.h"
 #include "Editor/Panels/AssetBrowserPanel.h"
 #include "Editor/Panels/ImportLogPanel.h"
+#include "Editor/Panels/CommandPalette.h"
+#include "Editor/EditorLayout.h"
 #include "Editor/EditorCamera.h"
 #include <memory>
 #include <vector>
@@ -112,6 +114,9 @@ namespace eng::runtime {
         ViewportPanel m_ViewportPanel;
         AssetBrowserPanel m_AssetBrowserPanel;
         ImportLogPanel m_ImportLogPanel;
+        CommandPalette m_CommandPalette;
+
+        WorkspaceProfile m_CurrentWorkspaceProfile = WorkspaceProfile::Default;
 
         // Vulkan Resources for ImGui
         VkDescriptorPool m_ImGuiDescriptorPool = VK_NULL_HANDLE;

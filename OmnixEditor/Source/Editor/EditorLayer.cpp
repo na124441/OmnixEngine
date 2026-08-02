@@ -284,6 +284,8 @@ namespace eng::runtime {
             sceneService.CreateDefaultEditorSceneContent();
         }
 
+        m_CommandPalette.Initialize(m_Context);
+
         CORE_LOG_INFO("[EditorLayer] Initialized successfully");
         return true;
     }
@@ -296,6 +298,10 @@ namespace eng::runtime {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+
+        if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_P)) {
+            m_CommandPalette.ToggleOpen();
+        }
     }
 
     void EditorLayer::Render() {
@@ -1409,6 +1415,32 @@ namespace eng::runtime {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Window")) {
+                if (ImGui::BeginMenu("Workspace Profile")) {
+                    if (ImGui::MenuItem("Default", nullptr, m_CurrentWorkspaceProfile == WorkspaceProfile::Default)) {
+                        m_CurrentWorkspaceProfile = WorkspaceProfile::Default;
+                        ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
+                        EditorLayout::BuildWorkspaceLayout(dockspace_id, WorkspaceProfile::Default);
+                    }
+                    if (ImGui::MenuItem("Level Design", nullptr, m_CurrentWorkspaceProfile == WorkspaceProfile::LevelDesign)) {
+                        m_CurrentWorkspaceProfile = WorkspaceProfile::LevelDesign;
+                        ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
+                        EditorLayout::BuildWorkspaceLayout(dockspace_id, WorkspaceProfile::LevelDesign);
+                    }
+                    if (ImGui::MenuItem("ECS Debug", nullptr, m_CurrentWorkspaceProfile == WorkspaceProfile::ECSDebug)) {
+                        m_CurrentWorkspaceProfile = WorkspaceProfile::ECSDebug;
+                        ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
+                        EditorLayout::BuildWorkspaceLayout(dockspace_id, WorkspaceProfile::ECSDebug);
+                    }
+                    if (ImGui::MenuItem("Asset & Package Inspection", nullptr, m_CurrentWorkspaceProfile == WorkspaceProfile::AssetPackage)) {
+                        m_CurrentWorkspaceProfile = WorkspaceProfile::AssetPackage;
+                        ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
+                        EditorLayout::BuildWorkspaceLayout(dockspace_id, WorkspaceProfile::AssetPackage);
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::MenuItem("Command Palette...", "Ctrl+P")) {
+                    m_CommandPalette.ToggleOpen();
+                }
                 if (ImGui::MenuItem("Reset Layout")) {
                     m_ResetLayout = true;
                 }
@@ -1445,6 +1477,7 @@ namespace eng::runtime {
         m_InspectorPanel.Render(m_Selection, m_DirtyState);
         m_ConsolePanel.Render();
         m_ImportLogPanel.Render();
+        m_CommandPalette.Render(m_Selection, m_DirtyState);
         DrawGameplayValidatorWindow();
 
         // Retrieve offscreen viewport texture for current frame
@@ -1473,7 +1506,9 @@ namespace eng::runtime {
         else if (m_InputOwner == EditorInputOwner::ViewportEditorCamera) inputOwnerLabel = "ViewportEditorCamera";
         else if (m_InputOwner == EditorInputOwner::Game) inputOwnerLabel = "Game";
         m_ViewportPanel.SetInputDiagnostics(inputOwnerLabel, m_CursorCaptured);
-        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera);
+        m_ViewportPanel.Render(viewportTexture, panelWidth, panelHeight, m_Selection, m_DirtyState, m_SimulationState, m_EditorCamera, [this](AssetHandle meshHandle) {
+            this->CreateEntityFromMesh(meshHandle);
+        });
 
         // Save the viewport size for recreation check at the start of the next frame
         m_LastViewportWidth = panelWidth;

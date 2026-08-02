@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Runtime/RuntimeContext.h"
+#include "Runtime/AssetHandle.h"
 #include <vulkan/vulkan.h>
+#include <functional>
 
 namespace eng::runtime {
 
@@ -10,7 +12,7 @@ namespace eng::runtime {
     class ViewportPanel {
     public:
         void Initialize(RuntimeContext* context);
-        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera);
+        void Render(VkDescriptorSet viewportTexture, float& outWidth, float& outHeight, class EditorSelection& selection, class EditorDirtyState& dirtyState, EditorSimulationState simulationState, EditorCamera& editorCamera, std::function<void(AssetHandle)> onCreateEntityFromMesh = nullptr);
 
         bool ShowCollidersEnabled() const { return m_ShowColliders; }
         void SetShowColliders(bool show) { m_ShowColliders = show; }
