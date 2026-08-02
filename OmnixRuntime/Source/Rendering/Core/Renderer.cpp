@@ -1273,13 +1273,17 @@ void Renderer::RenderFrame(ECSWorld& world, const CameraComponent& cameraComp)
     }
 
     // Log frame resources ownership (Phase 3 part 1)
-    std::string ownershipLog = "[Frame Resource Acquisition Log]\n"
-                               "Current Frame:   " + std::to_string(frameIndex) + "\n" +
-                               "DepthBuffer Idx: " + std::to_string(m_DepthHandles[frameIndex].index) + "\n" +
-                               "VkImage:         " + std::to_string((uintptr_t)m_DepthImages[frameIndex]) + "\n" +
-                               "Framebuffer:     " + std::to_string((uintptr_t)(frameIndex < m_GBufferFramebuffers.size() ? m_GBufferFramebuffers[frameIndex] : VK_NULL_HANDLE)) + "\n" +
-                               "Swapchain Image: " + std::to_string(currentSwapchainImageIndex);
-    LOG_INFO(ownershipLog);
+    static bool s_LogOwnershipOnce = false;
+    if (!s_LogOwnershipOnce) {
+        std::string ownershipLog = "[Frame Resource Acquisition Log]\n"
+                                   "Current Frame:   " + std::to_string(frameIndex) + "\n" +
+                                   "DepthBuffer Idx: " + std::to_string(m_DepthHandles[frameIndex].index) + "\n" +
+                                   "VkImage:         " + std::to_string((uintptr_t)m_DepthImages[frameIndex]) + "\n" +
+                                   "Framebuffer:     " + std::to_string((uintptr_t)(frameIndex < m_GBufferFramebuffers.size() ? m_GBufferFramebuffers[frameIndex] : VK_NULL_HANDLE)) + "\n" +
+                                   "Swapchain Image: " + std::to_string(currentSwapchainImageIndex);
+        LOG_INFO(ownershipLog);
+        s_LogOwnershipOnce = true;
+    }
 
     bool graphExecutionFailed = false;
     bool ok = renderGraph.ExecuteWithValidation(resources, frameIndex, m_RenderTargetManager, graphExecutionFailed);
@@ -1408,13 +1412,17 @@ void Renderer::EndFrame()
     vkResetFences(resources.device, 1, &resources.inFlightFences.at(frameIndex));
 
     // Detailed vkQueueSubmit logging (Phase 6 part 1)
-    std::string submitLog = "[vkQueueSubmit Log]\n"
-                             "Frame:          " + std::to_string(frameIndex) + "\n" +
-                             "Fence:          " + std::to_string((uintptr_t)resources.inFlightFences.at(frameIndex)) + "\n" +
-                             "Wait Semaphore: " + std::to_string((uintptr_t)waitSem) + "\n" +
-                             "Signal Sem:     " + std::to_string((uintptr_t)signalSem) + "\n" +
-                             "Cmd Buffers:    " + std::to_string(submitCmds.size());
-    LOG_INFO(submitLog);
+    static bool s_LogSubmitOnce = false;
+    if (!s_LogSubmitOnce) {
+        std::string submitLog = "[vkQueueSubmit Log]\n"
+                                 "Frame:          " + std::to_string(frameIndex) + "\n" +
+                                 "Fence:          " + std::to_string((uintptr_t)resources.inFlightFences.at(frameIndex)) + "\n" +
+                                 "Wait Semaphore: " + std::to_string((uintptr_t)waitSem) + "\n" +
+                                 "Signal Sem:     " + std::to_string((uintptr_t)signalSem) + "\n" +
+                                 "Cmd Buffers:    " + std::to_string(submitCmds.size());
+        LOG_INFO(submitLog);
+        s_LogSubmitOnce = true;
+    }
 
     VkResult submitResult = vkQueueSubmit(resources.graphicsQueue,
                                           1,

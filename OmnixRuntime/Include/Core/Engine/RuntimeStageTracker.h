@@ -12,7 +12,6 @@ namespace eng::core {
     public:
         static void SetCurrentStage(FrameStage stage) {
             s_CurrentStage = stage;
-            LOG_DEBUG("[Runtime] Transitioning to FrameStage: %s", FrameStageToString(stage));
         }
 
         static FrameStage GetCurrentStage() {

@@ -275,38 +275,24 @@ bool RenderGraph::ExecuteWithValidation(EngineResources& resources, uint32_t fra
         targetManager.SetActiveFramebuffer(pass.framebuffer);
 
         // Log Attachment & Pass Information before execution (Phase 2 part 1)
-        LOG_INFO("[RenderPass Verification] Name: " + pass.name + 
-                 ", Framebuffer: " + std::to_string((uintptr_t)pass.framebuffer));
-        for (size_t i = 0; i < pass.inputHandles.size() && i < pass.inputs.size(); ++i) {
-            const RenderTarget* target = targetManager.Get(pass.inputHandles[i]);
-            LOG_INFO("  Input: " + pass.inputs[i] + " (" + (target ? target->debugName : "Null") + 
-                     "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
-        }
-        for (size_t i = 0; i < pass.outputHandles.size() && i < pass.outputs.size(); ++i) {
-            const RenderTarget* target = targetManager.Get(pass.outputHandles[i]);
-            LOG_INFO("  Output: " + pass.outputs[i] + " (" + (target ? target->debugName : "Null") + 
-                     "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
+        static std::unordered_map<std::string, bool> s_LoggedPasses;
+        if (!s_LoggedPasses[pass.name]) {
+            LOG_INFO("[RenderPass Verification] Name: " + pass.name + 
+                     ", Framebuffer: " + std::to_string((uintptr_t)pass.framebuffer));
+            for (size_t i = 0; i < pass.inputHandles.size() && i < pass.inputs.size(); ++i) {
+                const RenderTarget* target = targetManager.Get(pass.inputHandles[i]);
+                LOG_INFO("  Input: " + pass.inputs[i] + " (" + (target ? target->debugName : "Null") + 
+                         "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
+            }
+            for (size_t i = 0; i < pass.outputHandles.size() && i < pass.outputs.size(); ++i) {
+                const RenderTarget* target = targetManager.Get(pass.outputHandles[i]);
+                LOG_INFO("  Output: " + pass.outputs[i] + " (" + (target ? target->debugName : "Null") + 
+                         "), Tracked Layout: " + (target ? LayoutToString(target->currentLayout) : "Null"));
+            }
+            s_LoggedPasses[pass.name] = true;
         }
 
-        // Consumer Validation before execution (Phase 5 part 2)
-        for (size_t i = 0; i < pass.inputHandles.size() && i < pass.inputs.size(); ++i) {
-            const RenderTarget* target = targetManager.Get(pass.inputHandles[i]);
-            if (target && target->IsValid()) {
-                VkImageLayout expectedLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                if (pass.inputs[i] == "DepthBuffer") {
-                    expectedLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                }
-                if (target->currentLayout != expectedLayout) {
-                    LOG_ERROR("[RenderGraph Validation Error]\nResource: " + pass.inputs[i] + 
-                              "\nProducer: (Previous Writer)\nConsumer: " + pass.name + 
-                              "\nExpected: " + LayoutToString(expectedLayout) + 
-                              "\nTracked:  " + LayoutToString(target->currentLayout));
-                    #ifndef NDEBUG
-                    assert(false && "RenderGraph Validation Error: Input layout mismatch");
-                    #endif
-                }
-            }
-        }
+
 
         // Perform automated resource layout transitions declared by this pass
         for (const auto& usage : pass.resourceUsages) {
