@@ -14,10 +14,15 @@ struct GPUInstance
 
 struct GPUMeshDrawData
 {
-    uint indexCount;
     uint firstIndex;
     int vertexOffset;
+    uint indexCount;
+    uint vertexCount;
+    vec4 localBoundsSphere;
     uint materialSlotOffset;
+    uint submeshOffset;
+    uint submeshCount;
+    uint flags;
 };
 
 struct DrawIndexedIndirectCommand
@@ -75,7 +80,7 @@ void main()
     commands[visibleIndex].instanceCount = 1;
     commands[visibleIndex].firstIndex = mesh.firstIndex;
     commands[visibleIndex].vertexOffset = mesh.vertexOffset;
-    commands[visibleIndex].firstInstance = visibleIndex;
+    commands[visibleIndex].firstInstance = instanceIndex;
 
     if (visibleIndex == 0)
     {

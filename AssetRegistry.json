@@ -2,17 +2,6 @@
     "assets": [
         {
             "dependencies": [],
-            "handle": 4569387206834428307,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Textures/brick_albedo.png",
-            "type": "Texture"
-        },
-        {
-            "dependencies": [],
             "handle": 7444686803171224376,
             "importTimestamp": 0,
             "importedPath": "",
@@ -20,6 +9,28 @@
             "isImported": false,
             "sourceMissing": false,
             "sourcePath": "Assets/Models/cube.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 14563795593874495022,
+            "importTimestamp": 0,
+            "importedPath": "Assets/Meshes/mount.blend1.omnixmesh",
+            "isDirty": false,
+            "isImported": true,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/mount.blend1.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 13368210448611474745,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Models/pyramid.obj",
             "type": "Mesh"
         },
         {
@@ -35,39 +46,6 @@
         },
         {
             "dependencies": [],
-            "handle": 13368210448611474745,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Models/pyramid.obj",
-            "type": "Mesh"
-        },
-        {
-            "dependencies": [],
-            "handle": 8497705309788101149,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Materials/wood.omnixmat",
-            "type": "Material"
-        },
-        {
-            "dependencies": [],
-            "handle": 5605425720446498563,
-            "importTimestamp": 0,
-            "importedPath": "",
-            "isDirty": true,
-            "isImported": false,
-            "sourceMissing": false,
-            "sourcePath": "Assets/Textures/wood_albedo.png",
-            "type": "Texture"
-        },
-        {
-            "dependencies": [],
             "handle": 16528957509826817816,
             "importTimestamp": 0,
             "importedPath": "",
@@ -76,6 +54,28 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Models/sphere.obj",
             "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 519101999989861967,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Meshes/mount.blend1.obj",
+            "type": "Mesh"
+        },
+        {
+            "dependencies": [],
+            "handle": 16699927540305262433,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/default.omnixmat",
+            "type": "Material"
         },
         {
             "dependencies": [],
@@ -98,6 +98,50 @@
             "sourceMissing": false,
             "sourcePath": "Assets/Materials/metal_test.omnixmat",
             "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 8497705309788101149,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Materials/wood.omnixmat",
+            "type": "Material"
+        },
+        {
+            "dependencies": [],
+            "handle": 12263849492606865895,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/golden_reference.png",
+            "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 207868223522761647,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/Texturelabs_Concrete_129S.jpg",
+            "type": "Texture"
+        },
+        {
+            "dependencies": [],
+            "handle": 18070330976811234723,
+            "importTimestamp": 0,
+            "importedPath": "",
+            "isDirty": true,
+            "isImported": false,
+            "sourceMissing": false,
+            "sourcePath": "Assets/Textures/Texturelabs_Concrete_129S.png",
+            "type": "Texture"
         }
     ]
 }

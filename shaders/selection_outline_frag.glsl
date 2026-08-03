@@ -2,8 +2,8 @@
 layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 inUV;
 
-// Set 0 Binding 7: ObjectID texture for entity ID
-layout(set = 0, binding = 7) uniform usampler2D objectIDTex;
+// Set 0 Binding 10: ObjectID texture for entity ID
+layout(set = 0, binding = 10) uniform usampler2D objectIDTex;
 
 layout(push_constant) uniform PushConstants
 {

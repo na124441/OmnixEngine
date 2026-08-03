@@ -1,0 +1,452 @@
+diff --git a/Rendering/Core/Renderer.cpp b/Rendering/Core/Renderer.cpp
+index e429ea8..267e0d2 100644
+--- a/Rendering/Core/Renderer.cpp
++++ b/Rendering/Core/Renderer.cpp
+@@ -765,6 +765,7 @@ void Renderer::Initialize()
+ }
+ void Renderer::Shutdown()
+ {
++    destroyDoFPipeline();
+     destroyGridPipeline();
+ 
+     m_SelectionOutlinePass.Shutdown(resources);
+@@ -2079,6 +2080,7 @@ void Renderer::initPipelines()
+     if (m_ViewportRenderer.isOffscreenRenderingEnabled()) {
+         recreateOffscreenPostProcessPipeline();
+     }
++    initDoFPipeline();
+ }
+ 
+ void Renderer::recreateOffscreenPostProcessPipeline()
+@@ -3658,6 +3660,148 @@ void Renderer::setupRenderGraph()
+                 vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &readBarrier, 0, nullptr);
+             }
+         );
++    // 7.6. Depth of Field Pass
++    if (m_PostProcessSettings.enableDoF) {
++        renderGraph.RegisterPass(
++            "DepthOfFieldPass",
++            {"HDRColor", "DepthBuffer"},
++            {"DoFColor"},
++            PassID::PostProcess,
++            [this](VkCommandBuffer cmd) {
++                // Transition HDRColor to SHADER_READ_ONLY_OPTIMAL
++                VkImageMemoryBarrier barriers[2]{};
++                barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++                barriers[0].image = m_HDRColorImages[frameIndex];
++                barriers[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++                barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++                barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++                barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
++                barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++
++                // Transition DoFColor to COLOR_ATTACHMENT_OPTIMAL
++                barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++                barriers[1].image = m_DoFColorImages[frameIndex];
++                barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
++                barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++                barriers[1].srcAccessMask = 0;
++                barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++                barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++
++                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers);
++
++                // Render Pass Begin
++                VkRenderPassBeginInfo rpInfo{};
++                rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
++                rpInfo.renderPass = m_HDRRenderPass;
++                rpInfo.framebuffer = m_DoFFramebuffers[frameIndex];
++                rpInfo.renderArea.offset = {0, 0};
++                rpInfo.renderArea.extent = { m_DepthWidth, m_DepthHeight };
++                
++                VkClearValue clearVal{};
++                clearVal.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
++                rpInfo.clearValueCount = 1;
++                rpInfo.pClearValues = &clearVal;
++
++                vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
++
++                VkViewport viewport{};
++                viewport.x = 0.0f;
++                viewport.y = 0.0f;
++                viewport.width = static_cast<float>(m_DepthWidth);
++                viewport.height = static_cast<float>(m_DepthHeight);
++                viewport.minDepth = 0.0f;
++                viewport.maxDepth = 1.0f;
++                vkCmdSetViewport(cmd, 0, 1, &viewport);
++
++                VkRect2D scissor{};
++                scissor.offset = {0, 0};
++                scissor.extent = { m_DepthWidth, m_DepthHeight };
++                vkCmdSetScissor(cmd, 0, 1, &scissor);
++
++                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DoFPipeline);
++
++                // Bind descriptor set (contains input HDR color and Depth buffer)
++                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DoFPipelineLayout, 0, 1, &m_DoFDescriptorSets[frameIndex], 0, nullptr);
++
++                // Push Constants: focusDistance, focalLength, aperture, near, far, enabled
++                struct DoFPushConstants {
++                    float focusDistance;
++                    float focalLength;
++                    float aperture;
++                    float cameraNear;
++                    float cameraFar;
++                    uint32_t enabled;
++                } push;
++
++                push.focusDistance = m_PostProcessSettings.dofFocusDistance;
++                push.focalLength = m_PostProcessSettings.dofFocalLength;
++                push.aperture = m_PostProcessSettings.dofAperture;
++                push.cameraNear = camera.nearPlane;
++                push.cameraFar = camera.farPlane;
++                push.enabled = 1;
++
++                vkCmdPushConstants(cmd, m_DoFPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DoFPushConstants), &push);
++
++                // Draw fullscreen triangle
++                vkCmdDraw(cmd, 3, 1, 0, 0);
++
++                vkCmdEndRenderPass(cmd);
++
++                // Copy DoFColor back to HDRColor
++                VkImageMemoryBarrier copyBarriers[2]{};
++                copyBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++                copyBarriers[0].image = m_DoFColorImages[frameIndex];
++                copyBarriers[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++                copyBarriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
++                copyBarriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++                copyBarriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
++                copyBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                copyBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                copyBarriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++
++                copyBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++                copyBarriers[1].image = m_HDRColorImages[frameIndex];
++                copyBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++                copyBarriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
++                copyBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
++                copyBarriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++                copyBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                copyBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                copyBarriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++
++                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, copyBarriers);
++
++                VkImageCopy copyRegion{};
++                copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
++                copyRegion.srcSubresource.mipLevel = 0;
++                copyRegion.srcSubresource.baseArrayLayer = 0;
++                copyRegion.srcSubresource.layerCount = 1;
++                copyRegion.srcOffset = { 0, 0, 0 };
++                copyRegion.dstSubresource = copyRegion.srcSubresource;
++                copyRegion.dstOffset = { 0, 0, 0 };
++                copyRegion.extent = { m_DepthWidth, m_DepthHeight, 1 };
++
++                vkCmdCopyImage(cmd, m_DoFColorImages[frameIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_HDRColorImages[frameIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
++
++                // Transition HDRColor back to COLOR_ATTACHMENT_OPTIMAL for subsequent passes
++                VkImageMemoryBarrier postCopyBarrier{};
++                postCopyBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++                postCopyBarrier.image = m_HDRColorImages[frameIndex];
++                postCopyBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
++                postCopyBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++                postCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++                postCopyBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
++                postCopyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                postCopyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++                postCopyBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++
++                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &postCopyBarrier);
++            }
++        );
+     }
+ 
+     // 8. Post Process Pass
+@@ -3746,7 +3890,7 @@ void Renderer::setupRenderGraph()
+                 postConstants.bloomThreshold = m_PostProcessSettings.bloomThreshold;
+                 postConstants.bloomIntensity = m_PostProcessSettings.bloomIntensity;
+                 postConstants.exposureMode = static_cast<uint32_t>(m_PostProcessSettings.exposureMode);
+-                postConstants.enableTonemapping = m_PostProcessSettings.enableTonemapping ? 1u : 0u;
++                postConstants.enableTonemapping = m_PostProcessSettings.enableTonemapping ? (m_PostProcessSettings.tonemappingMode + 1) : 0u;
+                 postConstants.enableGammaCorrection = m_PostProcessSettings.enableGammaCorrection ? 1u : 0u;
+                 postConstants.debugBeforePostProcess = m_PostProcessSettings.debugBeforePostProcess ? 1u : 0u;
+                 postConstants.autoExposure = m_RadianceSettings.exposure.autoExposure ? 1.0f : 0.0f;
+@@ -4888,6 +5032,7 @@ void Renderer::updateGBufferDescriptorSets()
+ 
+         vkUpdateDescriptorSets(resources.device, static_cast<uint32_t>(blurWrites.size()), blurWrites.data(), 0, nullptr);
+     }
++    updateDoFDescriptorSets();
+ }
+ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
+ {
+@@ -4921,6 +5066,15 @@ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
+     for (auto h : m_HDRColorComposedHandles) m_RenderTargetManager.Destroy(h);
+     m_HDRColorComposedHandles.clear();
+ 
++    for (auto h : m_DoFColorHandles) m_RenderTargetManager.Destroy(h);
++    m_DoFColorHandles.clear();
++    m_DoFColorImages.clear();
++    m_DoFColorAllocations.clear();
++    m_DoFColorImageViews.clear();
++    for (auto h : m_DoFFbHandles) m_FramebufferManager.Destroy(h);
++    m_DoFFbHandles.clear();
++    m_DoFFramebuffers.clear();
++
+     for (auto h : m_LDRColorHandles) m_RenderTargetManager.Destroy(h);
+     m_LDRColorHandles.clear();
+ 
+@@ -5027,6 +5181,12 @@ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
+     m_GBufferVelocityHandles.resize(maxFrames);
+     m_HDRColorHandles.resize(maxFrames);
+     m_HDRColorComposedHandles.resize(maxFrames);
++    m_DoFColorHandles.resize(maxFrames);
++    m_DoFColorImages.resize(maxFrames, VK_NULL_HANDLE);
++    m_DoFColorAllocations.resize(maxFrames, nullptr);
++    m_DoFColorImageViews.resize(maxFrames, VK_NULL_HANDLE);
++    m_DoFFbHandles.resize(maxFrames);
++    m_DoFFramebuffers.resize(maxFrames, VK_NULL_HANDLE);
+     m_LDRColorHandles.resize(maxFrames);
+     m_ViewportColorHandles.resize(maxFrames);
+     m_SSAOHandles.resize(maxFrames);
+@@ -5338,6 +5498,33 @@ void Renderer::recreateDepthResources(uint32_t width, uint32_t height)
+         m_HDRColorComposedImageViews[i] = composedTarget->view;
+         m_HDRColorComposedAllocations[i] = composedTarget->allocation;
+ 
++        // 6c. DoF Color Target
++        RenderTargetDesc dofDesc{};
++        dofDesc.width = width;
++        dofDesc.height = height;
++        dofDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
++        dofDesc.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++        dofDesc.aspect = VK_IMAGE_ASPECT_COLOR_BIT;
++        dofDesc.colorAttachment = true;
++        dofDesc.debugName = "DoFColor_" + std::to_string(i);
++        m_DoFColorHandles[i] = m_RenderTargetManager.Create(dofDesc);
++
++        const RenderTarget* dofTarget = m_RenderTargetManager.Get(m_DoFColorHandles[i]);
++        m_DoFColorImages[i] = dofTarget->image;
++        m_DoFColorImageViews[i] = dofTarget->view;
++        m_DoFColorAllocations[i] = dofTarget->allocation;
++
++        // Create DoF framebuffer
++        FramebufferDesc dofFbDesc{};
++        dofFbDesc.renderPass = m_HDRRenderPass;
++        dofFbDesc.attachments = { m_DoFColorHandles[i] };
++        dofFbDesc.width = width;
++        dofFbDesc.height = height;
++        dofFbDesc.layers = 1;
++        dofFbDesc.debugName = "DoFColor_Fb_" + std::to_string(i);
++        m_DoFFbHandles[i] = m_FramebufferManager.Create(dofFbDesc);
++        m_DoFFramebuffers[i] = m_FramebufferManager.Get(m_DoFFbHandles[i]);
++
+         // Create HDR framebuffer
+         FramebufferDesc hdrFbDesc{};
+         hdrFbDesc.renderPass = m_HDRRenderPass;
+@@ -8024,4 +8211,202 @@ void Renderer::updateTAADescriptorSets() {
+     }
+ }
+ 
++void Renderer::initDoFPipeline()
++{
++    // 1. Create Descriptor Set Layout
++    VkDescriptorSetLayoutBinding bindings[2]{};
++    // Binding 0: HDRColor texture input
++    bindings[0].binding = 0;
++    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++    bindings[0].descriptorCount = 1;
++    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
++    bindings[0].pImmutableSamplers = nullptr;
++
++    // Binding 1: DepthBuffer texture input
++    bindings[1].binding = 1;
++    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++    bindings[1].descriptorCount = 1;
++    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
++    bindings[1].pImmutableSamplers = nullptr;
++
++    VkDescriptorSetLayoutCreateInfo layoutInfo{};
++    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
++    layoutInfo.bindingCount = 2;
++    layoutInfo.pBindings = bindings;
++    VK_CHECK(vkCreateDescriptorSetLayout(resources.device, &layoutInfo, nullptr, &m_DoFDescriptorSetLayout));
++
++    // 2. Create Pipeline Layout
++    VkPushConstantRange pushConstantRange{};
++    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
++    pushConstantRange.offset = 0;
++    // Push constants contain: focusDistance (float), focalLength (float), aperture (float), cameraNear (float), cameraFar (float), enabled (uint)
++    pushConstantRange.size = sizeof(float) * 5 + sizeof(uint32_t);
++
++    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
++    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
++    pipelineLayoutInfo.setLayoutCount = 1;
++    pipelineLayoutInfo.pSetLayouts = &m_DoFDescriptorSetLayout;
++    pipelineLayoutInfo.pushConstantRangeCount = 1;
++    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
++    VK_CHECK(vkCreatePipelineLayout(resources.device, &pipelineLayoutInfo, nullptr, &m_DoFPipelineLayout));
++
++    // 3. Create Pipeline using loadShaderModule and similar graphics pipeline setup
++    VkShaderModule vertModule = resources.loadShaderModule("shaders/fullscreen_vert.spv");
++    VkShaderModule fragModule = resources.loadShaderModule("shaders/dof.spv");
++
++    if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
++        LOG_ERROR("DoFPipeline: Failed to load shader modules!");
++        if (vertModule != VK_NULL_HANDLE) vkDestroyShaderModule(resources.device, vertModule, nullptr);
++        if (fragModule != VK_NULL_HANDLE) vkDestroyShaderModule(resources.device, fragModule, nullptr);
++        return;
++    }
++
++    VkPipelineShaderStageCreateInfo stages[2]{};
++    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
++    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
++    stages[0].module = vertModule;
++    stages[0].pName = "main";
++
++    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
++    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
++    stages[1].module = fragModule;
++    stages[1].pName = "main";
++
++    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
++    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
++
++    VkPipelineInputAssemblyStateCreateInfo inputAsm{};
++    inputAsm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
++    inputAsm.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
++
++    VkPipelineViewportStateCreateInfo viewportState{};
++    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
++    viewportState.viewportCount = 1;
++    viewportState.scissorCount = 1;
++
++    VkPipelineRasterizationStateCreateInfo rasterizer{};
++    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
++    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
++    rasterizer.cullMode = VK_CULL_MODE_NONE;
++    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
++    rasterizer.lineWidth = 1.0f;
++
++    VkPipelineMultisampleStateCreateInfo multisampling{};
++    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
++    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
++
++    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
++    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
++    colorBlendAttachment.blendEnable = VK_FALSE;
++
++    VkPipelineColorBlendStateCreateInfo colorBlending{};
++    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
++    colorBlending.attachmentCount = 1;
++    colorBlending.pAttachments = &colorBlendAttachment;
++
++    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
++    VkPipelineDynamicStateCreateInfo dynamicState{};
++    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
++    dynamicState.dynamicStateCount = 2;
++    dynamicState.pDynamicStates = dynamicStates;
++
++    VkGraphicsPipelineCreateInfo pipelineInfo{};
++    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
++    pipelineInfo.stageCount = 2;
++    pipelineInfo.pStages = stages;
++    pipelineInfo.pVertexInputState = &vertexInputInfo;
++    pipelineInfo.pInputAssemblyState = &inputAsm;
++    pipelineInfo.pViewportState = &viewportState;
++    pipelineInfo.pRasterizationState = &rasterizer;
++    pipelineInfo.pMultisampleState = &multisampling;
++    pipelineInfo.pColorBlendState = &colorBlending;
++    pipelineInfo.pDynamicState = &dynamicState;
++    pipelineInfo.layout = m_DoFPipelineLayout;
++    pipelineInfo.renderPass = m_HDRRenderPass; // Reuses same render pass structure as HDRColor
++    pipelineInfo.subpass = 0;
++
++    VK_CHECK(vkCreateGraphicsPipelines(resources.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_DoFPipeline));
++
++    vkDestroyShaderModule(resources.device, vertModule, nullptr);
++    vkDestroyShaderModule(resources.device, fragModule, nullptr);
++
++    // 4. Create Descriptor Pool
++    uint32_t maxFrames = resources.MAX_FRAMES_IN_FLIGHT;
++    VkDescriptorPoolSize poolSizes[1]{};
++    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++    poolSizes[0].descriptorCount = maxFrames * 2;
++
++    VkDescriptorPoolCreateInfo poolInfo{};
++    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
++    poolInfo.poolSizeCount = 1;
++    poolInfo.pPoolSizes = poolSizes;
++    poolInfo.maxSets = maxFrames;
++    VK_CHECK(vkCreateDescriptorPool(resources.device, &poolInfo, nullptr, &m_DoFDescriptorPool));
++
++    // Allocate Descriptor Sets
++    std::vector<VkDescriptorSetLayout> layouts(maxFrames, m_DoFDescriptorSetLayout);
++    VkDescriptorSetAllocateInfo allocInfo{};
++    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
++    allocInfo.descriptorPool = m_DoFDescriptorPool;
++    allocInfo.descriptorSetCount = maxFrames;
++    allocInfo.pSetLayouts = layouts.data();
++    m_DoFDescriptorSets.resize(maxFrames);
++    VK_CHECK(vkAllocateDescriptorSets(resources.device, &allocInfo, m_DoFDescriptorSets.data()));
++}
++
++void Renderer::destroyDoFPipeline()
++{
++    if (m_DoFDescriptorPool != VK_NULL_HANDLE) {
++        vkDestroyDescriptorPool(resources.device, m_DoFDescriptorPool, nullptr);
++        m_DoFDescriptorPool = VK_NULL_HANDLE;
++    }
++    if (m_DoFDescriptorSetLayout != VK_NULL_HANDLE) {
++        vkDestroyDescriptorSetLayout(resources.device, m_DoFDescriptorSetLayout, nullptr);
++        m_DoFDescriptorSetLayout = VK_NULL_HANDLE;
++    }
++    if (m_DoFPipelineLayout != VK_NULL_HANDLE) {
++        vkDestroyPipelineLayout(resources.device, m_DoFPipelineLayout, nullptr);
++        m_DoFPipelineLayout = VK_NULL_HANDLE;
++    }
++    if (m_DoFPipeline != VK_NULL_HANDLE) {
++        vkDestroyPipeline(resources.device, m_DoFPipeline, nullptr);
++        m_DoFPipeline = VK_NULL_HANDLE;
++    }
++}
++
++void Renderer::updateDoFDescriptorSets()
++{
++    if (m_DoFDescriptorPool == VK_NULL_HANDLE) return;
++
++    uint32_t maxFrames = resources.MAX_FRAMES_IN_FLIGHT;
++    for (uint32_t i = 0; i < maxFrames; ++i) {
++        VkDescriptorImageInfo hdrInfo{};
++        hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++        hdrInfo.imageView = m_HDRColorImageViews[i];
++        hdrInfo.sampler = m_GBufferSampler;
++
++        VkDescriptorImageInfo depthInfo{};
++        depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++        depthInfo.imageView = m_DepthImageViews[i];
++        depthInfo.sampler = m_GBufferSampler;
++
++        VkWriteDescriptorSet writes[2]{};
++        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++        writes[0].dstSet = m_DoFDescriptorSets[i];
++        writes[0].dstBinding = 0;
++        writes[0].descriptorCount = 1;
++        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++        writes[0].pImageInfo = &hdrInfo;
++
++        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++        writes[1].dstSet = m_DoFDescriptorSets[i];
++        writes[1].dstBinding = 1;
++        writes[1].descriptorCount = 1;
++        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++        writes[1].pImageInfo = &depthInfo;
++
++        vkUpdateDescriptorSets(resources.device, 2, writes, 0, nullptr);
++    }
++}
++
+ } // namespace eng::renderer

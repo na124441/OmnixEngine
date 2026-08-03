@@ -1,0 +1,85 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0) uniform sampler2D hdrColor;
+
+layout(std430, set = 0, binding = 1) buffer ExposureBuffer {
+    float adaptedExposure;
+    float prevExposure;
+} outExposure;
+
+layout(push_constant) uniform PushConstants {
+    float deltaTime;
+    float minExposure;
+    float maxExposure;
+    float adaptationSpeed;
+    uint autoExposureEnabled;
+} pc;
+
+shared float sharedSum[256];
+
+void main() {
+    uint tid = gl_LocalInvocationIndex;
+    
+    // Compute log-luminance sum over a grid of 64x64 points
+    float sumLogLuminance = 0.0;
+    uint sampleCount = 4096;
+    uint samplesPerThread = 16;
+    
+    for (uint s = 0; s < samplesPerThread; ++s) {
+        uint sampleIndex = tid * samplesPerThread + s;
+        uint gridX = sampleIndex % 64;
+        uint gridY = sampleIndex / 64;
+        vec2 uv = (vec2(gridX, gridY) + 0.5) / 64.0;
+        
+        vec3 color = textureLod(hdrColor, uv, 0.0).rgb;
+        
+        // Reject NaN or infinite values
+        if (isnan(color.r) || isnan(color.g) || isnan(color.b) || 
+            isinf(color.r) || isinf(color.g) || isinf(color.b)) {
+            color = vec3(0.0);
+        }
+        
+        float luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+        sumLogLuminance += log(max(luminance, 0.0001));
+    }
+    
+    sharedSum[tid] = sumLogLuminance;
+    barrier();
+    
+    // Parallel reduction in shared memory
+    for (uint stride = 128; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            sharedSum[tid] += sharedSum[tid + stride];
+        }
+        barrier();
+    }
+    
+    // Thread 0 performs temporal adaptation
+    if (tid == 0) {
+        float avgLogLuminance = sharedSum[0] / float(sampleCount);
+        float avgLuminance = exp(avgLogLuminance);
+        
+        // Target exposure maps 18% middle gray to standard key value
+        float targetExposure = 0.18 / (avgLuminance + 1e-5);
+        targetExposure = clamp(targetExposure, pc.minExposure, pc.maxExposure);
+        
+        float prev = outExposure.prevExposure;
+        
+        // Handle uninitialized or extreme previous values
+        if (isnan(prev) || isinf(prev) || prev <= 0.0) {
+            prev = 1.0;
+        }
+        
+        float dt = clamp(pc.deltaTime, 0.0, 0.1); // Clamp to avoid spikes
+        float adapted = prev + (targetExposure - prev) * (1.0 - exp(-dt * pc.adaptationSpeed));
+        
+        if (pc.autoExposureEnabled == 0) {
+            adapted = 1.0; // Manual exposure fallback inside buffer
+        }
+        
+        outExposure.adaptedExposure = adapted;
+        outExposure.prevExposure = adapted;
+    }
+}

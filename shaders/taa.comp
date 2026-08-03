@@ -1,0 +1,93 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Set 0 Bindings
+layout(set = 0, binding = 0) uniform sampler2D currentColor;
+layout(set = 0, binding = 1) uniform sampler2D historyColor;
+layout(set = 0, binding = 2) uniform sampler2D gbufferVelocity;
+layout(set = 0, binding = 3) uniform sampler2D depthBuffer;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D outTAA;
+
+// Set 1 Bindings (Camera Frame UBO)
+layout(set = 1, binding = 0) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    mat4 inverseViewProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+} frame;
+
+layout(push_constant) uniform PushConstants {
+    mat4 prevViewProjection;
+    float blendAlpha;
+} pc;
+
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 world = frame.inverseViewProjection * clip;
+    return world.xyz / world.w;
+}
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outTAA);
+    if (coord.x >= size.x || coord.y >= size.y) return;
+
+    vec2 uv = (vec2(coord) + 0.5) / vec2(size);
+    
+    // Sample current color
+    vec3 cCurr = texture(currentColor, uv).rgb;
+    float depth = texture(depthBuffer, uv).r;
+
+    // Check if background: skip TAA or use simple pass-through
+    if (depth >= 0.9999) {
+        imageStore(outTAA, coord, vec4(cCurr, 1.0));
+        return;
+    }
+
+    // Reconstruct world space position
+    vec3 worldPos = reconstructWorldPos(uv, depth);
+
+    // Reproject to previous frame
+    vec4 prevClip = pc.prevViewProjection * vec4(worldPos, 1.0);
+    vec3 prevScreen = prevClip.xyz / prevClip.w;
+    vec2 historyUV = prevScreen.xy * 0.5 + 0.5;
+
+    // Fallback if G-Buffer velocity is populated
+    vec2 gbufVelocity = texture(gbufferVelocity, uv).rg;
+    if (length(gbufVelocity) > 0.0001) {
+        historyUV = uv - gbufVelocity;
+    }
+
+    // Boundary check for history UV
+    if (historyUV.x < 0.0 || historyUV.x > 1.0 || historyUV.y < 0.0 || historyUV.y > 1.0) {
+        imageStore(outTAA, coord, vec4(cCurr, 1.0));
+        return;
+    }
+
+    // 3x3 Color neighborhood AABB bounds using texel size from viewportSize.zw
+    vec3 boxMin = cCurr;
+    vec3 boxMax = cCurr;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            vec2 offsetUV = uv + vec2(dx, dy) * frame.viewportSize.zw;
+            vec3 neighbor = texture(currentColor, offsetUV).rgb;
+            boxMin = min(boxMin, neighbor);
+            boxMax = max(boxMax, neighbor);
+        }
+    }
+
+    // Sample history and clamp
+    vec3 cHist = texture(historyColor, historyUV).rgb;
+    cHist = clamp(cHist, boxMin, boxMax);
+
+    // Blend history and current color
+    vec3 finalColor = mix(cHist, cCurr, pc.blendAlpha);
+
+    imageStore(outTAA, coord, vec4(finalColor, 1.0));
+}

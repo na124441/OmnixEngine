@@ -1,0 +1,374 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Set 0 Bindings
+layout(set = 0, binding = 0) uniform sampler2D gbufferA;
+layout(set = 0, binding = 1) uniform sampler2D gbufferB;
+layout(set = 0, binding = 2) uniform sampler2D gbufferC;
+layout(set = 0, binding = 3) uniform sampler2D gbufferD;
+layout(set = 0, binding = 4) uniform sampler2D depthBuffer;
+layout(set = 0, binding = 5) uniform sampler2D hdrColor;
+layout(set = 0, binding = 6) uniform sampler2D hzbImage;
+layout(set = 0, binding = 7, rgba16f) uniform writeonly image2D hdrColorComposed;
+
+struct DirectionalLightData
+{
+    vec3 direction;
+    float intensity;
+    vec4 color;
+};
+
+struct LocalLightShadowGPU
+{
+    mat4 lightSpaceMatrix;
+    vec4 atlasViewport;
+    float bias;
+    float normalBias;
+    float farPlane;
+    float shadowEnabled;
+};
+
+struct ReflectionProbeGPU
+{
+    vec4 positionIntensity;  // xyz = position, w = intensity
+    vec4 boxMinPriority;     // xyz = boxMin, w = priority
+    vec4 boxMaxBlend;        // xyz = boxMax, w = blendDistance
+    uvec4 flags;             // x = isBox, y = valid, zw = unused
+};
+
+layout(std430, set = 0, binding = 8) readonly buffer LightBuffer {
+    vec4 ambientColorIntensity; // rgb = color, w = intensity
+    DirectionalLightData directional;
+    vec4 pointPositionsRadius[16]; // xyz = pos, w = radius
+    vec4 pointColorsIntensity[16]; // rgb = color, w = intensity
+    uint pointLightCount;
+    uint shadingMode;
+    uint spotLightCount;
+    uint paddingVal;
+    vec4 spotPositionsRange[16];
+    vec4 spotDirectionsIntensity[16];
+    vec4 spotColors[16];
+    vec4 spotAngles[16];
+    vec4 pointLayerMasks[16];
+    vec4 spotLayerMasks[16];
+    
+    // Shadow mapping settings
+    mat4 directionalLightProjView;
+    mat4 directionalLightProjViews[4];
+    vec4 cascadeSplitDepths;
+    float shadowBias;
+    float shadowNormalBias;
+    float shadowSlopeBias;
+    float shadowStrength;
+    uint shadowLightCast;
+    int pcfKernelSize;
+    uint shadowResolution;
+    uint paddingVal2;
+
+    vec4 shadowParams;
+    uvec4 shadowFlags;
+
+    uint skyLightMode;
+    float skyLightRotation;
+    float skyLightDiffuseIntensity;
+    float skyLightSpecularIntensity;
+    float skyLightExposureOffset;
+
+    LocalLightShadowGPU spotLightShadows[16];
+    LocalLightShadowGPU pointLightShadows[16][6];
+
+    uint reflectionProbeCount;
+    uint padProbe0;
+    uint padProbe1;
+    uint padProbe2;
+    ReflectionProbeGPU reflectionProbes[4];
+} lighting;
+
+#define light lighting
+
+layout(set = 0, binding = 9) uniform samplerCube localReflectionProbes[4];
+layout(set = 0, binding = 10) uniform samplerCube prefilterMap;
+layout(set = 0, binding = 11) uniform sampler2D brdfLUT;
+
+layout(set = 0, binding = 12) uniform RadianceFrame
+{
+    mat4 view;
+    mat4 projection;
+    mat4 inverseView;
+    mat4 inverseProjection;
+    mat4 inverseViewProjection;
+
+    vec4 cameraPosition;
+    vec4 viewportSize;
+
+    vec4 skyTopColorIntensity;
+    vec4 skyHorizonColorBlend;
+    vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
+
+    vec4 exposureSettings;
+    uvec4 renderFlags;
+} frame;
+
+vec3 RotateVectorY(vec3 v, float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    return vec3(c * v.x - s * v.z, v.y, s * v.x + c * v.z);
+}
+
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 BoxParallaxCorrection(vec3 R, vec3 worldPos, vec3 boxMin, vec3 boxMax, vec3 probePos) {
+    vec3 firstPlaneIntersect = (boxMax - worldPos) / R;
+    vec3 secondPlaneIntersect = (boxMin - worldPos) / R;
+    vec3 furthestPlaneIntersect = max(firstPlaneIntersect, secondPlaneIntersect);
+    float t = min(furthestPlaneIntersect.x, min(furthestPlaneIntersect.y, furthestPlaneIntersect.z));
+    vec3 intersectPoint = worldPos + R * t;
+    return intersectPoint - probePos;
+}
+
+vec3 SampleLocalReflectionProbes(vec3 R, vec3 worldPos, float lod, out float outWeight) {
+    vec3 blendedColor = vec3(0.0);
+    float totalWeight = 0.0;
+    
+    for (uint i = 0; i < light.reflectionProbeCount && i < 4; ++i) {
+        ReflectionProbeGPU probe = light.reflectionProbes[i];
+        if (probe.flags.y == 0u) continue; // Inactive
+        
+        vec3 probePos = probe.positionIntensity.xyz;
+        float intensity = probe.positionIntensity.w;
+        vec3 boxMin = probe.boxMinPriority.xyz;
+        float priorityVal = probe.boxMinPriority.w;
+        vec3 boxMax = probe.boxMaxBlend.xyz;
+        float blendDistance = probe.boxMaxBlend.w;
+        bool isBox = probe.flags.x == 1u;
+        
+        bool inside = false;
+        float weight = 0.0;
+        
+        if (isBox) {
+            if (worldPos.x >= boxMin.x && worldPos.x <= boxMax.x &&
+                worldPos.y >= boxMin.y && worldPos.y <= boxMax.y &&
+                worldPos.z >= boxMin.z && worldPos.z <= boxMax.z) {
+                inside = true;
+                vec3 distToMin = worldPos - boxMin;
+                vec3 distToMax = boxMax - worldPos;
+                vec3 minDist = min(distToMin, distToMax);
+                float minAxisDist = min(minDist.x, min(minDist.y, minDist.z));
+                weight = clamp(minAxisDist / max(blendDistance, 0.001), 0.0, 1.0);
+            }
+        } else {
+            float radius = boxMax.x;
+            float dist = distance(worldPos, probePos);
+            if (dist <= radius) {
+                inside = true;
+                weight = clamp((radius - dist) / max(blendDistance, 0.001), 0.0, 1.0);
+            }
+        }
+        
+        if (inside && weight > 0.0) {
+            vec3 lookupDir = R;
+            if (isBox) {
+                lookupDir = BoxParallaxCorrection(R, worldPos, boxMin, boxMax, probePos);
+            }
+            
+            vec3 probeColor = textureLod(localReflectionProbes[i], lookupDir, lod).rgb * intensity;
+            float priorityWeight = exp2(priorityVal);
+            weight *= priorityWeight;
+            
+            blendedColor += probeColor * weight;
+            totalWeight += weight;
+        }
+    }
+    
+    outWeight = clamp(totalWeight, 0.0, 1.0);
+    if (totalWeight > 0.0) {
+        return blendedColor / totalWeight;
+    }
+    return vec3(0.0);
+}
+
+vec3 GetWorldViewDirection(vec2 uv)
+{
+    vec4 clip = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+    vec4 view = frame.inverseProjection * clip;
+    view /= view.w;
+    return normalize(mat3(frame.inverseView) * view.xyz);
+}
+
+vec3 EvaluateSky(vec3 dir)
+{
+    float dotVal = dot(dir, vec3(0.0, 1.0, 0.0));
+    float t = clamp(dotVal * 0.5 + 0.5, 0.0, 1.0);
+    vec3 col = mix(frame.skyGroundColorIntensity.rgb, frame.skyHorizonColorBlend.rgb, t);
+    col = mix(col, frame.skyTopColorIntensity.rgb, clamp(dotVal, 0.0, 1.0));
+    return col * frame.skyTopColorIntensity.w;
+}
+
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 world = frame.inverseViewProjection * clip;
+    return world.xyz / world.w;
+}
+
+vec3 reconstructViewPos(vec2 uv, float depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 viewPos = frame.inverseProjection * clip;
+    return viewPos.xyz / viewPos.w;
+}
+
+vec3 projectToScreen(vec3 viewPos) {
+    vec4 clip = frame.projection * vec4(viewPos, 1.0);
+    clip.xyz /= clip.w;
+    return vec3(clip.xy * 0.5 + 0.5, clip.z);
+}
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(hdrColorComposed);
+    if (coord.x >= size.x || coord.y >= size.y) return;
+
+    vec2 inUV = (vec2(coord) + 0.5) / vec2(size);
+    
+    // Sample G-Buffer attributes
+    vec4 gbufferAVal = texture(gbufferA, inUV);
+    vec4 gbufferBVal = texture(gbufferB, inUV);
+    vec4 gbufferCVal = texture(gbufferC, inUV);
+    vec4 gbufferDVal = texture(gbufferD, inUV);
+    float depth = texture(depthBuffer, inUV).r;
+
+    vec3 directColor = texture(hdrColor, inUV).rgb;
+
+    // Background pixel check
+    if (depth >= 0.9999) {
+        imageStore(hdrColorComposed, coord, vec4(directColor, 1.0));
+        return;
+    }
+
+    vec3 albedo = gbufferAVal.rgb;
+    vec3 N = normalize(gbufferBVal.rgb);
+    float roughness = clamp(gbufferBVal.a, 0.04, 1.0);
+    float metallic = gbufferCVal.r;
+    float AO = gbufferCVal.g;
+    vec3 emissive = gbufferDVal.rgb;
+    uint shadingModel = uint(round(gbufferDVal.a * 255.0));
+
+    // Unlit or invalid shading model: skip reflections
+    if (shadingModel == 1) {
+        imageStore(hdrColorComposed, coord, vec4(directColor, 1.0));
+        return;
+    }
+
+    // Reconstruction
+    vec3 vWorldPos = reconstructWorldPos(inUV, depth);
+    vec3 viewPos = reconstructViewPos(inUV, depth);
+    vec3 V = normalize(frame.cameraPosition.xyz - vWorldPos);
+    vec3 N_view = normalize(mat3(frame.view) * N);
+    vec3 V_view = normalize(-viewPos);
+    vec3 R_view = reflect(-V_view, N_view);
+
+    // Tracing Setup
+    float maxDist = 30.0;
+    vec3 viewEnd = viewPos + R_view * maxDist;
+    // Clip to near plane if it crosses
+    if (viewEnd.z > -0.1) {
+        float t = (-0.1 - viewPos.z) / (R_view.z + 1e-6);
+        viewEnd = viewPos + R_view * t;
+    }
+
+    vec3 screenStart = vec3(inUV, depth);
+    vec3 screenEnd = projectToScreen(viewEnd);
+    vec3 screenDir = screenEnd - screenStart;
+
+    // Trace HZB
+    vec3 pos = screenStart;
+    int level = 0;
+    bool hit = false;
+    int maxSteps = 80;
+    ivec2 hzbSize = textureSize(hzbImage, 0);
+
+    for (int i = 0; i < maxSteps; ++i) {
+        float cellDepth = textureLod(hzbImage, pos.xy, float(level)).r;
+        
+        // Ray is behind geometry
+        if (pos.z > cellDepth + 0.00001) {
+            if (level == 0) {
+                float thickness = 0.006;
+                if (pos.z <= cellDepth + thickness) {
+                    hit = true;
+                    break;
+                } else {
+                    // Miss (too deep), step forward
+                    pos += screenDir * (1.0 / float(maxSteps));
+                }
+            } else {
+                level--;
+            }
+        } else {
+            // Step forward based on mip level footprint
+            float stepSize = float(1 << level) / float(hzbSize.x);
+            pos += screenDir * stepSize;
+            level = min(level + 1, 4);
+        }
+
+        if (pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0 || pos.z < 0.0 || pos.z > 1.0) {
+            break;
+        }
+    }
+
+    vec3 hitColor = vec3(0.0);
+    float ssrWeight = 0.0;
+
+    if (hit) {
+        // Read color from previous shading output
+        hitColor = texture(hdrColor, pos.xy).rgb;
+
+        // Calculate Confidence Factors
+        vec2 edgeFactor = smoothstep(vec2(0.0), vec2(0.12), pos.xy) * smoothstep(vec2(1.0), vec2(0.88), pos.xy);
+        float edgeConf = edgeFactor.x * edgeFactor.y;
+        float distConf = smoothstep(1.0, 0.0, length(pos.xy - inUV));
+        float roughnessConf = smoothstep(0.45, 0.05, roughness);
+        
+        ssrWeight = edgeConf * distConf * roughnessConf * (1.0 - roughness);
+        ssrWeight = clamp(ssrWeight, 0.0, 1.0);
+    }
+
+    // Evaluate Specular fallback (Reflection Probes and global Sky)
+    float lod = roughness * 5.0; // 6 mip levels total (0 to 5)
+    float localWeight = 0.0;
+    vec3 fallbackRefl = vec3(0.0);
+
+    vec3 R_world = reflect(-V, N);
+    vec3 localPrefilter = SampleLocalReflectionProbes(R_world, vWorldPos, lod, localWeight);
+    
+    vec3 globalPrefilter = vec3(0.0);
+    if (light.skyLightMode == 1) {
+        vec3 rotatedDir = RotateVectorY(R_world, light.skyLightRotation);
+        globalPrefilter = textureLod(prefilterMap, rotatedDir, lod).rgb * light.ambientColorIntensity.w * exp2(light.skyLightExposureOffset);
+    } else {
+        globalPrefilter = EvaluateSky(R_world) * light.ambientColorIntensity.w;
+    }
+
+    fallbackRefl = mix(globalPrefilter, localPrefilter, localWeight);
+
+    // Compose IBL Specular
+    vec3 specularIBL = mix(fallbackRefl, hitColor, ssrWeight);
+
+    // Compute Specular BRDF Terms
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    float NdotV = clamp(dot(N, V), 0.0, 1.0);
+    vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
+    vec3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
+
+    vec3 specularLighting = specularIBL * (F * brdf.x + brdf.y) * AO;
+
+    // Final color
+    vec3 finalColor = directColor + specularLighting;
+
+    imageStore(hdrColorComposed, coord, vec4(finalColor, 1.0));
+}

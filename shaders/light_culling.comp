@@ -26,6 +26,7 @@ struct ClusterRangeGPU
 
 layout(set = 0, binding = 0) uniform ClusterSettings
 {
+    mat4 viewMatrix;
     uint tileCountX;
     uint tileCountY;
     uint depthSliceCount;
@@ -59,9 +60,6 @@ layout(set = 0, binding = 4) buffer ClusterLightIndicesBuffer
 
 bool SphereIntersectsCluster(vec3 lightPos, float radius, ClusterBoundsGPU cluster)
 {
-    // Beginner placeholder:
-    // This assumes cluster min/max are in a simple comparable space.
-    // Later replace with true view-space AABB test.
     vec3 minP = cluster.minPoint.xyz;
     vec3 maxP = cluster.maxPoint.xyz;
 
@@ -69,6 +67,39 @@ bool SphereIntersectsCluster(vec3 lightPos, float radius, ClusterBoundsGPU clust
     float distSq = dot(closest - lightPos, closest - lightPos);
 
     return distSq <= radius * radius;
+}
+
+bool ConeIntersectsCluster(vec3 lightPos, float range, vec3 lightDir, float outerAngle, ClusterBoundsGPU cluster)
+{
+    vec3 minP = cluster.minPoint.xyz;
+    vec3 maxP = cluster.maxPoint.xyz;
+    
+    // Sphere test
+    vec3 closest = clamp(lightPos, minP, maxP);
+    float distSq = dot(closest - lightPos, closest - lightPos);
+    if (distSq > range * range) return false;
+
+    // Cone direction test against bounding sphere of the cluster
+    vec3 center = (minP + maxP) * 0.5;
+    float clusterRadius = length(maxP - center);
+    vec3 V = center - lightPos;
+    float dist = length(V);
+    
+    if (dist <= clusterRadius) return true;
+
+    vec3 dir = V / dist;
+    float cosTheta = dot(dir, lightDir);
+    
+    float cosOuter = cos(outerAngle);
+    float sinOuter = sin(outerAngle);
+    
+    float sinPhi = clusterRadius / dist;
+    float cosPhi = sqrt(max(0.0, 1.0 - sinPhi * sinPhi));
+    
+    float cosLimit = cosOuter * cosPhi - sinOuter * sinPhi;
+    if (cosTheta < cosLimit) return false;
+    
+    return true;
 }
 
 void main()
@@ -90,10 +121,32 @@ void main()
     {
         LocalLightGPU light = lights[lightIndex];
 
-        vec3 lightPos = light.positionRange.xyz;
+        vec3 worldLightPos = light.positionRange.xyz;
         float range = light.positionRange.w;
 
-        if (SphereIntersectsCluster(lightPos, range, cluster))
+        // Transform light position to view space for culling
+        vec4 viewLightPos4 = settings.viewMatrix * vec4(worldLightPos, 1.0);
+        vec3 viewLightPos = viewLightPos4.xyz / viewLightPos4.w;
+
+        uint lightType = uint(round(light.directionType.w));
+
+        bool intersects = false;
+        if (lightType == 0u)
+        {
+            intersects = SphereIntersectsCluster(viewLightPos, range, cluster);
+        }
+        else if (lightType == 1u)
+        {
+            // Transform spot light direction to view space as well
+            vec3 worldLightDir = normalize(light.directionType.xyz);
+            vec4 viewLightDir4 = settings.viewMatrix * vec4(worldLightDir, 0.0);
+            vec3 viewLightDir = normalize(viewLightDir4.xyz);
+
+            float outerAngle = light.spotAngles.y;
+            intersects = ConeIntersectsCluster(viewLightPos, range, viewLightDir, outerAngle, cluster);
+        }
+
+        if (intersects)
         {
             if (count < settings.maxLightsPerCluster)
             {

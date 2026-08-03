@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -15,6 +16,9 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyTopColorIntensity;
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
 
     vec4 exposureSettings;
     uvec4 renderFlags;
@@ -41,6 +45,11 @@ struct MaterialData {
     float metallicFactor;
     float normalScale;
     float emissiveStrength;
+
+    float clearcoatFactor;
+    float clearcoatRoughness;
+    float paddingFloat1;
+    float paddingFloat2;
 
     float hasAlbedoMap;
     float useNormalMap;
@@ -85,63 +94,38 @@ layout(location = 2) in vec2 vUV;
 layout(location = 3) in vec3 vCameraPos;
 layout(location = 4) flat in uint vMaterialIndex;
 layout(location = 5) flat in uint vEntityID;
+layout(location = 7) in vec4 vTangent;
 
-const float PI = 3.14159265359;
-
-// Helper functions
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-float distributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-    return a2 / max(denom, 0.0001);
-}
-
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx1 = geometrySchlickGGX(NdotV, roughness);
-    float ggx2 = geometrySchlickGGX(NdotL, roughness);
-    return ggx1 * ggx2;
-}
+#include "brdf.glsl"
 
 // TBN frame formulation for normal perturbation
-vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale)
+vec3 perturbNormal(vec3 N, vec3 V, vec2 uv, float normalScale, vec4 tangent)
 {
     vec3 tangentNormal = texture(normalMap, uv).xyz * 2.0 - 1.0;
     tangentNormal.xy *= normalScale; // Scale normal perturbation
 
-    vec3 dp1 = dFdx(vWorldPos);
-    vec3 dp2 = dFdy(vWorldPos);
-    vec2 duv1 = dFdx(uv);
-    vec2 duv2 = dFdy(uv);
+    if (length(tangent.xyz) > 1e-4) {
+        vec3 T = normalize(tangent.xyz);
+        T = normalize(T - dot(T, N) * N);
+        vec3 B = cross(N, T) * tangent.w;
+        mat3 TBN = mat3(T, B, N);
+        return normalize(TBN * tangentNormal);
+    } else {
+        vec3 dp1 = dFdx(vWorldPos);
+        vec3 dp2 = dFdy(vWorldPos);
+        vec2 duv1 = dFdx(uv);
+        vec2 duv2 = dFdy(uv);
 
-    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
-    vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
-    vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
+        float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x + 1e-6);
+        vec3 T = (dp1 * duv2.y - dp2 * duv1.y) * r;
+        vec3 B = (dp2 * duv1.x - dp1 * duv2.x) * r;
 
-    T = normalize(T - dot(T, N) * N);
-    B = cross(N, T);
+        T = normalize(T - dot(T, N) * N);
+        B = cross(N, T);
 
-    mat3 TBN = mat3(T, B, N);
-    return normalize(TBN * tangentNormal);
+        mat3 TBN = mat3(T, B, N);
+        return normalize(TBN * tangentNormal);
+    }
 }
 
 void main()
@@ -155,22 +139,34 @@ void main()
 
     float hasAlbedoMap = mat.materials[vMaterialIndex].hasAlbedoMap;
     float useNormalMap = mat.materials[vMaterialIndex].useNormalMap;
+    uint shadingModel = mat.materials[vMaterialIndex].shadingModel;
 
     vec3 albedo = baseColorFactor.rgb;
     if (hasAlbedoMap > 0.5) {
         albedo = texture(albedoMap, vUV).rgb * baseColorFactor.rgb;
     }
 
-    // Unlit View Mode Check
-    if (light.shadingMode == 1) {
+    vec3 N = normalize(vNormal);
+    if (useNormalMap > 0.5) {
+        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale, vTangent);
+    }
+
+    roughness = clamp(roughness, 0.04, 1.0);
+    vec3 V = normalize(vCameraPos - vWorldPos);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+
+    // ----- Shading Modes Check -----
+    if (light.shadingMode == 10) {
+        outColor = vec4(albedo, 1.0);
+        return;
+    }
+    if (light.shadingMode == 1 || shadingModel == 1) {
         vec3 color = albedo;
         color = color / (color + vec3(1.0));
         color = pow(color, vec3(1.0/2.2));
         outColor = vec4(color, 1.0);
         return;
     }
-
-    // Depth Debug View Mode Check
     if (light.shadingMode == 2) {
         float z = gl_FragCoord.z;
         float near = frame.projection[3][2] / frame.projection[2][2];
@@ -181,43 +177,62 @@ void main()
         outColor = vec4(vec3(d), 1.0);
         return;
     }
-
-    vec3 N = normalize(vNormal);
-    if (useNormalMap > 0.5) {
-        N = perturbNormal(N, normalize(vCameraPos - vWorldPos), vUV, normalScale);
+    if (light.shadingMode == 3) {
+        outColor = vec4(normalize(N) * 0.5 + 0.5, 1.0);
+        return;
+    }
+    if (light.shadingMode == 4) {
+        outColor = vec4(vec3(roughness), 1.0);
+        return;
+    }
+    if (light.shadingMode == 5) {
+        outColor = vec4(vec3(metallic), 1.0);
+        return;
+    }
+    if (light.shadingMode == 6) {
+        outColor = vec4(vec3(1.0), 1.0);
+        return;
+    }
+    if (light.shadingMode == 7) {
+        float id = float(vEntityID);
+        vec3 hashColor = vec3(
+            fract(sin(id * 12.9898) * 43758.5453),
+            fract(sin(id * 78.233) * 43758.5453),
+            fract(sin(id * 45.164) * 43758.5453)
+        );
+        if (id == 0.0) hashColor = vec3(0.0);
+        outColor = vec4(hashColor, 1.0);
+        return;
+    }
+    if (light.shadingMode == 8) {
+        outColor = vec4(vec3(0.0), 1.0);
+        return;
+    }
+    if (light.shadingMode == 13) {
+        outColor = vec4(normalize(vTangent.xyz) * 0.5 + 0.5, 1.0);
+        return;
+    }
+    if (light.shadingMode == 15) {
+        outColor = vec4(vUV, 0.0, 1.0);
+        return;
+    }
+    if (light.shadingMode == 16) {
+        outColor = vec4(F0, 1.0);
+        return;
     }
 
-    roughness = clamp(roughness, 0.04, 1.0);
-
-    vec3 V = normalize(vCameraPos - vWorldPos);
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
-
-    vec3 Lo = vec3(0.0);
+    vec3 totalDiffuse = vec3(0.0);
+    vec3 totalSpecular = vec3(0.0);
 
     // ----- 1. Directional Light -----
     {
         vec3 L = normalize(-light.directionalDirectionIntensity.xyz);
-        vec3 H = normalize(V + L);
-
+        vec3 radiance = light.directionalColor.rgb * light.directionalDirectionIntensity.w;
+        vec3 diffVal, specVal;
+        EvaluateDirectBRDF(albedo, N, V, L, metallic, roughness, true, diffVal, specVal);
         float NdotL = max(dot(N, L), 0.0);
-
-        if (NdotL > 0.0) {
-            vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-            float NDF = distributionGGX(N, H, roughness);
-            float G = geometrySmith(N, V, L, roughness);
-
-            vec3 numerator = NDF * G * F;
-            float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-            vec3 specular = numerator / denominator;
-
-            vec3 kS = F;
-            vec3 kD = vec3(1.0) - kS;
-            kD *= 1.0 - metallic;
-
-            vec3 radiance = light.directionalColor.rgb * light.directionalDirectionIntensity.w;
-
-            Lo += (kD * albedo / PI + specular) * radiance * NdotL;
-        }
+        totalDiffuse += diffVal * NdotL * radiance;
+        totalSpecular += specVal * NdotL * radiance;
     }
 
     // ----- 2. Point Lights -----
@@ -232,33 +247,37 @@ void main()
         if (distance > radius) continue;
 
         vec3 L = normalize(diff);
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
         float attenuation = clamp(1.0 - (distance / radius), 0.0, 1.0);
         attenuation = attenuation * attenuation;
 
         vec3 radiance = lightColor * intensity * attenuation;
+        vec3 diffVal, specVal;
+        EvaluateDirectBRDF(albedo, N, V, L, metallic, roughness, true, diffVal, specVal);
+        float NdotL = max(dot(N, L), 0.0);
+        totalDiffuse += diffVal * NdotL * radiance;
+        totalSpecular += specVal * NdotL * radiance;
+    }
 
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-
-        vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        Lo += (kD * albedo / PI + specular) * radiance * NdotL;
+    // Diagnostics Shading Modes
+    if (light.shadingMode == 17) {
+        vec3 color = totalDiffuse;
+        color = color / (color + vec3(1.0));
+        color = pow(color, vec3(1.0/2.2));
+        outColor = vec4(color, 1.0);
+        return;
+    }
+    if (light.shadingMode == 18) {
+        vec3 color = totalSpecular;
+        color = color / (color + vec3(1.0));
+        color = pow(color, vec3(1.0/2.2));
+        outColor = vec4(color, 1.0);
+        return;
     }
 
     // Ambient term
     vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo;
 
-    vec3 color = ambient + Lo;
+    vec3 color = ambient + totalDiffuse + totalSpecular;
 
     // Tone-mapping and gamma correction
     color = color / (color + vec3(1.0));

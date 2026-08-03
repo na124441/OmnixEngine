@@ -9,6 +9,7 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     mat4 projection;
     mat4 inverseView;
     mat4 inverseProjection;
+    mat4 inverseViewProjection;
 
     vec4 cameraPosition;
     vec4 viewportSize;
@@ -16,6 +17,9 @@ layout(set = 0, binding = 0) uniform RadianceFrame
     vec4 skyTopColorIntensity;
     vec4 skyHorizonColorBlend;
     vec4 skyGroundColorIntensity;
+
+    vec4 sunDirectionIntensity;
+    vec4 sunColorAngularSize;
 
     vec4 exposureSettings;
     uvec4 renderFlags;
@@ -26,6 +30,24 @@ struct DirectionalLightData
     vec3 direction;
     float intensity;
     vec4 color;
+};
+
+struct LocalLightShadowGPU
+{
+    mat4 lightSpaceMatrix;
+    vec4 atlasViewport;
+    float bias;
+    float normalBias;
+    float farPlane;
+    float shadowEnabled;
+};
+
+struct ReflectionProbeGPU
+{
+    vec4 positionIntensity;  // xyz = position, w = intensity
+    vec4 boxMinPriority;     // xyz = boxMin, w = priority
+    vec4 boxMaxBlend;        // xyz = boxMax, w = blendDistance
+    uvec4 flags;             // x = isBox, y = valid, zw = unused
 };
 
 // Binding 3: Light Storage Buffer
@@ -42,9 +64,13 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
     vec4 spotDirectionsIntensity[16];
     vec4 spotColors[16];
     vec4 spotAngles[16];
+    vec4 pointLayerMasks[16];
+    vec4 spotLayerMasks[16];
     
     // Shadow mapping settings
     mat4 directionalLightProjView;
+    mat4 directionalLightProjViews[4];
+    vec4 cascadeSplitDepths;
     float shadowBias;
     float shadowNormalBias;
     float shadowSlopeBias;
@@ -56,6 +82,21 @@ layout(std430, set = 0, binding = 3) readonly buffer LightBuffer {
 
     vec4 shadowParams;
     uvec4 shadowFlags;
+
+    uint skyLightMode;
+    float skyLightRotation;
+    float skyLightDiffuseIntensity;
+    float skyLightSpecularIntensity;
+    float skyLightExposureOffset;
+
+    LocalLightShadowGPU spotLightShadows[16];
+    LocalLightShadowGPU pointLightShadows[16][6];
+
+    uint reflectionProbeCount;
+    uint padProbe0;
+    uint padProbe1;
+    uint padProbe2;
+    ReflectionProbeGPU reflectionProbes[4];
 } lighting;
 
 #define light lighting
@@ -111,6 +152,9 @@ layout(set = 1, binding = 3) uniform sampler2D depthBuffer; // Depth
 layout(set = 1, binding = 4) uniform sampler2D gbufferD; // Emissive + Shading Model
 layout(set = 1, binding = 5) uniform sampler2D shadowMap; // Shadow Depth Map
 layout(set = 1, binding = 6) uniform sampler2D ssaoMap; // SSAO Map
+layout(set = 1, binding = 7) uniform sampler2D shadowMapCascade1;
+layout(set = 1, binding = 8) uniform sampler2D shadowMapCascade2;
+layout(set = 1, binding = 9) uniform sampler2D shadowMapCascade3;
 
 struct LocalLightGPU
 {
@@ -214,7 +258,9 @@ vec3 EvaluateDirectionalLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 L = normalize(-light.directional.direction);
     vec3 H = normalize(V + L);
@@ -237,8 +283,17 @@ vec3 EvaluateDirectionalLight(
 
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffuse = kD * albedo / 3.14159265;
+    vec3 baseLo = (diffuse + specular);
 
-    return (diffuse + specular) * sunColor * sunIntensity * NdotL;
+    if (clearcoatFactor > 0.0) {
+        float D_c = DistributionGGX(N, H, clearcoatRoughness);
+        float G_c = GeometrySmith(N, V, L, clearcoatRoughness);
+        vec3 F_c = FresnelSchlick(max(dot(H, V), 0.0), vec3(0.04)) * clearcoatFactor;
+        vec3 clearcoatSpecular = (D_c * G_c * F_c) / max(4.0 * NdotV * NdotL, 0.001);
+        baseLo = baseLo * (vec3(1.0) - F_c) + clearcoatSpecular;
+    }
+
+    return baseLo * sunColor * sunIntensity * NdotL;
 }
 
 vec3 debugHeat(float value) {
@@ -256,6 +311,13 @@ vec3 reconstructWorldPos(vec2 uv, float depth) {
     return worldPos.xyz / worldPos.w;
 }
 
+float SampleShadowMap(uint cascadeIndex, vec2 coords) {
+    if (cascadeIndex == 0) return texture(shadowMap, coords).r;
+    if (cascadeIndex == 1) return texture(shadowMapCascade1, coords).r;
+    if (cascadeIndex == 2) return texture(shadowMapCascade2, coords).r;
+    return texture(shadowMapCascade3, coords).r;
+}
+
 float CalculateShadow(vec3 worldPos, vec3 N)
 {
     if (lighting.shadowLightCast == 0)
@@ -263,9 +325,17 @@ float CalculateShadow(vec3 worldPos, vec3 N)
         return 0.0;
     }
 
+    vec4 viewPos = frame.view * vec4(worldPos, 1.0);
+    float depthVal = -viewPos.z;
+
+    uint cascadeIndex = 0;
+    if (depthVal > lighting.cascadeSplitDepths[0]) cascadeIndex = 1;
+    if (depthVal > lighting.cascadeSplitDepths[1]) cascadeIndex = 2;
+    if (depthVal > lighting.cascadeSplitDepths[2]) cascadeIndex = 3;
+
     // Apply normal bias to prevent shadow acne (especially with PCF filtering)
     vec3 offsetWorldPos = worldPos + N * lighting.shadowNormalBias;
-    vec4 lightSpace = lighting.directionalLightProjView * vec4(offsetWorldPos, 1.0);
+    vec4 lightSpace = lighting.directionalLightProjViews[cascadeIndex] * vec4(offsetWorldPos, 1.0);
 
     vec3 projCoords = lightSpace.xyz / lightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
@@ -284,6 +354,9 @@ float CalculateShadow(vec3 worldPos, vec3 N)
 
     float bias = constantBias + slopeBias * (1.0 - max(dot(N, L), 0.0));
 
+    // Snapping adjustment bias scaling for farther cascades
+    bias *= (1.0 + float(cascadeIndex) * 2.0);
+
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
 
     float shadow = 0.0;
@@ -299,10 +372,10 @@ float CalculateShadow(vec3 worldPos, vec3 N)
     {
         for (int y = -radius; y <= radius; y++)
         {
-            float closestDepth = texture(
-                shadowMap,
+            float closestDepth = SampleShadowMap(
+                cascadeIndex,
                 projCoords.xy + vec2(x, y) * texelSize
-            ).r;
+            );
 
             shadow += (projCoords.z - bias) > closestDepth ? 1.0 : 0.0;
             total += 1.0;
@@ -356,7 +429,9 @@ vec3 EvaluatePointLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 lightPos = light.positionRange.xyz;
     float range = light.positionRange.w;
@@ -391,8 +466,17 @@ vec3 EvaluatePointLight(
     vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffuse = kD * albedo / 3.14159265;
+    vec3 baseLo = (diffuse + specular);
 
-    return (diffuse + specular) * color * intensity * attenuation * NdotL;
+    if (clearcoatFactor > 0.0) {
+        float D_c = DistributionGGX(N, H, clearcoatRoughness);
+        float G_c = GeometrySmith(N, V, L, clearcoatRoughness);
+        vec3 F_c = FresnelSchlick(max(dot(H, V), 0.0), vec3(0.04)) * clearcoatFactor;
+        vec3 clearcoatSpecular = (D_c * G_c * F_c) / max(4.0 * NdotV * NdotL, 0.001);
+        baseLo = baseLo * (vec3(1.0) - F_c) + clearcoatSpecular;
+    }
+
+    return baseLo * color * intensity * attenuation * NdotL;
 }
 
 vec3 EvaluateSpotLight(
@@ -402,7 +486,9 @@ vec3 EvaluateSpotLight(
     vec3 N,
     vec3 V,
     float metallic,
-    float roughness)
+    float roughness,
+    float clearcoatFactor,
+    float clearcoatRoughness)
 {
     vec3 lightPos = light.positionRange.xyz;
     float range = light.positionRange.w;
@@ -447,7 +533,9 @@ vec3 EvaluateSpotLight(
         N,
         V,
         metallic,
-        roughness
+        roughness,
+        clearcoatFactor,
+        clearcoatRoughness
     );
 
     return result * cone;
@@ -474,11 +562,13 @@ void main()
     }
 
     vec3 albedo = gbufferASample.rgb;
-    vec3 N = gbufferBSample.rgb;
+    vec3 N = normalize(gbufferBSample.rgb);
     float roughness = gbufferBSample.a;
     float metallic = gbufferCSample.r;
     float AO = gbufferCSample.g;
     float rawEntityID = gbufferCSample.b;
+    float clearcoatFactor = gbufferASample.a;
+    float clearcoatRoughness = gbufferCSample.a;
     vec3 emissive = gbufferDSample.rgb;
 
     // Mode 14: LightingOnly (overwrite albedo to neutral grey, emissive to black)
@@ -585,8 +675,7 @@ void main()
             affectingLights += 1;
         }
         for (uint i = 0; i < light.pointLightCount && i < 16; ++i) {
-            float radius = light.pointPositionsRadius[i].w;
-            if (distance(light.pointPositionsRadius[i].xyz, vWorldPos) <= radius) {
+            if (distance(light.pointPositionsRadius[i].xyz, vWorldPos) <= light.pointPositionsRadius[i].w) {
                 affectingLights += 1;
             }
         }
@@ -637,79 +726,88 @@ void main()
 
     vec3 Lo = vec3(0.0);
 
-    // ----- 1. Directional Light -----
-        // Apply shadow factor
-        float shadow = CalculateShadow(vWorldPos, N);
+    uint viewportMode = frame.renderFlags.y;
 
-        vec3 sunLighting = EvaluateDirectionalLight(albedo, N, V, metallic, roughness);
+    if (viewportMode != 1u) // LookDev Mode skips direct lights (uses environment/ambient only)
+    {
+        // ----- 1. Directional Light -----
+        float shadow = CalculateShadow(vWorldPos, N);
+        vec3 sunLighting = EvaluateDirectionalLight(albedo, N, V, metallic, roughness, clearcoatFactor, clearcoatRoughness);
         sunLighting *= (1.0 - shadow);
         Lo += sunLighting;
 
-    // ----- 2. Clustered Local Lights -----
-    vec3 localLighting = vec3(0.0);
-    
-    // View-space NDC position reconstruction for slice lookup
-    vec4 clip = vec4(inUV * 2.0 - 1.0, depth, 1.0);
-    vec4 viewPos = frame.inverseProjection * clip;
-    viewPos /= viewPos.w;
-    float linearDepth = -viewPos.z;
+        // ----- 2. Clustered Local Lights -----
+        vec3 localLighting = vec3(0.0);
+        
+        // View-space NDC position reconstruction for slice lookup
+        vec4 clip = vec4(inUV * 2.0 - 1.0, depth, 1.0);
+        vec4 viewPos = frame.inverseProjection * clip;
+        viewPos /= viewPos.w;
+        float linearDepth = -viewPos.z;
 
-    // Calculate tile coordinate
-    uint tileX = uint((gl_FragCoord.x / frame.viewportSize.x) * float(settings.tileCountX));
-    uint tileY = uint((gl_FragCoord.y / frame.viewportSize.y) * float(settings.tileCountY));
+        // Calculate tile coordinate
+        uint tileX = uint((gl_FragCoord.x / frame.viewportSize.x) * float(settings.tileCountX));
+        uint tileY = uint((gl_FragCoord.y / frame.viewportSize.y) * float(settings.tileCountY));
 
-    // Clamp tile coords
-    tileX = clamp(tileX, 0u, settings.tileCountX - 1u);
-    tileY = clamp(tileY, 0u, settings.tileCountY - 1u);
+        // Clamp tile coords
+        tileX = clamp(tileX, 0u, settings.tileCountX - 1u);
+        tileY = clamp(tileY, 0u, settings.tileCountY - 1u);
 
-    // Calculate depth slice
-    float depthT = (linearDepth - settings.nearPlane) / (settings.farPlane - settings.nearPlane);
-    uint slice = uint(clamp(depthT * float(settings.depthSliceCount), 0.0, float(settings.depthSliceCount - 1)));
+        // Calculate depth slice
+        float depthT = (linearDepth - settings.nearPlane) / (settings.farPlane - settings.nearPlane);
+        uint slice = uint(clamp(depthT * float(settings.depthSliceCount), 0.0, float(settings.depthSliceCount - 1)));
 
-    // Cluster index
-    uint clusterIdx = tileX + tileY * settings.tileCountX + slice * settings.tileCountX * settings.tileCountY;
+        // Cluster index
+        uint clusterIdx = tileX + tileY * settings.tileCountX + slice * settings.tileCountX * settings.tileCountY;
 
-    // Retrieve range for this cluster
-    ClusterRangeGPU range = clusterRanges.ranges[clusterIdx];
-    uint offset = range.offset;
-    uint count = range.count;
+        // Retrieve range for this cluster
+        ClusterRangeGPU range = clusterRanges.ranges[clusterIdx];
+        uint offset = range.offset;
+        uint count = range.count;
 
-    for (uint i = 0; i < count; i++)
-    {
-        uint lightIndex = clusterLightIndices.lightIndices[offset + i];
-        LocalLightGPU light = localLights.lights[lightIndex];
-
-        if (uint(light.directionType.w) == 0u)
+        for (uint i = 0; i < count; i++)
         {
-            localLighting += EvaluatePointLight(
-                light,
-                vWorldPos,
-                albedo,
-                N,
-                V,
-                metallic,
-                roughness
-            );
+            uint lightIndex = clusterLightIndices.lightIndices[offset + i];
+            LocalLightGPU light = localLights.lights[lightIndex];
+
+            if (uint(light.directionType.w) == 0u)
+            {
+                localLighting += EvaluatePointLight(
+                    light,
+                    vWorldPos,
+                    albedo,
+                    N,
+                    V,
+                    metallic,
+                    roughness,
+                    clearcoatFactor,
+                    clearcoatRoughness
+                );
+            }
+            else if (uint(light.directionType.w) == 1u)
+            {
+                localLighting += EvaluateSpotLight(
+                    light,
+                    vWorldPos,
+                    albedo,
+                    N,
+                    V,
+                    metallic,
+                    roughness,
+                    clearcoatFactor,
+                    clearcoatRoughness
+                );
+            }
         }
-        else if (uint(light.directionType.w) == 1u)
-        {
-            localLighting += EvaluateSpotLight(
-                light,
-                vWorldPos,
-                albedo,
-                N,
-                V,
-                metallic,
-                roughness
-            );
-        }
+        Lo += localLighting;
     }
-    Lo += localLighting;
 
     // Ambient sky light (multiplied by finalAO)
     float ssao = texture(ssaoMap, inUV).r;
-    float finalAO = AO * ssao;
-    vec3 ambient = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * albedo * finalAO;
+    float finalAO = clamp(AO * max(ssao, 0.45), 0.35, 1.0);
+    vec3 ambientLight = light.ambientColorIntensity.rgb * light.ambientColorIntensity.w * finalAO;
+    ambientLight = max(ambientLight, vec3(0.18));
+    vec3 ambient = ambientLight * albedo;
 
     vec3 color = (ambient + Lo) * exposure + emissive;
 

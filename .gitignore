@@ -141,3 +141,32 @@ Omnix.log
 Thumbs.db
 .pdf
 
+# Large Files & Asset Cooker Outputs (preventing Git push size limit failures)
+*.rvg
+*.glb
+*.fbx
+*.blend
+*.exr
+*.hdr
+
+# RenderDoc / Profiler captures (often > 100MB)
+*.rdc
+*.etl
+*.diagsession
+
+# Archive files
+*.zip
+*.tar
+*.gz
+*.7z
+*.rar
+
+# Dedicated ignore directories for custom large assets
+Assets/Large/
+Assets/Ignore/
+
+# Exceptions for test models
+!Assets/Models/cube.rvg
+!Assets/Models/sphere.rvg
+
+
