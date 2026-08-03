@@ -7,6 +7,7 @@
 #include "Core/Logging/Logger.h"
 #include <string>
 #include <filesystem>
+#include <fstream>
 
 namespace eng::runtime {
 
@@ -171,6 +172,28 @@ namespace eng::runtime {
             }
 
             ImGui::EndTable();
+        }
+
+        if (ImGui::BeginPopupContextWindow("AssetBrowserContextMenu", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+            if (ImGui::MenuItem("New Material Asset (.omat)")) {
+                std::filesystem::create_directories("Assets/Materials");
+                std::ofstream f("Assets/Materials/NewMaterial.omat");
+                if (f.is_open()) {
+                    f << "{\n  \"name\": \"NewMaterial\",\n  \"albedo\": [0.8, 0.8, 0.8, 1.0],\n  \"roughness\": 0.5,\n  \"metallic\": 0.0\n}\n";
+                    f.close();
+                }
+                registry->ScanProjectAssets();
+            }
+            if (ImGui::MenuItem("New Scene Template (.json)")) {
+                std::filesystem::create_directories("Assets/Scenes");
+                std::ofstream f("Assets/Scenes/NewScene.json");
+                if (f.is_open()) {
+                    f << "{\n  \"name\": \"NewScene\",\n  \"entities\": []\n}\n";
+                    f.close();
+                }
+                registry->ScanProjectAssets();
+            }
+            ImGui::EndPopup();
         }
 
         ImGui::End();

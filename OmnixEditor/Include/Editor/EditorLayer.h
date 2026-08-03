@@ -14,6 +14,7 @@
 #include "Editor/Panels/ImportLogPanel.h"
 #include "Editor/Panels/CommandPalette.h"
 #include "Editor/Panels/ProfilerPanel.h"
+#include "Editor/Panels/MaterialEditorPanel.h"
 #include "Editor/EditorLayout.h"
 #include "Editor/EditorCamera.h"
 #include <memory>
@@ -117,6 +118,7 @@ namespace eng::runtime {
         ImportLogPanel m_ImportLogPanel;
         CommandPalette m_CommandPalette;
         ProfilerPanel m_ProfilerPanel;
+        MaterialEditorPanel m_MaterialEditorPanel;
 
         WorkspaceProfile m_CurrentWorkspaceProfile = WorkspaceProfile::Default;
 

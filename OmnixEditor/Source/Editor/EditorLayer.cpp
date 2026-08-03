@@ -286,6 +286,7 @@ namespace eng::runtime {
 
         m_CommandPalette.Initialize(m_Context);
         m_ProfilerPanel.Initialize(m_Context);
+        m_MaterialEditorPanel.Initialize(m_Context);
 
         CORE_LOG_INFO("[EditorLayer] Initialized successfully");
         return true;
@@ -1449,6 +1450,9 @@ namespace eng::runtime {
                 if (ImGui::MenuItem("Profiler & Render Graph...", "Ctrl+Shift+P", m_ProfilerPanel.IsOpen())) {
                     m_ProfilerPanel.ToggleOpen();
                 }
+                if (ImGui::MenuItem("Material Editor...", nullptr, m_MaterialEditorPanel.IsOpen())) {
+                    m_MaterialEditorPanel.ToggleOpen();
+                }
                 if (ImGui::MenuItem("Reset Layout")) {
                     m_ResetLayout = true;
                 }
@@ -1487,6 +1491,7 @@ namespace eng::runtime {
         m_ImportLogPanel.Render();
         m_CommandPalette.Render(m_Selection, m_DirtyState);
         m_ProfilerPanel.Render();
+        m_MaterialEditorPanel.Render();
         DrawGameplayValidatorWindow();
 
         // Retrieve offscreen viewport texture for current frame
