@@ -309,6 +309,7 @@ add_library(OmnixEditor STATIC
     OmnixEditor/Source/Editor/Panels/ConsolePanel.cpp
     OmnixEditor/Source/Editor/Panels/ImportLogPanel.cpp
     OmnixEditor/Source/Editor/Panels/InspectorPanel.cpp
+    OmnixEditor/Source/Editor/Panels/ProfilerPanel.cpp
     OmnixEditor/Source/Editor/Panels/SceneHierarchyPanel.cpp
     OmnixEditor/Source/Editor/Panels/ViewportPanel.cpp
     OmnixEditor/Source/Editor/PlatformFileDialog.cpp

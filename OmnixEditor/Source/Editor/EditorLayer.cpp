@@ -285,6 +285,7 @@ namespace eng::runtime {
         }
 
         m_CommandPalette.Initialize(m_Context);
+        m_ProfilerPanel.Initialize(m_Context);
 
         CORE_LOG_INFO("[EditorLayer] Initialized successfully");
         return true;
@@ -299,8 +300,12 @@ namespace eng::runtime {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyPressed(ImGuiKey_P)) {
-            m_CommandPalette.ToggleOpen();
+        if ((ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) && ImGui::IsKeyPressed(ImGuiKey_P)) {
+            if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) {
+                m_ProfilerPanel.ToggleOpen();
+            } else {
+                m_CommandPalette.ToggleOpen();
+            }
         }
     }
 
@@ -1441,6 +1446,9 @@ namespace eng::runtime {
                 if (ImGui::MenuItem("Command Palette...", "Ctrl+P")) {
                     m_CommandPalette.ToggleOpen();
                 }
+                if (ImGui::MenuItem("Profiler & Render Graph...", "Ctrl+Shift+P", m_ProfilerPanel.IsOpen())) {
+                    m_ProfilerPanel.ToggleOpen();
+                }
                 if (ImGui::MenuItem("Reset Layout")) {
                     m_ResetLayout = true;
                 }
@@ -1478,6 +1486,7 @@ namespace eng::runtime {
         m_ConsolePanel.Render();
         m_ImportLogPanel.Render();
         m_CommandPalette.Render(m_Selection, m_DirtyState);
+        m_ProfilerPanel.Render();
         DrawGameplayValidatorWindow();
 
         // Retrieve offscreen viewport texture for current frame

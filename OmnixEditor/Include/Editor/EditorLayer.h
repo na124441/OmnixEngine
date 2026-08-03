@@ -13,6 +13,7 @@
 #include "Editor/Panels/AssetBrowserPanel.h"
 #include "Editor/Panels/ImportLogPanel.h"
 #include "Editor/Panels/CommandPalette.h"
+#include "Editor/Panels/ProfilerPanel.h"
 #include "Editor/EditorLayout.h"
 #include "Editor/EditorCamera.h"
 #include <memory>
@@ -115,6 +116,7 @@ namespace eng::runtime {
         AssetBrowserPanel m_AssetBrowserPanel;
         ImportLogPanel m_ImportLogPanel;
         CommandPalette m_CommandPalette;
+        ProfilerPanel m_ProfilerPanel;
 
         WorkspaceProfile m_CurrentWorkspaceProfile = WorkspaceProfile::Default;
 
