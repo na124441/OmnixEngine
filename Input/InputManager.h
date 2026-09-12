@@ -60,6 +60,12 @@ public:
     MouseInput* GetMouseDevice() { return mouseDevice; }
     GamepadInput* GetGamepadDevice() { return gamepadDevice; }
 
+    std::pair<float, float> GetMousePosition() const;
+    std::pair<float, float> GetMouseDelta() const;
+    bool IsMouseButtonDown(int button) const;
+
+    static void HookGLFWCallbacks(void* glfwWindow);
+
     void PrintBindings() const;
     void PrintActionState() const;
     std::string GetActionState(const std::string& actionName) const;

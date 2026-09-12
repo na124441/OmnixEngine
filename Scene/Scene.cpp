@@ -422,56 +422,56 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
         clonedObj->transform.SetRotation(oldObj->transform.GetRotation());
         clonedObj->transform.SetScale(oldObj->transform.GetScale());
         
-        if (oldObj->m_HasRenderableMesh) {
-            clonedObj->SetRenderableMesh(oldObj->m_MeshAssetHandle);
+        if (oldObj->HasRenderableMesh()) {
+            clonedObj->SetRenderableMesh(oldObj->GetMeshAssetHandle());
         }
-        if (oldObj->m_HasMaterial) {
-            clonedObj->SetMaterial(oldObj->m_MaterialAssetHandle);
+        if (oldObj->HasMaterial()) {
+            clonedObj->SetMaterial(oldObj->GetMaterialAssetHandle());
         }
-        if (oldObj->m_HasStaticBody) {
-            clonedObj->SetStaticBody(oldObj->m_StaticBody);
+        if (oldObj->HasStaticBody()) {
+            clonedObj->SetStaticBody(oldObj->GetStaticBody());
         }
-        if (oldObj->m_HasBoxCollider) {
-            clonedObj->SetBoxCollider(oldObj->m_BoxCollider);
+        if (oldObj->HasBoxCollider()) {
+            clonedObj->SetBoxCollider(oldObj->GetBoxCollider());
         }
-        if (oldObj->m_HasSphereCollider) {
-            clonedObj->SetSphereCollider(oldObj->m_SphereCollider);
+        if (oldObj->HasSphereCollider()) {
+            clonedObj->SetSphereCollider(oldObj->GetSphereCollider());
         }
-        if (oldObj->m_HasCapsuleCollider) {
-            clonedObj->SetCapsuleCollider(oldObj->m_CapsuleCollider);
+        if (oldObj->HasCapsuleCollider()) {
+            clonedObj->SetCapsuleCollider(oldObj->GetCapsuleCollider());
         }
-        if (oldObj->m_HasPlayerStart) {
-            clonedObj->SetPlayerStart(oldObj->m_PlayerStart);
+        if (oldObj->HasPlayerStart()) {
+            clonedObj->SetPlayerStart(oldObj->GetPlayerStart());
         }
-        if (oldObj->m_HasCharacterController) {
-            clonedObj->SetCharacterController(oldObj->m_CharacterController);
+        if (oldObj->HasCharacterController()) {
+            clonedObj->SetCharacterController(oldObj->GetCharacterController());
         }
-        if (oldObj->m_HasCameraComponent) {
-            clonedObj->SetCameraComponent(oldObj->m_CameraComponent);
+        if (oldObj->HasCameraComponent()) {
+            clonedObj->SetCameraComponent(oldObj->GetCameraComponent());
         }
-        if (oldObj->m_HasInputComponent) {
-            clonedObj->SetInputComponent(oldObj->m_InputComponent);
+        if (oldObj->HasInputComponent()) {
+            clonedObj->SetInputComponent(oldObj->GetInputComponent());
         }
-        if (oldObj->m_HasTrigger) {
-            clonedObj->SetTrigger(oldObj->m_Trigger);
+        if (oldObj->HasTrigger()) {
+            clonedObj->SetTrigger(oldObj->GetTrigger());
         }
-        if (oldObj->m_HasInteractable) {
-            clonedObj->SetInteractable(oldObj->m_Interactable);
+        if (oldObj->HasInteractable()) {
+            clonedObj->SetInteractable(oldObj->GetInteractable());
         }
-        if (oldObj->m_HasAudioSource) {
-            clonedObj->SetAudioSource(oldObj->m_AudioSource);
+        if (oldObj->HasAudioSource()) {
+            clonedObj->SetAudioSource(oldObj->GetAudioSource());
         }
-        if (oldObj->m_HasDirectionalLight) {
-            clonedObj->SetDirectionalLight(oldObj->m_DirectionalLight);
+        if (oldObj->HasDirectionalLight()) {
+            clonedObj->SetDirectionalLight(oldObj->GetDirectionalLight());
         }
-        if (oldObj->m_HasPointLight) {
-            clonedObj->SetPointLight(oldObj->m_PointLight);
+        if (oldObj->HasPointLight()) {
+            clonedObj->SetPointLight(oldObj->GetPointLight());
         }
-        if (oldObj->m_HasSkyLight) {
-            clonedObj->SetSkyLight(oldObj->m_SkyLight);
+        if (oldObj->HasSkyLight()) {
+            clonedObj->SetSkyLight(oldObj->GetSkyLight());
         }
-        if (oldObj->m_HasSpotLight) {
-            clonedObj->SetSpotLight(oldObj->m_SpotLight);
+        if (oldObj->HasSpotLight()) {
+            clonedObj->SetSpotLight(oldObj->GetSpotLight());
         }
         clonedObj->SetActive(oldObj->IsActive());
 
@@ -481,7 +481,7 @@ Scene* Scene::Clone(Coordinator& srcCoordinator, Coordinator& destCoordinator, s
         Entity oldECSEntity = oldObj->GetECSEntity();
         if (oldECSEntity != 0 && srcCoordinator.IsEntityAlive(oldECSEntity)) {
             Entity newECSEntity = destCoordinator.CreateEntity();
-            clonedObj->SetECSEntity(newECSEntity);
+            clonedObj->BindECS(&destCoordinator, newECSEntity);
             outEntityMap[oldECSEntity] = newECSEntity;
 
             // Copy all component data
@@ -647,35 +647,35 @@ bool Scene::CompareScene(const Scene& other, const std::unordered_map<Entity, En
             return false;
         }
 
-        if (oldObj->m_HasRenderableMesh != clonedObj->m_HasRenderableMesh ||
-            (oldObj->m_HasRenderableMesh && oldObj->m_MeshAssetHandle.value != clonedObj->m_MeshAssetHandle.value)) {
+        if (oldObj->HasRenderableMesh() != clonedObj->HasRenderableMesh() ||
+            (oldObj->HasRenderableMesh() && oldObj->GetMeshAssetHandle().value != clonedObj->GetMeshAssetHandle().value)) {
             std::cout << "[SceneCompare] Renderable mesh handles mismatched on " << oldObj->GetName() << std::endl;
             return false;
         }
 
-        if (oldObj->m_HasStaticBody != clonedObj->m_HasStaticBody ||
-            (oldObj->m_HasStaticBody && oldObj->m_StaticBody.enabled != clonedObj->m_StaticBody.enabled)) {
+        if (oldObj->HasStaticBody() != clonedObj->HasStaticBody() ||
+            (oldObj->HasStaticBody() && oldObj->GetStaticBody().enabled != clonedObj->GetStaticBody().enabled)) {
             std::cout << "[SceneCompare] StaticBody presence or enabled state mismatch on " << oldObj->GetName() << std::endl;
             return false;
         }
 
-        if (oldObj->m_HasBoxCollider != clonedObj->m_HasBoxCollider ||
-            (oldObj->m_HasBoxCollider && (oldObj->m_BoxCollider.size.x != clonedObj->m_BoxCollider.size.x ||
-                                          oldObj->m_BoxCollider.offset.x != clonedObj->m_BoxCollider.offset.x))) {
+        if (oldObj->HasBoxCollider() != clonedObj->HasBoxCollider() ||
+            (oldObj->HasBoxCollider() && (oldObj->GetBoxCollider().size.x != clonedObj->GetBoxCollider().size.x ||
+                                          oldObj->GetBoxCollider().offset.x != clonedObj->GetBoxCollider().offset.x))) {
             std::cout << "[SceneCompare] BoxCollider presence or sizes mismatch on " << oldObj->GetName() << std::endl;
             return false;
         }
 
-        if (oldObj->m_HasSphereCollider != clonedObj->m_HasSphereCollider ||
-            (oldObj->m_HasSphereCollider && (oldObj->m_SphereCollider.radius != clonedObj->m_SphereCollider.radius ||
-                                             oldObj->m_SphereCollider.offset.x != clonedObj->m_SphereCollider.offset.x))) {
+        if (oldObj->HasSphereCollider() != clonedObj->HasSphereCollider() ||
+            (oldObj->HasSphereCollider() && (oldObj->GetSphereCollider().radius != clonedObj->GetSphereCollider().radius ||
+                                             oldObj->GetSphereCollider().offset.x != clonedObj->GetSphereCollider().offset.x))) {
             std::cout << "[SceneCompare] SphereCollider presence or radius mismatch on " << oldObj->GetName() << std::endl;
             return false;
         }
 
-        if (oldObj->m_HasCapsuleCollider != clonedObj->m_HasCapsuleCollider ||
-            (oldObj->m_HasCapsuleCollider && (oldObj->m_CapsuleCollider.radius != clonedObj->m_CapsuleCollider.radius ||
-                                              oldObj->m_CapsuleCollider.height != clonedObj->m_CapsuleCollider.height))) {
+        if (oldObj->HasCapsuleCollider() != clonedObj->HasCapsuleCollider() ||
+            (oldObj->HasCapsuleCollider() && (oldObj->GetCapsuleCollider().radius != clonedObj->GetCapsuleCollider().radius ||
+                                              oldObj->GetCapsuleCollider().height != clonedObj->GetCapsuleCollider().height))) {
             std::cout << "[SceneCompare] CapsuleCollider presence or size mismatch on " << oldObj->GetName() << std::endl;
             return false;
         }
@@ -705,7 +705,7 @@ std::vector<uint32_t> Scene::GetPointLightEntities() const
 {
     std::vector<uint32_t> entities;
     for (const auto& obj : allObjects_) {
-        if (obj && obj->m_HasPointLight) {
+        if (obj && obj->HasPointLight()) {
             entities.push_back(obj->GetID());
         }
     }
@@ -716,7 +716,7 @@ std::vector<uint32_t> Scene::GetSpotLightEntities() const
 {
     std::vector<uint32_t> entities;
     for (const auto& obj : allObjects_) {
-        if (obj && obj->m_HasSpotLight) {
+        if (obj && obj->HasSpotLight()) {
             entities.push_back(obj->GetID());
         }
     }
@@ -742,10 +742,11 @@ Scene::PointLightProxy Scene::GetPointLight(uint32_t entityID) const
 {
     PointLightProxy proxy{};
     auto obj = FindObjectByID(entityID);
-    if (obj && obj->m_HasPointLight) {
-        proxy.color = glm::vec3(obj->m_PointLight.color.x, obj->m_PointLight.color.y, obj->m_PointLight.color.z);
-        proxy.radius = obj->m_PointLight.radius;
-        proxy.intensity = obj->m_PointLight.intensity;
+    if (obj && obj->HasPointLight()) {
+        const auto& pl = obj->GetPointLight();
+        proxy.color = glm::vec3(pl.color.x, pl.color.y, pl.color.z);
+        proxy.radius = pl.radius;
+        proxy.intensity = pl.intensity;
     }
     return proxy;
 }
@@ -754,12 +755,13 @@ Scene::SpotLightProxy Scene::GetSpotLight(uint32_t entityID) const
 {
     SpotLightProxy proxy{};
     auto obj = FindObjectByID(entityID);
-    if (obj && obj->m_HasSpotLight) {
-        proxy.color = glm::vec3(obj->m_SpotLight.color.x, obj->m_SpotLight.color.y, obj->m_SpotLight.color.z);
-        proxy.range = obj->m_SpotLight.range;
-        proxy.intensity = obj->m_SpotLight.intensity;
-        proxy.innerAngleDegrees = obj->m_SpotLight.innerConeAngle;
-        proxy.outerAngleDegrees = obj->m_SpotLight.outerConeAngle;
+    if (obj && obj->HasSpotLight()) {
+        const auto& sl = obj->GetSpotLight();
+        proxy.color = glm::vec3(sl.color.x, sl.color.y, sl.color.z);
+        proxy.range = sl.range;
+        proxy.intensity = sl.intensity;
+        proxy.innerAngleDegrees = sl.innerConeAngle;
+        proxy.outerAngleDegrees = sl.outerConeAngle;
     }
     return proxy;
 }

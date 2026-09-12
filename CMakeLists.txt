@@ -132,7 +132,7 @@ target_include_directories(ECS PUBLIC ${ENGINE_INCLUDE_DIRS})
 add_library(Input
     Input/InputManager.cpp
 )
-target_link_libraries(Input PUBLIC EngineCore)
+target_link_libraries(Input PUBLIC EngineCore "${GLFW_TARGET}")
 target_include_directories(Input PUBLIC ${ENGINE_INCLUDE_DIRS})
 
 add_library(Scene

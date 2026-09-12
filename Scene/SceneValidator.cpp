@@ -233,34 +233,34 @@ SceneValidationReport SceneValidator::ValidateSceneDocument(
                     if (comp.HasMember("meshAssetHandle") && comp["meshAssetHandle"].IsUint64()) {
                         uint64_t handle = comp["meshAssetHandle"].GetUint64();
                         if (handle == 0) {
-                            report.AddError("SCENE_NULL_MESH_HANDLE", "Mesh asset handle cannot be zero", compPath, entityName);
+                            report.AddWarning("SCENE_NULL_MESH_HANDLE", "Mesh asset handle is zero, substituting procedural fallback", compPath, entityName);
                         } else if (assetRegistry) {
                             const auto* meta = assetRegistry->GetMetadata(AssetHandle(handle));
                             if (!meta) {
-                                report.AddError("SCENE_INVALID_MESH_HANDLE", "Mesh asset handle " + std::to_string(handle) + " not found in AssetRegistry", compPath, entityName);
+                                report.AddWarning("SCENE_INVALID_MESH_HANDLE", "Mesh asset handle " + std::to_string(handle) + " not found in AssetRegistry, substituting procedural fallback", compPath, entityName);
                             } else if (meta->type != AssetType::Mesh) {
-                                report.AddError("SCENE_WRONG_ASSET_TYPE", "Asset type mismatch: handle " + std::to_string(handle) + " is of type '" + AssetTypeToString(meta->type) + "' but expected 'Mesh'", compPath, entityName);
+                                report.AddWarning("SCENE_WRONG_ASSET_TYPE", "Asset type mismatch: handle " + std::to_string(handle) + " is of type '" + AssetTypeToString(meta->type) + "' but expected 'Mesh', substituting procedural fallback", compPath, entityName);
                             }
                         }
                     } else {
-                        report.AddError("SCENE_MISSING_MESH_HANDLE", "RenderableMesh component is missing 'meshAssetHandle'", compPath, entityName);
+                        report.AddWarning("SCENE_MISSING_MESH_HANDLE", "RenderableMesh component is missing 'meshAssetHandle', substituting procedural fallback", compPath, entityName);
                     }
                 }
                 else if (compType == "Material") {
                     if (comp.HasMember("materialAssetHandle") && comp["materialAssetHandle"].IsUint64()) {
                         uint64_t handle = comp["materialAssetHandle"].GetUint64();
                         if (handle == 0) {
-                            report.AddError("SCENE_NULL_MATERIAL_HANDLE", "Material asset handle cannot be zero", compPath, entityName);
+                            report.AddWarning("SCENE_NULL_MATERIAL_HANDLE", "Material asset handle is zero, substituting procedural fallback", compPath, entityName);
                         } else if (assetRegistry) {
                             const auto* meta = assetRegistry->GetMetadata(AssetHandle(handle));
                             if (!meta) {
-                                report.AddError("SCENE_INVALID_MATERIAL_HANDLE", "Material asset handle " + std::to_string(handle) + " not found in AssetRegistry", compPath, entityName);
+                                report.AddWarning("SCENE_INVALID_MATERIAL_HANDLE", "Material asset handle " + std::to_string(handle) + " not found in AssetRegistry, substituting procedural fallback", compPath, entityName);
                             } else if (meta->type != AssetType::Material) {
-                                report.AddError("SCENE_WRONG_ASSET_TYPE", "Asset type mismatch: handle " + std::to_string(handle) + " is of type '" + AssetTypeToString(meta->type) + "' but expected 'Material'", compPath, entityName);
+                                report.AddWarning("SCENE_WRONG_ASSET_TYPE", "Asset type mismatch: handle " + std::to_string(handle) + " is of type '" + AssetTypeToString(meta->type) + "' but expected 'Material', substituting procedural fallback", compPath, entityName);
                             }
                         }
                     } else {
-                        report.AddError("SCENE_MISSING_MATERIAL_HANDLE", "Material component is missing 'materialAssetHandle'", compPath, entityName);
+                        report.AddWarning("SCENE_MISSING_MATERIAL_HANDLE", "Material component is missing 'materialAssetHandle', substituting procedural fallback", compPath, entityName);
                     }
                 }
                 else if (compType == "BoxCollider") {

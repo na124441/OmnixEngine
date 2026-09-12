@@ -745,8 +745,15 @@ namespace eng::runtime {
 
         uint32_t width = m_Window->GetWidth();
         uint32_t height = m_Window->GetHeight();
-        if (width == 0 || height == 0) {
-            return;
+        while (width == 0 || height == 0) {
+            auto result = m_Window->PollEvents();
+            if (result.IsFailure()) {
+                m_Running.store(false, std::memory_order_relaxed);
+                return;
+            }
+            width = m_Window->GetWidth();
+            height = m_Window->GetHeight();
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
 
         if (m_SwapChain->Initialize(device, m_Surface, width, height).IsFailure()) {

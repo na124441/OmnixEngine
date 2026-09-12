@@ -25,6 +25,7 @@ namespace eng::physics {
 
 namespace eng::runtime {
     class IAssetManager;
+    class AssetManager;
     class ISceneManager;
     class IScheduler;
     class IECSWorld;
@@ -64,6 +65,7 @@ namespace eng::runtime {
         std::unique_ptr<eng::renderer::IRenderer> m_Renderer;
         std::unique_ptr<eng::physics::PhysicsWorld> m_PhysicsWorld;
         std::unique_ptr<eng::runtime::IAssetManager> m_Assets;
+        std::unique_ptr<eng::runtime::AssetManager> m_AssetManager;
         std::unique_ptr<eng::runtime::AssetRegistry> m_AssetRegistry;
         std::unique_ptr<eng::runtime::ISceneManager> m_Scenes;
         std::unique_ptr<eng::runtime::IScheduler> m_Scheduler;
@@ -77,10 +79,6 @@ namespace eng::runtime {
         std::unique_ptr<ComponentSchemaRegistry> m_SchemaRegistry;
         std::unique_ptr<EditorLayer> m_Editor;
 
-        // Managed CLI input thread
-        std::thread m_InputThread;
-        std::atomic<bool> m_InputThreadRunning{ false };
-        void InputThreadWorker();
 
         // Temporal loop variables
         FrameTiming m_Timing;

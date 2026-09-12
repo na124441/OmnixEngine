@@ -37,12 +37,12 @@ namespace eng::runtime {
         
         // Component Icons: [C] Camera, [L] Light, [M] Mesh, [A] Audio, [T] Trigger Volume, [P] Player Spawn
         std::string prefix = "";
-        if (obj->m_HasCameraComponent) prefix += "[C]";
-        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasSkyLight || obj->m_HasSpotLight) prefix += "[L]";
-        if (obj->m_HasRenderableMesh) prefix += "[M]";
-        if (obj->m_HasAudioSource) prefix += "[A]";
-        if (obj->m_HasTrigger) prefix += "[T]";
-        if (obj->m_HasPlayerStart) prefix += "[P]";
+        if (obj->HasCameraComponent()) prefix += "[C]";
+        if (obj->HasDirectionalLight() || obj->HasPointLight() || obj->HasSkyLight() || obj->HasSpotLight()) prefix += "[L]";
+        if (obj->HasRenderableMesh()) prefix += "[M]";
+        if (obj->HasAudioSource()) prefix += "[A]";
+        if (obj->HasTrigger()) prefix += "[T]";
+        if (obj->HasPlayerStart()) prefix += "[P]";
         
         std::string displayName = prefix.empty() ? entityName : (prefix + " " + entityName);
 
@@ -232,12 +232,12 @@ namespace eng::runtime {
                         ImGuiTreeNodeFlags flags = ((selectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
                         
                         std::string prefix = "";
-                        if (obj->m_HasCameraComponent) prefix += "[C]";
-                        if (obj->m_HasDirectionalLight || obj->m_HasPointLight || obj->m_HasSkyLight || obj->m_HasSpotLight) prefix += "[L]";
-                        if (obj->m_HasRenderableMesh) prefix += "[M]";
-                        if (obj->m_HasAudioSource) prefix += "[A]";
-                        if (obj->m_HasTrigger) prefix += "[T]";
-                        if (obj->m_HasPlayerStart) prefix += "[P]";
+                        if (obj->HasCameraComponent()) prefix += "[C]";
+                        if (obj->HasDirectionalLight() || obj->HasPointLight() || obj->HasSkyLight() || obj->HasSpotLight()) prefix += "[L]";
+                        if (obj->HasRenderableMesh()) prefix += "[M]";
+                        if (obj->HasAudioSource()) prefix += "[A]";
+                        if (obj->HasTrigger()) prefix += "[T]";
+                        if (obj->HasPlayerStart()) prefix += "[P]";
                         
                         std::string displayName = prefix.empty() ? obj->GetName() : (prefix + " " + obj->GetName());
                         

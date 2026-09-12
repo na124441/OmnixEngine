@@ -101,6 +101,12 @@ public:
     }
 
     template<typename T>
+    bool IsComponentRegistered() const {
+        std::string typeName = std::string(typeid(T).name());
+        return m_ComponentArrays.find(typeName) != m_ComponentArrays.end();
+    }
+
+    template<typename T>
     void AddComponent(Entity entity, T component) {
         GetComponentArray<T>()->InsertData(entity, component);
     }

@@ -508,7 +508,7 @@ namespace eng::runtime {
         }
 
         auto loadedObj = objects[0];
-        if (!loadedObj->m_HasAudioSource)
+        if (!loadedObj->HasAudioSource())
         {
             LOG_ERROR("[Stress] Audio Test 6 FAILED: Deserialized object does not have AudioSourceComponent!");
             delete scene;
@@ -517,7 +517,7 @@ namespace eng::runtime {
             return false;
         }
 
-        const auto& loadedComp = loadedObj->m_AudioSource;
+        const auto& loadedComp = loadedObj->GetAudioSource();
         if (loadedComp.ClipPath != "Assets/Audio/custom_test.wav" ||
             loadedComp.PlayOnStart != true ||
             loadedComp.Loop != true ||

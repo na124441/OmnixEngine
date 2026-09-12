@@ -560,8 +560,8 @@ namespace eng::runtime {
                 return false;
             }
 
-            if (!loadedChild->m_HasRenderableMesh || loadedChild->m_MeshAssetHandle.value != 777 ||
-                !loadedChild->m_HasMaterial || loadedChild->m_MaterialAssetHandle.value != 888) {
+            if (!loadedChild->HasRenderableMesh() || loadedChild->GetMeshAssetHandle().value != 777 ||
+                !loadedChild->HasMaterial() || loadedChild->GetMaterialAssetHandle().value != 888) {
                 LOG_ERROR("[FormatTest] Test 6 FAILED: Components (mesh/material handles) mismatched after load!");
                 delete scene;
                 delete loadedScene;
@@ -594,6 +594,9 @@ namespace eng::runtime {
             coordinator.RegisterComponent<NameComponent>();
             coordinator.RegisterComponent<DirectionalLightComponent>();
             coordinator.RegisterComponent<SkyLightComponent>();
+            coordinator.RegisterComponent<StaticBodyComponent>();
+            coordinator.RegisterComponent<BoxColliderComponent>();
+            coordinator.RegisterComponent<PlayerStartComponent>();
 
             auto physicsSys = coordinator.RegisterSystem<PhysicsSystem>();
             ::Signature sig;
@@ -965,10 +968,10 @@ namespace eng::runtime {
                 return false;
             }
 
-            if (!loadedFloor->m_HasStaticBody || !loadedFloor->m_HasBoxCollider ||
-                loadedFloor->m_StaticBody.collisionLayer != 2 ||
-                loadedFloor->m_BoxCollider.size.x != 10.0f ||
-                loadedFloor->m_BoxCollider.offset.y != 0.25f) {
+            if (!loadedFloor->HasStaticBody() || !loadedFloor->HasBoxCollider() ||
+                loadedFloor->GetStaticBody().collisionLayer != 2 ||
+                loadedFloor->GetBoxCollider().size.x != 10.0f ||
+                loadedFloor->GetBoxCollider().offset.y != 0.25f) {
                 LOG_ERROR("[FormatTest] Test 9 FAILED: Restored floor StaticBody/BoxCollider properties mismatched!");
                 delete srcScene;
                 delete destScene;
@@ -976,10 +979,10 @@ namespace eng::runtime {
                 return false;
             }
 
-            if (!loadedSphere->m_HasSphereCollider ||
-                loadedSphere->m_SphereCollider.radius != 1.5f ||
-                loadedSphere->m_SphereCollider.isTrigger != true ||
-                loadedSphere->m_SphereCollider.debugDraw != false) {
+            if (!loadedSphere->HasSphereCollider() ||
+                loadedSphere->GetSphereCollider().radius != 1.5f ||
+                loadedSphere->GetSphereCollider().isTrigger != true ||
+                loadedSphere->GetSphereCollider().debugDraw != false) {
                 LOG_ERROR("[FormatTest] Test 9 FAILED: Restored sphere SphereCollider properties mismatched!");
                 delete srcScene;
                 delete destScene;
@@ -987,10 +990,10 @@ namespace eng::runtime {
                 return false;
             }
 
-            if (!loadedCapsule->m_HasCapsuleCollider ||
-                loadedCapsule->m_CapsuleCollider.radius != 0.8f ||
-                loadedCapsule->m_CapsuleCollider.height != 3.0f ||
-                loadedCapsule->m_CapsuleCollider.offset.z != 0.3f) {
+            if (!loadedCapsule->HasCapsuleCollider() ||
+                loadedCapsule->GetCapsuleCollider().radius != 0.8f ||
+                loadedCapsule->GetCapsuleCollider().height != 3.0f ||
+                loadedCapsule->GetCapsuleCollider().offset.z != 0.3f) {
                 LOG_ERROR("[FormatTest] Test 9 FAILED: Restored capsule CapsuleCollider properties mismatched!");
                 delete srcScene;
                 delete destScene;

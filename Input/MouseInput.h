@@ -1,8 +1,15 @@
 #pragma once
 
 #include "InputDevice.h"
-#include "InputEvent.h"  // ✅ ADD THIS
+#include "InputEvent.h"
 #include <cmath>
+#include <utility>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 class MouseInput : public InputDevice {
 private:
@@ -15,12 +22,74 @@ private:
     float scrollDelta = 0.0f;
     float prevPosX = 0.0f;
     float prevPosY = 0.0f;
+    bool m_FirstUpdate = true;
 
 public:
     MouseInput(uint32_t id)
         : InputDevice(id, DeviceType::Mouse) {}
 
-    void UpdateState() override {}
+    void SetPosition(float x, float y) {
+        if (m_FirstUpdate) {
+            prevPosX = x;
+            prevPosY = y;
+            m_FirstUpdate = false;
+        }
+        posX = x;
+        posY = y;
+    }
+
+    void SetButton(int button, bool down) {
+        if (button >= 0 && button < 3) {
+            buttonCurrent[button] = down;
+        }
+    }
+
+    void AddScroll(float delta) {
+        scrollDelta += delta;
+    }
+
+    std::pair<float, float> GetMousePosition() const { return {posX, posY}; }
+    std::pair<float, float> GetMouseDelta() const { return {deltaX, deltaY}; }
+    float GetDeltaX() const { return deltaX; }
+    float GetDeltaY() const { return deltaY; }
+    bool IsMouseButtonDown(int button) const {
+        if (button >= 0 && button < 3) return buttonCurrent[button];
+        return false;
+    }
+
+    void OnCursorPos(double x, double y) {
+        SetPosition(static_cast<float>(x), static_cast<float>(y));
+    }
+
+    void OnMouseButton(int button, int action) {
+        SetButton(button, action != 0);
+    }
+
+    void OnScroll(double xoffset, double yoffset) {
+        AddScroll(static_cast<float>(yoffset));
+    }
+
+    void UpdateState() override {
+#ifdef _WIN32
+        POINT pt;
+        if (GetCursorPos(&pt)) {
+            HWND activeWnd = GetActiveWindow();
+            if (activeWnd) {
+                ScreenToClient(activeWnd, &pt);
+            }
+            if (m_FirstUpdate) {
+                prevPosX = static_cast<float>(pt.x);
+                prevPosY = static_cast<float>(pt.y);
+                m_FirstUpdate = false;
+            }
+            posX = static_cast<float>(pt.x);
+            posY = static_cast<float>(pt.y);
+        }
+        buttonCurrent[0] = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        buttonCurrent[1] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        buttonCurrent[2] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+#endif
+    }
 
     void GenerateEvents(std::vector<InputEvent>& outEvents) override {
         deltaX = posX - prevPosX;
@@ -53,3 +122,4 @@ public:
 
     std::string GetDeviceName() const override { return "Mouse"; }
 };
+

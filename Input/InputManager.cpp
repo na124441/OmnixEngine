@@ -4,10 +4,26 @@
 #include "GamepadInput.h"
 #include <iostream>
 #include <algorithm>
-#include <memory>  // ✅ ADD THIS
+#include <memory>
+#include <utility>
 
-InputManager::InputManager() = default;
-InputManager::~InputManager() = default;
+#if __has_include(<GLFW/glfw3.h>)
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#define OMNIX_HAS_GLFW 1
+#endif
+
+static InputManager* s_InputManagerInstance = nullptr;
+
+InputManager::InputManager() {
+    s_InputManagerInstance = this;
+}
+
+InputManager::~InputManager() {
+    if (s_InputManagerInstance == this) {
+        s_InputManagerInstance = nullptr;
+    }
+}
 
 void InputManager::Initialize() {
     auto keyboard = std::make_unique<KeyboardInput>(0);
@@ -164,3 +180,41 @@ DeviceType InputManager::GetDeviceTypeFromEvent(uint32_t deviceID) const {
     if (deviceID == 2) return DeviceType::Gamepad;
     return DeviceType::Unknown;
 }
+
+std::pair<float, float> InputManager::GetMousePosition() const {
+    if (mouseDevice) return mouseDevice->GetMousePosition();
+    return {0.0f, 0.0f};
+}
+
+std::pair<float, float> InputManager::GetMouseDelta() const {
+    if (mouseDevice) return mouseDevice->GetMouseDelta();
+    return {0.0f, 0.0f};
+}
+
+bool InputManager::IsMouseButtonDown(int button) const {
+    if (mouseDevice) return mouseDevice->IsMouseButtonDown(button);
+    return false;
+}
+
+void InputManager::HookGLFWCallbacks(void* glfwWindow) {
+#ifdef OMNIX_HAS_GLFW
+    if (!glfwWindow) return;
+    GLFWwindow* window = static_cast<GLFWwindow*>(glfwWindow);
+    glfwSetCursorPosCallback(window, [](GLFWwindow*, double xpos, double ypos) {
+        if (s_InputManagerInstance && s_InputManagerInstance->GetMouseDevice()) {
+            s_InputManagerInstance->GetMouseDevice()->OnCursorPos(xpos, ypos);
+        }
+    });
+    glfwSetMouseButtonCallback(window, [](GLFWwindow*, int button, int action, int mods) {
+        if (s_InputManagerInstance && s_InputManagerInstance->GetMouseDevice()) {
+            s_InputManagerInstance->GetMouseDevice()->OnMouseButton(button, action);
+        }
+    });
+    glfwSetScrollCallback(window, [](GLFWwindow*, double xoffset, double yoffset) {
+        if (s_InputManagerInstance && s_InputManagerInstance->GetMouseDevice()) {
+            s_InputManagerInstance->GetMouseDevice()->OnScroll(xoffset, yoffset);
+        }
+    });
+#endif
+}
+

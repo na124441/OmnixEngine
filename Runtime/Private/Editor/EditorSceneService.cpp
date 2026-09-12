@@ -8,6 +8,7 @@
 #include "Runtime/Public/Editor/EditorSelection.h"
 #include "Runtime/Public/Editor/EditorEntityCommands.h"
 #include "Scene/Scene.h"
+#include "Scene/SceneObject.h"
 #include "Scene/SceneManager.h"
 
 namespace eng::runtime {
@@ -48,6 +49,10 @@ namespace eng::runtime {
         if (entity != 0 && coordinator.IsEntityAlive(entity) && coordinator.GetSignature(entity).test(coordinator.GetComponentType<NameComponent>())) {
             coordinator.GetComponent<NameComponent>(entity).name = name;
         }
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>(name, entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create empty object");
         NotifySuccess("Created entity: " + name);
         return entity;
@@ -66,6 +71,10 @@ namespace eng::runtime {
         coordinator.AddComponent<RenderableMeshComponent>(entity, RenderableMeshComponent(meshHandle));
 
         m_Selection->Select(entity);
+        if (m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>(name, entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create mesh object");
         NotifySuccess("Created mesh entity: " + name);
         return entity;
@@ -75,7 +84,12 @@ namespace eng::runtime {
         if (!EnsureActiveScene() || !m_World || !m_DirtyState || !m_Selection) {
             return 0;
         }
-        Entity entity = EditorEntityCommands::CreatePlayerStart(m_World->getCoordinator(), *m_DirtyState, *m_Selection);
+        auto& coordinator = m_World->getCoordinator();
+        Entity entity = EditorEntityCommands::CreatePlayerStart(coordinator, *m_DirtyState, *m_Selection);
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>("PlayerStart", entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create player start");
         NotifySuccess("Created PlayerStart.");
         return entity;
@@ -85,7 +99,12 @@ namespace eng::runtime {
         if (!EnsureActiveScene() || !m_World || !m_DirtyState || !m_Selection) {
             return 0;
         }
-        Entity entity = EditorEntityCommands::CreateDirectionalLight(m_World->getCoordinator(), *m_DirtyState, *m_Selection);
+        auto& coordinator = m_World->getCoordinator();
+        Entity entity = EditorEntityCommands::CreateDirectionalLight(coordinator, *m_DirtyState, *m_Selection);
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>("Directional Light", entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create directional light");
         NotifySuccess("Created Directional Light.");
         return entity;
@@ -95,7 +114,12 @@ namespace eng::runtime {
         if (!EnsureActiveScene() || !m_World || !m_DirtyState || !m_Selection) {
             return 0;
         }
-        Entity entity = EditorEntityCommands::CreatePointLight(m_World->getCoordinator(), *m_DirtyState, *m_Selection);
+        auto& coordinator = m_World->getCoordinator();
+        Entity entity = EditorEntityCommands::CreatePointLight(coordinator, *m_DirtyState, *m_Selection);
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>("Point Light", entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create point light");
         NotifySuccess("Created Point Light.");
         return entity;
@@ -105,7 +129,12 @@ namespace eng::runtime {
         if (!EnsureActiveScene() || !m_World || !m_DirtyState || !m_Selection) {
             return 0;
         }
-        Entity entity = EditorEntityCommands::CreateSkyLight(m_World->getCoordinator(), *m_DirtyState, *m_Selection);
+        auto& coordinator = m_World->getCoordinator();
+        Entity entity = EditorEntityCommands::CreateSkyLight(coordinator, *m_DirtyState, *m_Selection);
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>("Sky Light", entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create sky light");
         NotifySuccess("Created Sky Light.");
         return entity;
@@ -115,7 +144,12 @@ namespace eng::runtime {
         if (!EnsureActiveScene() || !m_World || !m_DirtyState || !m_Selection) {
             return 0;
         }
-        Entity entity = EditorEntityCommands::CreateSpotLight(m_World->getCoordinator(), *m_DirtyState, *m_Selection);
+        auto& coordinator = m_World->getCoordinator();
+        Entity entity = EditorEntityCommands::CreateSpotLight(coordinator, *m_DirtyState, *m_Selection);
+        if (entity != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = std::make_shared<SceneObject>("Spot Light", entity, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("create spot light");
         NotifySuccess("Created Spot Light.");
         return entity;
@@ -129,6 +163,13 @@ namespace eng::runtime {
         if (entity == 0 || !coordinator.IsEntityAlive(entity)) {
             NotifyWarning("Delete skipped: no valid selected entity.");
             return false;
+        }
+
+        if (m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = m_SceneManager->GetActiveScene()->FindObjectByID(entity);
+            if (sceneObj) {
+                m_SceneManager->GetActiveScene()->RemoveSceneObject(sceneObj);
+            }
         }
 
         EditorEntityCommands::Delete(coordinator, entity, *m_DirtyState, *m_Selection);
@@ -148,6 +189,14 @@ namespace eng::runtime {
         }
 
         Entity duplicate = EditorEntityCommands::Duplicate(coordinator, entity, *m_DirtyState, *m_Selection);
+        if (duplicate != 0 && m_SceneManager && m_SceneManager->GetActiveScene()) {
+            std::string name = "Entity " + std::to_string(duplicate);
+            if (coordinator.GetSignature(duplicate).test(coordinator.GetComponentType<NameComponent>())) {
+                name = coordinator.GetComponent<NameComponent>(duplicate).name;
+            }
+            auto sceneObj = std::make_shared<SceneObject>(name, duplicate, &coordinator);
+            m_SceneManager->GetActiveScene()->AddSceneObject(sceneObj);
+        }
         SyncAfterMutation("duplicate object");
         NotifySuccess("Duplicated entity.");
         return duplicate;
@@ -167,6 +216,12 @@ namespace eng::runtime {
             coordinator.GetComponent<NameComponent>(entity).name = newName;
         } else {
             coordinator.AddComponent<NameComponent>(entity, NameComponent(newName));
+        }
+        if (m_SceneManager && m_SceneManager->GetActiveScene()) {
+            auto sceneObj = m_SceneManager->GetActiveScene()->FindObjectByID(entity);
+            if (sceneObj) {
+                sceneObj->SetName(newName);
+            }
         }
         SyncAfterMutation("rename object");
         NotifySuccess("Renamed entity: " + newName);

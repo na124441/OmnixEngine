@@ -11,11 +11,21 @@
 #include "Physics/Public/PhysicsQueries.h"
 #include "Runtime/Public/World/ZoneEntityComponent.h"
 #include "ThirdParty/imgui/imgui.h"
+#include "Input/InputManager.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <vector>
 #include <iostream>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace eng::runtime {
 
@@ -43,7 +53,7 @@ namespace eng::runtime {
             return false;
         }
 
-        void FixedUpdate(eng::physics::PhysicsWorld* physicsWorld, Coordinator& coordinator, float fixedDeltaTime) {
+        void FixedUpdate(eng::physics::PhysicsWorld* physicsWorld, Coordinator& coordinator, float fixedDeltaTime, InputManager* input = nullptr) {
             if (m_PlayerEntity == 0 || !coordinator.IsEntityAlive(m_PlayerEntity)) return;
 
             // Check if ZoneEntityComponent is attached and simulating is false
@@ -67,17 +77,49 @@ namespace eng::runtime {
             glm::vec3 r(-std::sin(yawRad), 0.0f, std::cos(yawRad));
             r = glm::normalize(r);
 
+            bool moveForward = false;
+            bool moveBackward = false;
+            bool moveLeft = false;
+            bool moveRight = false;
+            bool sprint = false;
+            bool jump = false;
+
+            if (input) {
+                moveForward = input->IsActionHeld("MoveUp");
+                moveBackward = input->IsActionHeld("MoveDown");
+                moveLeft = input->IsActionHeld("MoveLeft");
+                moveRight = input->IsActionHeld("MoveRight");
+                sprint = input->IsActionHeld("Sprint");
+                jump = input->IsActionPressed("Jump");
+            }
+#ifdef _WIN32
+            if (!moveForward) moveForward = (GetAsyncKeyState('W') & 0x8000) != 0;
+            if (!moveBackward) moveBackward = (GetAsyncKeyState('S') & 0x8000) != 0;
+            if (!moveLeft) moveLeft = (GetAsyncKeyState('A') & 0x8000) != 0;
+            if (!moveRight) moveRight = (GetAsyncKeyState('D') & 0x8000) != 0;
+            if (!sprint) sprint = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (!jump) jump = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+#endif
+            if (ImGui::GetCurrentContext() != nullptr) {
+                if (!moveForward && ImGui::IsKeyDown(ImGuiKey_W)) moveForward = true;
+                if (!moveBackward && ImGui::IsKeyDown(ImGuiKey_S)) moveBackward = true;
+                if (!moveLeft && ImGui::IsKeyDown(ImGuiKey_A)) moveLeft = true;
+                if (!moveRight && ImGui::IsKeyDown(ImGuiKey_D)) moveRight = true;
+                if (!sprint && ImGui::IsKeyDown(ImGuiKey_LeftShift)) sprint = true;
+                if (!jump && ImGui::IsKeyDown(ImGuiKey_Space)) jump = true;
+            }
+
             glm::vec3 inputDir(0.0f);
-            if (ImGui::IsKeyDown(ImGuiKey_W)) inputDir += f;
-            if (ImGui::IsKeyDown(ImGuiKey_S)) inputDir -= f;
-            if (ImGui::IsKeyDown(ImGuiKey_A)) inputDir -= r;
-            if (ImGui::IsKeyDown(ImGuiKey_D)) inputDir += r;
+            if (moveForward) inputDir += f;
+            if (moveBackward) inputDir -= f;
+            if (moveLeft) inputDir -= r;
+            if (moveRight) inputDir += r;
 
             if (glm::length(inputDir) > 0.001f) {
                 inputDir = glm::normalize(inputDir);
             }
 
-            float speed = ImGui::IsKeyDown(ImGuiKey_LeftShift) ? ccc.sprintSpeed : ccc.moveSpeed;
+            float speed = sprint ? ccc.sprintSpeed : ccc.moveSpeed;
             glm::vec3 desiredHorizontalMove = inputDir * speed * fixedDeltaTime;
 
             // 2. Perform ground check using downward raycast from center
@@ -95,10 +137,11 @@ namespace eng::runtime {
             }
 
             // 3. Jump logic
-            if (ccc.enableJump && isGrounded && ImGui::IsKeyDown(ImGuiKey_Space)) {
+            if (ccc.enableJump && isGrounded && jump) {
                 ccc.velocity.y = ccc.jumpVelocity;
                 isGrounded = false;
             }
+
 
             // 4. Gravity application
             if (!isGrounded) {
@@ -153,22 +196,34 @@ namespace eng::runtime {
             transform.position.z = proposedPos.z;
         }
 
-        void UpdateCameraLook(Coordinator& coordinator, bool hasFocus) {
+        void UpdateCameraLook(Coordinator& coordinator, bool hasFocus, InputManager* input = nullptr) {
             if (m_PlayerEntity == 0 || !coordinator.IsEntityAlive(m_PlayerEntity)) return;
 
             auto& ccc = coordinator.GetComponent<CharacterControllerComponent>(m_PlayerEntity);
-            ImGuiIO& io = ImGui::GetIO();
 
             // Only capture mouse movements when cursor is confined/disabled in Play mode
             if (hasFocus) {
-                float deltaX = io.MouseDelta.x;
-                float deltaY = io.MouseDelta.y;
+                float deltaX = 0.0f;
+                float deltaY = 0.0f;
+
+                if (input) {
+                    auto [dx, dy] = input->GetMouseDelta();
+                    deltaX = dx;
+                    deltaY = dy;
+                }
+
+                if (deltaX == 0.0f && deltaY == 0.0f && ImGui::GetCurrentContext() != nullptr) {
+                    ImGuiIO& io = ImGui::GetIO();
+                    deltaX = io.MouseDelta.x;
+                    deltaY = io.MouseDelta.y;
+                }
 
                 ccc.yaw += deltaX * ccc.mouseSensitivity;
                 ccc.pitch -= deltaY * ccc.mouseSensitivity;
                 ccc.pitch = std::clamp(ccc.pitch, -89.0f, 89.0f);
             }
         }
+
 
         bool IsBlocked() const { return m_Blocked; }
 

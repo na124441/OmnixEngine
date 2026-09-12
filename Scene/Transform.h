@@ -9,9 +9,12 @@
 
 #pragma once
 
+#include <cstdint>
 #include "Vector3.h"
 #include "Quaternion.h"
 #include "Matrix4x4.h"
+
+class Coordinator;
 
 /**
  * @brief Transform - Position, rotation, and scale component
@@ -21,6 +24,12 @@
  */
 class Transform {
 public:
+    //========================================================================
+    // ECS BINDING
+    //========================================================================
+    void BindECS(Coordinator* coordinator, uint32_t entity);
+    void UnbindECS();
+
     //========================================================================
     // CONSTRUCTION
     //========================================================================
@@ -189,6 +198,9 @@ private:
 
     bool localMatrixDirty_;       // True if local matrix needs recalculation
     bool worldTransformDirty_;    // True if world transform needs recalculation
+
+    Coordinator* m_Coordinator = nullptr;
+    uint32_t m_Entity = 0;
 };
 
 //============================================================================

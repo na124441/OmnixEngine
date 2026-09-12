@@ -4,6 +4,7 @@
 #include "Runtime/Public/IAssetLoader.h"
 #include "Runtime/Public/AssetLoadState.h"
 #include "Runtime/Public/AssetDiagnostics.h"
+#include "Runtime/Public/RuntimeAsset.h"
 #include <unordered_map>
 #include <memory>
 #include <string>
@@ -93,6 +94,29 @@ namespace eng::runtime {
          * @brief Returns the global asset manager statistics.
          */
         const AssetManagerStats& GetStats() const { return m_Stats; }
+
+        /**
+         * @brief Initializes built-in procedural fallbacks (builtin://cube, builtin://plane).
+         */
+        void InitProceduralFallbacks();
+
+        /**
+         * @brief Creates a procedural unit cube mesh.
+         */
+        RuntimeMesh* CreateProceduralCube();
+
+        /**
+         * @brief Creates a procedural ground plane mesh.
+         */
+        RuntimeMesh* CreateProceduralPlane();
+
+        /**
+         * @brief Returns a default procedural fallback asset for a given type.
+         */
+        RuntimeAsset* GetProceduralFallback(AssetType type);
+
+        static constexpr uint64_t BUILTIN_CUBE_HANDLE = 1000000001ULL;
+        static constexpr uint64_t BUILTIN_PLANE_HANDLE = 1000000002ULL;
 
     private:
         bool LoadDependencies(const AssetMetadata& meta);

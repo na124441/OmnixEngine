@@ -1,5 +1,4 @@
 #pragma once
-#include "Runtime/world/World.h"
 #include "Runtime/render_scene/RenderObject.h"
 #include "Runtime/render_scene/RenderView.h"
 #include "Runtime/render_scene/MaterialInstance.h"
@@ -10,6 +9,7 @@
 
 namespace eng::runtime {
 
+    class World;
     class AssetCache; 
     
     struct RenderScene {

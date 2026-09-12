@@ -34,14 +34,14 @@ namespace eng::runtime {
             Entity entity = obj->GetECSEntity();
 
             // 1. PlayerStart validation
-            if (obj->m_HasPlayerStart) {
+            if (obj->HasPlayerStart()) {
                 foundPlayerStart = true;
             }
 
             // 2. Objective validation
-            if (obj->m_HasObjective) {
+            if (obj->HasObjective()) {
                 objectivesExist = true;
-                const auto& oc = obj->m_Objective;
+                const auto& oc = obj->GetObjective();
                 
                 if (oc.ObjectiveID.empty()) {
                     results.push_back({
@@ -67,7 +67,7 @@ namespace eng::runtime {
                     activeObjectiveExists = true;
                 }
 
-                if (oc.CompletionMode == ObjectiveCompletionMode::TriggerEnter && !obj->m_HasTrigger) {
+                if (oc.CompletionMode == ObjectiveCompletionMode::TriggerEnter && !obj->HasTrigger()) {
                     results.push_back({
                         ValidationSeverity::Error,
                         "Objective '" + oc.ObjectiveID + "' requires TriggerEnter but entity has no trigger component",
@@ -76,7 +76,7 @@ namespace eng::runtime {
                     });
                 }
 
-                if (oc.CompletionMode == ObjectiveCompletionMode::Interaction && !obj->m_HasInteractable) {
+                if (oc.CompletionMode == ObjectiveCompletionMode::Interaction && !obj->HasInteractable()) {
                     results.push_back({
                         ValidationSeverity::Error,
                         "Objective '" + oc.ObjectiveID + "' requires Interaction but entity has no InteractableComponent",
@@ -87,8 +87,8 @@ namespace eng::runtime {
             }
 
             // 3. Interactable validation
-            if (obj->m_HasInteractable) {
-                const auto& ic = obj->m_Interactable;
+            if (obj->HasInteractable()) {
+                const auto& ic = obj->GetInteractable();
                 if (ic.PromptText.empty()) {
                     results.push_back({
                         ValidationSeverity::Warning,
@@ -116,8 +116,8 @@ namespace eng::runtime {
             }
 
             // 4. AudioSource validation
-            if (obj->m_HasAudioSource) {
-                const auto& ac = obj->m_AudioSource;
+            if (obj->HasAudioSource()) {
+                const auto& ac = obj->GetAudioSource();
                 if (ac.ClipPath.empty()) {
                     results.push_back({
                         ValidationSeverity::Warning,
@@ -166,8 +166,8 @@ namespace eng::runtime {
             }
 
             // 5. Checkpoint validation
-            if (obj->m_HasCheckpoint) {
-                const auto& cc = obj->m_Checkpoint;
+            if (obj->HasCheckpoint()) {
+                const auto& cc = obj->GetCheckpoint();
                 if (cc.CheckpointID.empty()) {
                     results.push_back({
                         ValidationSeverity::Fatal,
@@ -195,7 +195,7 @@ namespace eng::runtime {
                         "CheckpointComponent"
                     });
                 }
-                if (cc.ActivateOnTriggerEnter && !obj->m_HasTrigger) {
+                if (cc.ActivateOnTriggerEnter && !obj->HasTrigger()) {
                     results.push_back({
                         ValidationSeverity::Error,
                         "Trigger-based checkpoint '" + cc.CheckpointID + "' has no trigger volume",
@@ -206,8 +206,8 @@ namespace eng::runtime {
             }
 
             // 6. Activatable validation
-            if (obj->m_HasActivatable) {
-                const auto& ac = obj->m_Activatable;
+            if (obj->HasActivatable()) {
+                const auto& ac = obj->GetActivatable();
                 if (!ac.ActivationID.empty()) {
                     if (activationIDs.count(ac.ActivationID) > 0) {
                         results.push_back({
@@ -240,7 +240,7 @@ namespace eng::runtime {
                     }
                 } else {
                     // It's a button or trigger targeting nothing
-                    if (obj->m_HasInteractable && ac.ActivationID.empty()) {
+                    if (obj->HasInteractable() && ac.ActivationID.empty()) {
                         results.push_back({
                             ValidationSeverity::Warning,
                             "Terminal/interactable activatable has empty target activation ID",
@@ -252,9 +252,9 @@ namespace eng::runtime {
             }
 
             // 7. Door validation
-            if (obj->m_HasDoor) {
-                const auto& dc = obj->m_Door;
-                if (!obj->m_HasSimpleState) {
+            if (obj->HasDoor()) {
+                const auto& dc = obj->GetDoor();
+                if (!obj->HasSimpleState()) {
                     results.push_back({
                         ValidationSeverity::Error,
                         "DoorComponent exists, but SimpleStateComponent is missing",

@@ -8,6 +8,32 @@
 //============================================================================
 
 #include "Transform.h"
+#include "../ECS/Coordinator.h"
+#include "../ECS/ECSComponents.h"
+
+//============================================================================
+// ECS BINDING
+//============================================================================
+
+void Transform::BindECS(Coordinator* coordinator, uint32_t entity) {
+    m_Coordinator = coordinator;
+    m_Entity = entity;
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            const auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            localPosition_ = tc.position;
+            localRotation_ = tc.rotation;
+            localScale_ = tc.scale;
+            localMatrixDirty_ = true;
+            worldTransformDirty_ = true;
+        }
+    }
+}
+
+void Transform::UnbindECS() {
+    m_Coordinator = nullptr;
+    m_Entity = 0;
+}
 
 //============================================================================
 // CONSTRUCTION
@@ -22,6 +48,8 @@ Transform::Transform()
     , worldScale_(1.0f, 1.0f, 1.0f)
     , localMatrixDirty_(true)
     , worldTransformDirty_(true)
+    , m_Coordinator(nullptr)
+    , m_Entity(0)
 {
     localMatrix_.SetIdentity();
     worldMatrix_.SetIdentity();
@@ -35,18 +63,39 @@ void Transform::SetPosition(const Vector3& pos) {
     localPosition_ = pos;
     localMatrixDirty_ = true;
     worldTransformDirty_ = true;
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            tc.position = pos;
+            tc.dirty = true;
+        }
+    }
 }
 
 void Transform::SetRotation(const Quaternion& rot) {
     localRotation_ = rot;
     localMatrixDirty_ = true;
     worldTransformDirty_ = true;
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            tc.rotation = rot;
+            tc.dirty = true;
+        }
+    }
 }
 
 void Transform::SetScale(const Vector3& scale) {
     localScale_ = scale;
     localMatrixDirty_ = true;
     worldTransformDirty_ = true;
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            tc.scale = scale;
+            tc.dirty = true;
+        }
+    }
 }
 
 //============================================================================
@@ -54,14 +103,32 @@ void Transform::SetScale(const Vector3& scale) {
 //============================================================================
 
 const Vector3& Transform::GetPosition() const {
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            const auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            const_cast<Transform*>(this)->localPosition_ = tc.position;
+        }
+    }
     return localPosition_;
 }
 
 const Quaternion& Transform::GetRotation() const {
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            const auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            const_cast<Transform*>(this)->localRotation_ = tc.rotation;
+        }
+    }
     return localRotation_;
 }
 
 const Vector3& Transform::GetScale() const {
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            const auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            const_cast<Transform*>(this)->localScale_ = tc.scale;
+        }
+    }
     return localScale_;
 }
 
@@ -129,9 +196,18 @@ void Transform::ComputeWorldMatrix(Transform* parentTransform) {
     worldPosition_ = worldMatrix_.GetPosition();
     worldScale_ = worldMatrix_.GetScale();
     // worldRotation_ extraction would require matrix-to-quaternion conversion
-    worldRotation_ = localRotation_;  // Simplified for now
-
     worldTransformDirty_ = false;
+
+    if (m_Coordinator && m_Entity != 0 && m_Coordinator->IsEntityAlive(m_Entity)) {
+        if (m_Coordinator->HasComponent<TransformComponent>(m_Entity)) {
+            auto& tc = m_Coordinator->GetComponent<TransformComponent>(m_Entity);
+            tc.position = localPosition_;
+            tc.rotation = localRotation_;
+            tc.scale = localScale_;
+            tc.worldMatrix = worldMatrix_;
+            tc.dirty = false;
+        }
+    }
 
     // Note: Propagation to children is handled by SceneObject::UpdateChildren()
 }

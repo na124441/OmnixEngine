@@ -1,11 +1,11 @@
 #pragma once
-#include "Runtime/world/World.h"
 #include "Runtime/render_scene/RenderView.h"
 #include "RenderingEngine/Core/memory/LinearAllocator.h"
 #include "Core/types/Result.h"
 
 namespace eng::runtime {
 
+    struct RenderScene;
     struct VisibleSet {
         // Placeholder
     };

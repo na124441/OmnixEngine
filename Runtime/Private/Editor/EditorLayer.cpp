@@ -551,7 +551,7 @@ namespace eng::runtime {
                 auto* world = dynamic_cast<World*>(m_Context->ecs);
                 if (world) {
                     if (auto playerControllerSys = world->GetSystem<PlayerControllerSystem>()) {
-                        playerControllerSys->UpdateCameraLook(m_Context->ecs->getCoordinator(), m_CursorCaptured);
+                        playerControllerSys->UpdateCameraLook(m_Context->ecs->getCoordinator(), m_CursorCaptured, m_Context->input);
                         
                         if (engineLoop && engineLoop->GetSceneRenderer()) {
                             auto* sceneRenderer = engineLoop->GetSceneRenderer();

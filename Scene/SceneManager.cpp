@@ -6,6 +6,7 @@
 #include "SceneValidator.h"
 #include "PrefabRegistry.h"
 #include "Runtime/Public/World/ZoneEntityComponent.h"
+#include "Runtime/Public/Gameplay/PlayerStateComponent.h"
 #include "../ECS/Coordinator.h"
 #include "../ECS/ECSComponents.h"
 #include <iostream>
@@ -60,6 +61,12 @@ void SceneManager::InitializeECS() {
     // Register components
     m_Coordinator->RegisterComponent<TransformComponent>();
     m_Coordinator->RegisterComponent<MeshRendererComponent>();
+    m_Coordinator->RegisterComponent<RenderableMeshComponent>();
+    m_Coordinator->RegisterComponent<MaterialComponent>();
+    m_Coordinator->RegisterComponent<HealthComponent>();
+    m_Coordinator->RegisterComponent<PlayerControllerComponent>();
+    m_Coordinator->RegisterComponent<eng::runtime::PlayerStateComponent>();
+    m_Coordinator->RegisterComponent<eng::runtime::PlayerTagComponent>();
     m_Coordinator->RegisterComponent<CameraComponent>();
     m_Coordinator->RegisterComponent<LightComponent>();
     m_Coordinator->RegisterComponent<RigidBodyComponent>();
@@ -382,6 +389,9 @@ void SceneManager::CreateNewScene(const std::string& name) {
         dirLight.enabled = true;
         m_Coordinator->AddComponent<DirectionalLightComponent>(directional, dirLight);
 
+        auto dirObj = std::make_shared<SceneObject>("Sun Light", directional, m_Coordinator);
+        activeScene->AddSceneObject(dirObj);
+
         // 2. Add Sky Light (SkyLightComponent)
         Entity ambient = m_Coordinator->CreateEntity();
         m_Coordinator->AddComponent<NameComponent>(ambient, NameComponent("Sky Light"));
@@ -391,6 +401,9 @@ void SceneManager::CreateNewScene(const std::string& name) {
         skyLight.intensity = 0.45f;
         skyLight.enabled = true;
         m_Coordinator->AddComponent<SkyLightComponent>(ambient, skyLight);
+
+        auto skyObj = std::make_shared<SceneObject>("Sky Light", ambient, m_Coordinator);
+        activeScene->AddSceneObject(skyObj);
 
         // 3. Add Main Camera (CameraComponent)
         Entity cameraEnt = m_Coordinator->CreateEntity();
@@ -404,7 +417,75 @@ void SceneManager::CreateNewScene(const std::string& name) {
         cam.isPrimary = true;
         m_Coordinator->AddComponent<CameraComponent>(cameraEnt, cam);
 
-        SyncECSToScene();
+        auto camObj = std::make_shared<SceneObject>("Main Camera", cameraEnt, m_Coordinator);
+        activeScene->AddSceneObject(camObj);
+
+        // 4. Add Ground Plane (with builtin://plane, StaticBodyComponent, BoxColliderComponent)
+        if (m_Coordinator->IsComponentRegistered<StaticBodyComponent>() &&
+            m_Coordinator->IsComponentRegistered<BoxColliderComponent>() &&
+            m_Coordinator->IsComponentRegistered<RenderableMeshComponent>()) {
+            Entity groundEnt = m_Coordinator->CreateEntity();
+            m_Coordinator->AddComponent<NameComponent>(groundEnt, NameComponent("Ground Plane"));
+            TransformComponent groundTrans;
+            groundTrans.position = Vector3(0.0f, 0.0f, 0.0f);
+            groundTrans.scale = Vector3(20.0f, 1.0f, 20.0f);
+            groundTrans.dirty = true;
+            m_Coordinator->AddComponent<TransformComponent>(groundEnt, groundTrans);
+            m_Coordinator->AddComponent<MeshRendererComponent>(groundEnt, MeshRendererComponent());
+            m_Coordinator->AddComponent<RenderableMeshComponent>(groundEnt, RenderableMeshComponent(AssetHandle(0xC00B0002ULL)));
+            StaticBodyComponent groundBody;
+            groundBody.enabled = true;
+            m_Coordinator->AddComponent<StaticBodyComponent>(groundEnt, groundBody);
+            BoxColliderComponent groundCollider;
+            groundCollider.size = Vector3(20.0f, 0.2f, 20.0f);
+            groundCollider.offset = Vector3(0.0f, -0.1f, 0.0f);
+            m_Coordinator->AddComponent<BoxColliderComponent>(groundEnt, groundCollider);
+
+            auto groundObj = std::make_shared<SceneObject>("Ground Plane", groundEnt, m_Coordinator);
+            activeScene->AddSceneObject(groundObj);
+        }
+
+        // 5. Add Physics Cube (with builtin://cube, RigidBodyComponent, BoxColliderComponent)
+        if (m_Coordinator->IsComponentRegistered<RigidBodyComponent>() &&
+            m_Coordinator->IsComponentRegistered<BoxColliderComponent>() &&
+            m_Coordinator->IsComponentRegistered<RenderableMeshComponent>()) {
+            Entity cubeEnt = m_Coordinator->CreateEntity();
+            m_Coordinator->AddComponent<NameComponent>(cubeEnt, NameComponent("Physics Cube"));
+            TransformComponent cubeTrans;
+            cubeTrans.position = Vector3(0.0f, 3.0f, 0.0f);
+            cubeTrans.scale = Vector3(1.0f, 1.0f, 1.0f);
+            cubeTrans.dirty = true;
+            m_Coordinator->AddComponent<TransformComponent>(cubeEnt, cubeTrans);
+            m_Coordinator->AddComponent<MeshRendererComponent>(cubeEnt, MeshRendererComponent());
+            m_Coordinator->AddComponent<RenderableMeshComponent>(cubeEnt, RenderableMeshComponent(AssetHandle(0xC00B0001ULL)));
+            RigidBodyComponent cubeBody;
+            cubeBody.mass = 1.0f;
+            cubeBody.useGravity = true;
+            m_Coordinator->AddComponent<RigidBodyComponent>(cubeEnt, cubeBody);
+            BoxColliderComponent cubeCollider;
+            cubeCollider.size = Vector3(1.0f, 1.0f, 1.0f);
+            m_Coordinator->AddComponent<BoxColliderComponent>(cubeEnt, cubeCollider);
+
+            auto cubeObj = std::make_shared<SceneObject>("Physics Cube", cubeEnt, m_Coordinator);
+            activeScene->AddSceneObject(cubeObj);
+        }
+
+        // 6. Add Player Start
+        if (m_Coordinator->IsComponentRegistered<PlayerStartComponent>()) {
+            Entity playerStartEnt = m_Coordinator->CreateEntity();
+            m_Coordinator->AddComponent<NameComponent>(playerStartEnt, NameComponent("Player Start"));
+            TransformComponent playerTrans;
+            playerTrans.position = Vector3(0.0f, 1.0f, 6.0f);
+            playerTrans.scale = Vector3(1.0f, 1.0f, 1.0f);
+            playerTrans.dirty = true;
+            m_Coordinator->AddComponent<TransformComponent>(playerStartEnt, playerTrans);
+            PlayerStartComponent playerStart;
+            playerStart.active = true;
+            m_Coordinator->AddComponent<PlayerStartComponent>(playerStartEnt, playerStart);
+
+            auto playerStartObj = std::make_shared<SceneObject>("Player Start", playerStartEnt, m_Coordinator);
+            activeScene->AddSceneObject(playerStartObj);
+        }
     }
 }
 
@@ -412,9 +493,6 @@ bool SceneManager::SaveActiveScene(const std::string& filePath) {
     if (!activeScene) {
         activeScene = new Scene("EditorScene");
     }
-
-    // Sync coordinator changes into Scene graph before saving
-    SyncECSToScene();
 
     activeScene->SetFilePath(filePath);
     bool ok = SceneSerializer::SaveScene(activeScene, filePath);
@@ -427,307 +505,7 @@ bool SceneManager::SaveActiveScene(const std::string& filePath) {
 }
 
 void SceneManager::SyncECSToScene() {
-    if (!activeScene || !m_Coordinator) return;
-
-    auto& coordinator = *m_Coordinator;
-    const auto& activeEntities = coordinator.GetActiveEntities();
-
-    // 1. Find and remove SceneObjects whose ECS entities are dead
-    std::vector<std::shared_ptr<SceneObject>> objectsToRemove;
-    for (const auto& obj : activeScene->GetAllSceneObjects()) {
-        Entity entity = obj->GetECSEntity();
-        if (entity != 0 && !coordinator.IsEntityAlive(entity)) {
-            objectsToRemove.push_back(obj);
-        }
-    }
-    for (const auto& obj : objectsToRemove) {
-        activeScene->RemoveSceneObject(obj);
-    }
-
-    // Call Scene Update with dt=0 to process pending deallocations/deletions in Scene
-    activeScene->Update(0.0f);
-
-    // 2. Update existing SceneObjects or create new ones for active ECS entities
-    for (Entity entity : activeEntities) {
-        if (entity == 0 || !coordinator.IsEntityAlive(entity)) continue;
-
-        // Try to find matching SceneObject by ECS Entity
-        std::shared_ptr<SceneObject> foundObj = nullptr;
-        for (const auto& candidate : activeScene->GetAllSceneObjects()) {
-            if (candidate->GetECSEntity() == entity) {
-                foundObj = candidate;
-                break;
-            }
-        }
-
-        if (foundObj) {
-            // Update name from ECS NameComponent if present
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<NameComponent>())) {
-                foundObj->SetName(coordinator.GetComponent<NameComponent>(entity).name);
-            }
-
-            // Update transform from ECS TransformComponent if present
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TransformComponent>())) {
-                const auto& tc = coordinator.GetComponent<TransformComponent>(entity);
-                foundObj->transform.SetPosition(tc.position);
-                foundObj->transform.SetRotation(tc.rotation);
-                foundObj->transform.SetScale(tc.scale);
-            }
-
-            // Sync RenderableMeshComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<RenderableMeshComponent>())) {
-                const auto& rm = coordinator.GetComponent<RenderableMeshComponent>(entity);
-                foundObj->SetRenderableMesh(rm.meshAssetHandle);
-            } else {
-                foundObj->ClearRenderableMesh();
-            }
-
-            // Sync MaterialComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<MaterialComponent>())) {
-                const auto& mc = coordinator.GetComponent<MaterialComponent>(entity);
-                foundObj->SetMaterial(mc.materialAssetHandle);
-            } else {
-                foundObj->ClearMaterial();
-            }
-
-            // Sync StaticBodyComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<StaticBodyComponent>())) {
-                foundObj->SetStaticBody(coordinator.GetComponent<StaticBodyComponent>(entity));
-            } else {
-                foundObj->ClearStaticBody();
-            }
-
-            // Sync BoxColliderComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<BoxColliderComponent>())) {
-                foundObj->SetBoxCollider(coordinator.GetComponent<BoxColliderComponent>(entity));
-            } else {
-                foundObj->ClearBoxCollider();
-            }
-
-            // Sync SphereColliderComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SphereColliderComponent>())) {
-                foundObj->SetSphereCollider(coordinator.GetComponent<SphereColliderComponent>(entity));
-            } else {
-                foundObj->ClearSphereCollider();
-            }
-
-            // Sync CapsuleColliderComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
-                foundObj->SetCapsuleCollider(coordinator.GetComponent<CapsuleColliderComponent>(entity));
-            } else {
-                foundObj->ClearCapsuleCollider();
-            }
-
-            // Sync PlayerStartComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PlayerStartComponent>())) {
-                foundObj->SetPlayerStart(coordinator.GetComponent<PlayerStartComponent>(entity));
-            } else {
-                foundObj->ClearPlayerStart();
-            }
-
-            // Sync CharacterControllerComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CharacterControllerComponent>())) {
-                foundObj->SetCharacterController(coordinator.GetComponent<CharacterControllerComponent>(entity));
-            } else {
-                foundObj->ClearCharacterController();
-            }
-
-            // Sync CameraComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CameraComponent>())) {
-                foundObj->SetCameraComponent(coordinator.GetComponent<CameraComponent>(entity));
-            } else {
-                foundObj->ClearCameraComponent();
-            }
-
-            // Sync InputComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InputComponent>())) {
-                foundObj->SetInputComponent(coordinator.GetComponent<InputComponent>(entity));
-            } else {
-                foundObj->ClearInputComponent();
-            }
-
-            // Sync TriggerComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TriggerComponent>())) {
-                foundObj->SetTrigger(coordinator.GetComponent<TriggerComponent>(entity));
-            } else {
-                foundObj->ClearTrigger();
-            }
-
-            // Sync InteractableComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InteractableComponent>())) {
-                foundObj->SetInteractable(coordinator.GetComponent<InteractableComponent>(entity));
-            } else {
-                foundObj->ClearInteractable();
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ObjectiveComponent>())) {
-                foundObj->SetObjective(coordinator.GetComponent<ObjectiveComponent>(entity));
-            } else {
-                foundObj->ClearObjective();
-            }
-            // Sync AudioSourceComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AudioSourceComponent>())) {
-                foundObj->SetAudioSource(coordinator.GetComponent<AudioSourceComponent>(entity));
-            } else {
-                foundObj->ClearAudioSource();
-            }
-
-            // Sync SimpleStateComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SimpleStateComponent>())) {
-                foundObj->SetSimpleState(coordinator.GetComponent<SimpleStateComponent>(entity));
-            } else {
-                foundObj->ClearSimpleState();
-            }
-
-            // Sync ActivatableComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ActivatableComponent>())) {
-                foundObj->SetActivatable(coordinator.GetComponent<ActivatableComponent>(entity));
-            } else {
-                foundObj->ClearActivatable();
-            }
-
-            // Sync DoorComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DoorComponent>())) {
-                foundObj->SetDoor(coordinator.GetComponent<DoorComponent>(entity));
-            } else {
-                foundObj->ClearDoor();
-            }
-
-            // Sync CheckpointComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CheckpointComponent>())) {
-                foundObj->SetCheckpoint(coordinator.GetComponent<CheckpointComponent>(entity));
-            } else {
-                foundObj->ClearCheckpoint();
-            }
-
-            // Sync DirectionalLightComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
-                foundObj->SetDirectionalLight(coordinator.GetComponent<DirectionalLightComponent>(entity));
-            } else {
-                foundObj->ClearDirectionalLight();
-            }
-
-            // Sync PointLightComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PointLightComponent>())) {
-                foundObj->SetPointLight(coordinator.GetComponent<PointLightComponent>(entity));
-            } else {
-                foundObj->ClearPointLight();
-            }
-
-            // Sync SkyLightComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SkyLightComponent>())) {
-                foundObj->SetSkyLight(coordinator.GetComponent<SkyLightComponent>(entity));
-            } else {
-                foundObj->ClearSkyLight();
-            }
-
-            // Sync SpotLightComponent
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SpotLightComponent>())) {
-                foundObj->SetSpotLight(coordinator.GetComponent<SpotLightComponent>(entity));
-            } else {
-                foundObj->ClearSpotLight();
-            }
-        } else {
-            // Create a new SceneObject for this entity
-            std::string name = "Entity_" + std::to_string(entity);
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<NameComponent>())) {
-                name = coordinator.GetComponent<NameComponent>(entity).name;
-            }
-
-            auto newObj = std::make_shared<SceneObject>(name);
-            newObj->SetECSEntity(entity);
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TransformComponent>())) {
-                const auto& tc = coordinator.GetComponent<TransformComponent>(entity);
-                newObj->transform.SetPosition(tc.position);
-                newObj->transform.SetRotation(tc.rotation);
-                newObj->transform.SetScale(tc.scale);
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<RenderableMeshComponent>())) {
-                newObj->SetRenderableMesh(coordinator.GetComponent<RenderableMeshComponent>(entity).meshAssetHandle);
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<MaterialComponent>())) {
-                newObj->SetMaterial(coordinator.GetComponent<MaterialComponent>(entity).materialAssetHandle);
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<StaticBodyComponent>())) {
-                newObj->SetStaticBody(coordinator.GetComponent<StaticBodyComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<BoxColliderComponent>())) {
-                newObj->SetBoxCollider(coordinator.GetComponent<BoxColliderComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SphereColliderComponent>())) {
-                newObj->SetSphereCollider(coordinator.GetComponent<SphereColliderComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CapsuleColliderComponent>())) {
-                newObj->SetCapsuleCollider(coordinator.GetComponent<CapsuleColliderComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PlayerStartComponent>())) {
-                newObj->SetPlayerStart(coordinator.GetComponent<PlayerStartComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CharacterControllerComponent>())) {
-                newObj->SetCharacterController(coordinator.GetComponent<CharacterControllerComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CameraComponent>())) {
-                newObj->SetCameraComponent(coordinator.GetComponent<CameraComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InputComponent>())) {
-                newObj->SetInputComponent(coordinator.GetComponent<InputComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<TriggerComponent>())) {
-                newObj->SetTrigger(coordinator.GetComponent<TriggerComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<InteractableComponent>())) {
-                newObj->SetInteractable(coordinator.GetComponent<InteractableComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ObjectiveComponent>())) {
-                newObj->SetObjective(coordinator.GetComponent<ObjectiveComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<AudioSourceComponent>())) {
-                newObj->SetAudioSource(coordinator.GetComponent<AudioSourceComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SimpleStateComponent>())) {
-                newObj->SetSimpleState(coordinator.GetComponent<SimpleStateComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<ActivatableComponent>())) {
-                newObj->SetActivatable(coordinator.GetComponent<ActivatableComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DoorComponent>())) {
-                newObj->SetDoor(coordinator.GetComponent<DoorComponent>(entity));
-            }
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<CheckpointComponent>())) {
-                newObj->SetCheckpoint(coordinator.GetComponent<CheckpointComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<DirectionalLightComponent>())) {
-                newObj->SetDirectionalLight(coordinator.GetComponent<DirectionalLightComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<PointLightComponent>())) {
-                newObj->SetPointLight(coordinator.GetComponent<PointLightComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SkyLightComponent>())) {
-                newObj->SetSkyLight(coordinator.GetComponent<SkyLightComponent>(entity));
-            }
-
-            if (coordinator.GetSignature(entity).test(coordinator.GetComponentType<SpotLightComponent>())) {
-                newObj->SetSpotLight(coordinator.GetComponent<SpotLightComponent>(entity));
-            }
-
-            activeScene->AddSceneObject(newObj);
-        }
-    }
+    // No-op: SceneObject directly forwards all queries and mutations to the ECS Coordinator.
 }
 
 //============================================================================

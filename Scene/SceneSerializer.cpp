@@ -68,301 +68,321 @@ bool SceneSerializer::SaveScene(Scene* scene, const std::string& filePath) {
 
         // Serialize Components
         Value components(kArrayType);
-        if (object->m_HasRenderableMesh) {
+        if (object->HasRenderableMesh()) {
             Value comp(kObjectType);
             comp.AddMember("type", "RenderableMesh", allocator);
-            comp.AddMember("meshAssetHandle", object->m_MeshAssetHandle.value, allocator);
+            comp.AddMember("meshAssetHandle", object->GetMeshAssetHandle().value, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasMaterial) {
+        if (object->HasMaterial()) {
             Value comp(kObjectType);
             comp.AddMember("type", "Material", allocator);
-            comp.AddMember("materialAssetHandle", object->m_MaterialAssetHandle.value, allocator);
+            comp.AddMember("materialAssetHandle", object->GetMaterialAssetHandle().value, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasStaticBody) {
+        if (object->HasStaticBody()) {
+            const auto& sb = object->GetStaticBody();
             Value comp(kObjectType);
             comp.AddMember("type", "StaticBody", allocator);
-            comp.AddMember("enabled", object->m_StaticBody.enabled, allocator);
-            comp.AddMember("collisionLayer", object->m_StaticBody.collisionLayer, allocator);
-            comp.AddMember("collisionMask", object->m_StaticBody.collisionMask, allocator);
+            comp.AddMember("enabled", sb.enabled, allocator);
+            comp.AddMember("collisionLayer", sb.collisionLayer, allocator);
+            comp.AddMember("collisionMask", sb.collisionMask, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasBoxCollider) {
+        if (object->HasBoxCollider()) {
+            const auto& bc = object->GetBoxCollider();
             Value comp(kObjectType);
             comp.AddMember("type", "BoxCollider", allocator);
             
             Value sizeVal(kObjectType);
-            sizeVal.AddMember("x", object->m_BoxCollider.size.x, allocator);
-            sizeVal.AddMember("y", object->m_BoxCollider.size.y, allocator);
-            sizeVal.AddMember("z", object->m_BoxCollider.size.z, allocator);
+            sizeVal.AddMember("x", bc.size.x, allocator);
+            sizeVal.AddMember("y", bc.size.y, allocator);
+            sizeVal.AddMember("z", bc.size.z, allocator);
             comp.AddMember("size", sizeVal, allocator);
 
             Value offsetVal(kObjectType);
-            offsetVal.AddMember("x", object->m_BoxCollider.offset.x, allocator);
-            offsetVal.AddMember("y", object->m_BoxCollider.offset.y, allocator);
-            offsetVal.AddMember("z", object->m_BoxCollider.offset.z, allocator);
+            offsetVal.AddMember("x", bc.offset.x, allocator);
+            offsetVal.AddMember("y", bc.offset.y, allocator);
+            offsetVal.AddMember("z", bc.offset.z, allocator);
             comp.AddMember("offset", offsetVal, allocator);
 
-            comp.AddMember("isTrigger", object->m_BoxCollider.isTrigger, allocator);
-            comp.AddMember("debugDraw", object->m_BoxCollider.debugDraw, allocator);
+            comp.AddMember("isTrigger", bc.isTrigger, allocator);
+            comp.AddMember("debugDraw", bc.debugDraw, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasSphereCollider) {
+        if (object->HasSphereCollider()) {
+            const auto& sc = object->GetSphereCollider();
             Value comp(kObjectType);
             comp.AddMember("type", "SphereCollider", allocator);
-            comp.AddMember("radius", object->m_SphereCollider.radius, allocator);
+            comp.AddMember("radius", sc.radius, allocator);
 
             Value offsetVal(kObjectType);
-            offsetVal.AddMember("x", object->m_SphereCollider.offset.x, allocator);
-            offsetVal.AddMember("y", object->m_SphereCollider.offset.y, allocator);
-            offsetVal.AddMember("z", object->m_SphereCollider.offset.z, allocator);
+            offsetVal.AddMember("x", sc.offset.x, allocator);
+            offsetVal.AddMember("y", sc.offset.y, allocator);
+            offsetVal.AddMember("z", sc.offset.z, allocator);
             comp.AddMember("offset", offsetVal, allocator);
 
-            comp.AddMember("isTrigger", object->m_SphereCollider.isTrigger, allocator);
-            comp.AddMember("debugDraw", object->m_SphereCollider.debugDraw, allocator);
+            comp.AddMember("isTrigger", sc.isTrigger, allocator);
+            comp.AddMember("debugDraw", sc.debugDraw, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasCapsuleCollider) {
+        if (object->HasCapsuleCollider()) {
+            const auto& cc = object->GetCapsuleCollider();
             Value comp(kObjectType);
             comp.AddMember("type", "CapsuleCollider", allocator);
-            comp.AddMember("radius", object->m_CapsuleCollider.radius, allocator);
-            comp.AddMember("height", object->m_CapsuleCollider.height, allocator);
+            comp.AddMember("radius", cc.radius, allocator);
+            comp.AddMember("height", cc.height, allocator);
 
             Value offsetVal(kObjectType);
-            offsetVal.AddMember("x", object->m_CapsuleCollider.offset.x, allocator);
-            offsetVal.AddMember("y", object->m_CapsuleCollider.offset.y, allocator);
-            offsetVal.AddMember("z", object->m_CapsuleCollider.offset.z, allocator);
+            offsetVal.AddMember("x", cc.offset.x, allocator);
+            offsetVal.AddMember("y", cc.offset.y, allocator);
+            offsetVal.AddMember("z", cc.offset.z, allocator);
             comp.AddMember("offset", offsetVal, allocator);
 
-            comp.AddMember("isTrigger", object->m_CapsuleCollider.isTrigger, allocator);
-            comp.AddMember("debugDraw", object->m_CapsuleCollider.debugDraw, allocator);
+            comp.AddMember("isTrigger", cc.isTrigger, allocator);
+            comp.AddMember("debugDraw", cc.debugDraw, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasPlayerStart) {
+        if (object->HasPlayerStart()) {
+            const auto& ps = object->GetPlayerStart();
             Value comp(kObjectType);
             comp.AddMember("type", "PlayerStart", allocator);
-            comp.AddMember("active", object->m_PlayerStart.active, allocator);
+            comp.AddMember("active", ps.active, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasCharacterController) {
+        if (object->HasCharacterController()) {
+            const auto& cc = object->GetCharacterController();
             Value comp(kObjectType);
             comp.AddMember("type", "CharacterController", allocator);
-            comp.AddMember("moveSpeed", object->m_CharacterController.moveSpeed, allocator);
-            comp.AddMember("sprintSpeed", object->m_CharacterController.sprintSpeed, allocator);
-            comp.AddMember("mouseSensitivity", object->m_CharacterController.mouseSensitivity, allocator);
-            comp.AddMember("gravity", object->m_CharacterController.gravity, allocator);
-            comp.AddMember("jumpVelocity", object->m_CharacterController.jumpVelocity, allocator);
-            comp.AddMember("capsuleRadius", object->m_CharacterController.capsuleRadius, allocator);
-            comp.AddMember("capsuleHeight", object->m_CharacterController.capsuleHeight, allocator);
-            comp.AddMember("groundCheckDistance", object->m_CharacterController.groundCheckDistance, allocator);
-            comp.AddMember("skinWidth", object->m_CharacterController.skinWidth, allocator);
-            comp.AddMember("enableJump", object->m_CharacterController.enableJump, allocator);
+            comp.AddMember("moveSpeed", cc.moveSpeed, allocator);
+            comp.AddMember("sprintSpeed", cc.sprintSpeed, allocator);
+            comp.AddMember("mouseSensitivity", cc.mouseSensitivity, allocator);
+            comp.AddMember("gravity", cc.gravity, allocator);
+            comp.AddMember("jumpVelocity", cc.jumpVelocity, allocator);
+            comp.AddMember("capsuleRadius", cc.capsuleRadius, allocator);
+            comp.AddMember("capsuleHeight", cc.capsuleHeight, allocator);
+            comp.AddMember("groundCheckDistance", cc.groundCheckDistance, allocator);
+            comp.AddMember("skinWidth", cc.skinWidth, allocator);
+            comp.AddMember("enableJump", cc.enableJump, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasCameraComponent) {
+        if (object->HasCameraComponent()) {
+            const auto& cam = object->GetCameraComponent();
             Value comp(kObjectType);
             comp.AddMember("type", "Camera", allocator);
-            comp.AddMember("fov", object->m_CameraComponent.fov, allocator);
-            comp.AddMember("nearPlane", object->m_CameraComponent.nearPlane, allocator);
-            comp.AddMember("farPlane", object->m_CameraComponent.farPlane, allocator);
-            comp.AddMember("isPrimary", object->m_CameraComponent.isPrimary, allocator);
-            comp.AddMember("exposure", object->m_CameraComponent.exposure, allocator);
+            comp.AddMember("fov", cam.fov, allocator);
+            comp.AddMember("nearPlane", cam.nearPlane, allocator);
+            comp.AddMember("farPlane", cam.farPlane, allocator);
+            comp.AddMember("isPrimary", cam.isPrimary, allocator);
+            comp.AddMember("exposure", cam.exposure, allocator);
 
             Value offsetVal(kObjectType);
-            offsetVal.AddMember("x", object->m_CameraComponent.localOffset.x, allocator);
-            offsetVal.AddMember("y", object->m_CameraComponent.localOffset.y, allocator);
-            offsetVal.AddMember("z", object->m_CameraComponent.localOffset.z, allocator);
+            offsetVal.AddMember("x", cam.localOffset.x, allocator);
+            offsetVal.AddMember("y", cam.localOffset.y, allocator);
+            offsetVal.AddMember("z", cam.localOffset.z, allocator);
             comp.AddMember("localOffset", offsetVal, allocator);
 
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasInputComponent) {
+        if (object->HasInputComponent()) {
+            const auto& ic = object->GetInputComponent();
             Value comp(kObjectType);
             comp.AddMember("type", "Input", allocator);
-            comp.AddMember("enabled", object->m_InputComponent.enabled, allocator);
+            comp.AddMember("enabled", ic.enabled, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasTrigger) {
+        if (object->HasTrigger()) {
+            const auto& tr = object->GetTrigger();
             Value comp(kObjectType);
             comp.AddMember("type", "Trigger", allocator);
-            comp.AddMember("enabled", object->m_Trigger.enabled, allocator);
+            comp.AddMember("enabled", tr.enabled, allocator);
             
             std::string shapeStr = "Box";
-            if (object->m_Trigger.shapeType == TriggerShapeType::Sphere) shapeStr = "Sphere";
-            else if (object->m_Trigger.shapeType == TriggerShapeType::Capsule) shapeStr = "Capsule";
+            if (tr.shapeType == TriggerShapeType::Sphere) shapeStr = "Sphere";
+            else if (tr.shapeType == TriggerShapeType::Capsule) shapeStr = "Capsule";
             comp.AddMember("shapeType", Value(shapeStr.c_str(), allocator).Move(), allocator);
 
             Value boxSizeVal(kArrayType);
-            boxSizeVal.PushBack(object->m_Trigger.boxSize.x, allocator);
-            boxSizeVal.PushBack(object->m_Trigger.boxSize.y, allocator);
-            boxSizeVal.PushBack(object->m_Trigger.boxSize.z, allocator);
+            boxSizeVal.PushBack(tr.boxSize.x, allocator);
+            boxSizeVal.PushBack(tr.boxSize.y, allocator);
+            boxSizeVal.PushBack(tr.boxSize.z, allocator);
             comp.AddMember("boxSize", boxSizeVal, allocator);
 
-            comp.AddMember("sphereRadius", object->m_Trigger.sphereRadius, allocator);
-            comp.AddMember("capsuleRadius", object->m_Trigger.capsuleRadius, allocator);
-            comp.AddMember("capsuleHeight", object->m_Trigger.capsuleHeight, allocator);
+            comp.AddMember("sphereRadius", tr.sphereRadius, allocator);
+            comp.AddMember("capsuleRadius", tr.capsuleRadius, allocator);
+            comp.AddMember("capsuleHeight", tr.capsuleHeight, allocator);
 
             Value offsetVal(kArrayType);
-            offsetVal.PushBack(object->m_Trigger.offset.x, allocator);
-            offsetVal.PushBack(object->m_Trigger.offset.y, allocator);
-            offsetVal.PushBack(object->m_Trigger.offset.z, allocator);
+            offsetVal.PushBack(tr.offset.x, allocator);
+            offsetVal.PushBack(tr.offset.y, allocator);
+            offsetVal.PushBack(tr.offset.z, allocator);
             comp.AddMember("offset", offsetVal, allocator);
 
-            comp.AddMember("eventName", Value(object->m_Trigger.eventName.c_str(), allocator).Move(), allocator);
-            comp.AddMember("fireEnter", object->m_Trigger.fireEnter, allocator);
-            comp.AddMember("fireStay", object->m_Trigger.fireStay, allocator);
-            comp.AddMember("fireExit", object->m_Trigger.fireExit, allocator);
+            comp.AddMember("eventName", Value(tr.eventName.c_str(), allocator).Move(), allocator);
+            comp.AddMember("fireEnter", tr.fireEnter, allocator);
+            comp.AddMember("fireStay", tr.fireStay, allocator);
+            comp.AddMember("fireExit", tr.fireExit, allocator);
 
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasInteractable) {
+        if (object->HasInteractable()) {
+            const auto& ia = object->GetInteractable();
             Value comp(kObjectType);
             comp.AddMember("type", "Interactable", allocator);
-            comp.AddMember("enabled", object->m_Interactable.Enabled, allocator);
-            comp.AddMember("promptText", Value(object->m_Interactable.PromptText.c_str(), allocator).Move(), allocator);
-            comp.AddMember("interactionRadius", object->m_Interactable.InteractionRadius, allocator);
-            comp.AddMember("interactionType", static_cast<int>(object->m_Interactable.Type), allocator);
+            comp.AddMember("enabled", ia.Enabled, allocator);
+            comp.AddMember("promptText", Value(ia.PromptText.c_str(), allocator).Move(), allocator);
+            comp.AddMember("interactionRadius", ia.InteractionRadius, allocator);
+            comp.AddMember("interactionType", static_cast<int>(ia.Type), allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasAudioSource) {
+        if (object->HasAudioSource()) {
+            const auto& as = object->GetAudioSource();
             Value comp(kObjectType);
             comp.AddMember("type", "AudioSource", allocator);
-            comp.AddMember("clipPath", Value(object->m_AudioSource.ClipPath.c_str(), allocator).Move(), allocator);
-            comp.AddMember("playOnStart", object->m_AudioSource.PlayOnStart, allocator);
-            comp.AddMember("loop", object->m_AudioSource.Loop, allocator);
-            comp.AddMember("volume", object->m_AudioSource.Volume, allocator);
-            comp.AddMember("isPlaying", object->m_AudioSource.IsPlaying, allocator);
+            comp.AddMember("clipPath", Value(as.ClipPath.c_str(), allocator).Move(), allocator);
+            comp.AddMember("playOnStart", as.PlayOnStart, allocator);
+            comp.AddMember("loop", as.Loop, allocator);
+            comp.AddMember("volume", as.Volume, allocator);
+            comp.AddMember("isPlaying", as.IsPlaying, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasObjective) {
+        if (object->HasObjective()) {
+            const auto& ob = object->GetObjective();
             Value comp(kObjectType);
             comp.AddMember("type", "Objective", allocator);
-            comp.AddMember("objectiveID", Value(object->m_Objective.ObjectiveID.c_str(), allocator).Move(), allocator);
-            comp.AddMember("title", Value(object->m_Objective.Title.c_str(), allocator).Move(), allocator);
-            comp.AddMember("description", Value(object->m_Objective.Description.c_str(), allocator).Move(), allocator);
-            comp.AddMember("completionMode", static_cast<int>(object->m_Objective.CompletionMode), allocator);
-            comp.AddMember("startsActive", object->m_Objective.StartsActive, allocator);
-            comp.AddMember("repeatable", object->m_Objective.Repeatable, allocator);
+            comp.AddMember("objectiveID", Value(ob.ObjectiveID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("title", Value(ob.Title.c_str(), allocator).Move(), allocator);
+            comp.AddMember("description", Value(ob.Description.c_str(), allocator).Move(), allocator);
+            comp.AddMember("completionMode", static_cast<int>(ob.CompletionMode), allocator);
+            comp.AddMember("startsActive", ob.StartsActive, allocator);
+            comp.AddMember("repeatable", ob.Repeatable, allocator);
             comp.AddMember("completed", false, allocator); // Reset on save/load
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasSimpleState) {
+        if (object->HasSimpleState()) {
+            const auto& ss = object->GetSimpleState();
             Value comp(kObjectType);
             comp.AddMember("type", "SimpleState", allocator);
-            comp.AddMember("initialState", static_cast<int>(object->m_SimpleState.InitialState), allocator);
-            comp.AddMember("currentState", static_cast<int>(object->m_SimpleState.InitialState), allocator); // Current starts at initial
-            comp.AddMember("resetOnPlay", object->m_SimpleState.ResetOnPlay, allocator);
+            comp.AddMember("initialState", static_cast<int>(ss.InitialState), allocator);
+            comp.AddMember("currentState", static_cast<int>(ss.InitialState), allocator); // Current starts at initial
+            comp.AddMember("resetOnPlay", ss.ResetOnPlay, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasActivatable) {
+        if (object->HasActivatable()) {
+            const auto& act = object->GetActivatable();
             Value comp(kObjectType);
             comp.AddMember("type", "Activatable", allocator);
-            comp.AddMember("activationID", Value(object->m_Activatable.ActivationID.c_str(), allocator).Move(), allocator);
-            comp.AddMember("targetActivationID", Value(object->m_Activatable.TargetActivationID.c_str(), allocator).Move(), allocator);
-            comp.AddMember("requiresUnlocked", object->m_Activatable.RequiresUnlocked, allocator);
-            comp.AddMember("oneShot", object->m_Activatable.OneShot, allocator);
+            comp.AddMember("activationID", Value(act.ActivationID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("targetActivationID", Value(act.TargetActivationID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("requiresUnlocked", act.RequiresUnlocked, allocator);
+            comp.AddMember("oneShot", act.OneShot, allocator);
             comp.AddMember("hasActivated", false, allocator); // Reset on save/load
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasDoor) {
+        if (object->HasDoor()) {
+            const auto& dr = object->GetDoor();
             Value comp(kObjectType);
             comp.AddMember("type", "Door", allocator);
             
             Value closedPosVal(kArrayType);
-            closedPosVal.PushBack(object->m_Door.ClosedPosition.x, allocator);
-            closedPosVal.PushBack(object->m_Door.ClosedPosition.y, allocator);
-            closedPosVal.PushBack(object->m_Door.ClosedPosition.z, allocator);
+            closedPosVal.PushBack(dr.ClosedPosition.x, allocator);
+            closedPosVal.PushBack(dr.ClosedPosition.y, allocator);
+            closedPosVal.PushBack(dr.ClosedPosition.z, allocator);
             comp.AddMember("closedPosition", closedPosVal, allocator);
- 
+
             Value openOffsetVal(kArrayType);
-            openOffsetVal.PushBack(object->m_Door.OpenOffset.x, allocator);
-            openOffsetVal.PushBack(object->m_Door.OpenOffset.y, allocator);
-            openOffsetVal.PushBack(object->m_Door.OpenOffset.z, allocator);
+            openOffsetVal.PushBack(dr.OpenOffset.x, allocator);
+            openOffsetVal.PushBack(dr.OpenOffset.y, allocator);
+            openOffsetVal.PushBack(dr.OpenOffset.z, allocator);
             comp.AddMember("openOffset", openOffsetVal, allocator);
- 
-            comp.AddMember("openSpeed", object->m_Door.OpenSpeed, allocator);
-            comp.AddMember("openMode", static_cast<int>(object->m_Door.OpenMode), allocator);
+
+            comp.AddMember("openSpeed", dr.OpenSpeed, allocator);
+            comp.AddMember("openMode", static_cast<int>(dr.OpenMode), allocator);
             comp.AddMember("isOpen", false, allocator); // Reset on save/load
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasCheckpoint) {
+        if (object->HasCheckpoint()) {
+            const auto& cp = object->GetCheckpoint();
             Value comp(kObjectType);
             comp.AddMember("type", "Checkpoint", allocator);
-            comp.AddMember("checkpointID", Value(object->m_Checkpoint.CheckpointID.c_str(), allocator).Move(), allocator);
-            comp.AddMember("checkpointName", Value(object->m_Checkpoint.CheckpointName.c_str(), allocator).Move(), allocator);
-            comp.AddMember("activateOnTriggerEnter", object->m_Checkpoint.ActivateOnTriggerEnter, allocator);
-            comp.AddMember("oneShot", object->m_Checkpoint.OneShot, allocator);
+            comp.AddMember("checkpointID", Value(cp.CheckpointID.c_str(), allocator).Move(), allocator);
+            comp.AddMember("checkpointName", Value(cp.CheckpointName.c_str(), allocator).Move(), allocator);
+            comp.AddMember("activateOnTriggerEnter", cp.ActivateOnTriggerEnter, allocator);
+            comp.AddMember("oneShot", cp.OneShot, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasDirectionalLight) {
+        if (object->HasDirectionalLight()) {
+            const auto& dl = object->GetDirectionalLight();
             Value comp(kObjectType);
             comp.AddMember("type", "DirectionalLight", allocator);
-            comp.AddMember("enabled", object->m_DirectionalLight.enabled, allocator);
+            comp.AddMember("enabled", dl.enabled, allocator);
             
             Value colorVal(kObjectType);
-            colorVal.AddMember("x", object->m_DirectionalLight.color.x, allocator);
-            colorVal.AddMember("y", object->m_DirectionalLight.color.y, allocator);
-            colorVal.AddMember("z", object->m_DirectionalLight.color.z, allocator);
+            colorVal.AddMember("x", dl.color.x, allocator);
+            colorVal.AddMember("y", dl.color.y, allocator);
+            colorVal.AddMember("z", dl.color.z, allocator);
             comp.AddMember("color", colorVal, allocator);
             
-            comp.AddMember("intensity", object->m_DirectionalLight.intensity, allocator);
-            comp.AddMember("castShadows", object->m_DirectionalLight.castShadows, allocator);
-            comp.AddMember("shadowBias", object->m_DirectionalLight.shadowBias, allocator);
-            comp.AddMember("shadowSlopeBias", object->m_DirectionalLight.shadowSlopeBias, allocator);
-            comp.AddMember("shadowNormalBias", object->m_DirectionalLight.shadowNormalBias, allocator);
-            comp.AddMember("shadowStrength", object->m_DirectionalLight.shadowStrength, allocator);
-            comp.AddMember("shadowResolution", object->m_DirectionalLight.shadowResolution, allocator);
-            comp.AddMember("pcfKernelSize", object->m_DirectionalLight.pcfKernelSize, allocator);
-            comp.AddMember("shadowDistance", object->m_DirectionalLight.shadowDistance, allocator);
+            comp.AddMember("intensity", dl.intensity, allocator);
+            comp.AddMember("castShadows", dl.castShadows, allocator);
+            comp.AddMember("shadowBias", dl.shadowBias, allocator);
+            comp.AddMember("shadowSlopeBias", dl.shadowSlopeBias, allocator);
+            comp.AddMember("shadowNormalBias", dl.shadowNormalBias, allocator);
+            comp.AddMember("shadowStrength", dl.shadowStrength, allocator);
+            comp.AddMember("shadowResolution", dl.shadowResolution, allocator);
+            comp.AddMember("pcfKernelSize", dl.pcfKernelSize, allocator);
+            comp.AddMember("shadowDistance", dl.shadowDistance, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasPointLight) {
+        if (object->HasPointLight()) {
+            const auto& pl = object->GetPointLight();
             Value comp(kObjectType);
             comp.AddMember("type", "PointLight", allocator);
-            comp.AddMember("enabled", object->m_PointLight.enabled, allocator);
+            comp.AddMember("enabled", pl.enabled, allocator);
             
             Value colorVal(kObjectType);
-            colorVal.AddMember("x", object->m_PointLight.color.x, allocator);
-            colorVal.AddMember("y", object->m_PointLight.color.y, allocator);
-            colorVal.AddMember("z", object->m_PointLight.color.z, allocator);
+            colorVal.AddMember("x", pl.color.x, allocator);
+            colorVal.AddMember("y", pl.color.y, allocator);
+            colorVal.AddMember("z", pl.color.z, allocator);
             comp.AddMember("color", colorVal, allocator);
             
-            comp.AddMember("intensity", object->m_PointLight.intensity, allocator);
-            comp.AddMember("radius", object->m_PointLight.radius, allocator);
-            comp.AddMember("castShadows", object->m_PointLight.castShadows, allocator);
+            comp.AddMember("intensity", pl.intensity, allocator);
+            comp.AddMember("radius", pl.radius, allocator);
+            comp.AddMember("castShadows", pl.castShadows, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasSkyLight) {
+        if (object->HasSkyLight()) {
+            const auto& sl = object->GetSkyLight();
             Value comp(kObjectType);
             comp.AddMember("type", "SkyLight", allocator);
-            comp.AddMember("enabled", object->m_SkyLight.enabled, allocator);
+            comp.AddMember("enabled", sl.enabled, allocator);
             
             Value colorVal(kObjectType);
-            colorVal.AddMember("x", object->m_SkyLight.color.x, allocator);
-            colorVal.AddMember("y", object->m_SkyLight.color.y, allocator);
-            colorVal.AddMember("z", object->m_SkyLight.color.z, allocator);
+            colorVal.AddMember("x", sl.color.x, allocator);
+            colorVal.AddMember("y", sl.color.y, allocator);
+            colorVal.AddMember("z", sl.color.z, allocator);
             comp.AddMember("color", colorVal, allocator);
             
-            comp.AddMember("intensity", object->m_SkyLight.intensity, allocator);
+            comp.AddMember("intensity", sl.intensity, allocator);
             components.PushBack(comp, allocator);
         }
-        if (object->m_HasSpotLight) {
+        if (object->HasSpotLight()) {
+            const auto& spl = object->GetSpotLight();
             Value comp(kObjectType);
             comp.AddMember("type", "SpotLight", allocator);
-            comp.AddMember("enabled", object->m_SpotLight.enabled, allocator);
+            comp.AddMember("enabled", spl.enabled, allocator);
             
             Value colorVal(kObjectType);
-            colorVal.AddMember("x", object->m_SpotLight.color.x, allocator);
-            colorVal.AddMember("y", object->m_SpotLight.color.y, allocator);
-            colorVal.AddMember("z", object->m_SpotLight.color.z, allocator);
+            colorVal.AddMember("x", spl.color.x, allocator);
+            colorVal.AddMember("y", spl.color.y, allocator);
+            colorVal.AddMember("z", spl.color.z, allocator);
             comp.AddMember("color", colorVal, allocator);
             
-            comp.AddMember("intensity", object->m_SpotLight.intensity, allocator);
-            comp.AddMember("range", object->m_SpotLight.range, allocator);
-            comp.AddMember("innerConeAngle", object->m_SpotLight.innerConeAngle, allocator);
-            comp.AddMember("outerConeAngle", object->m_SpotLight.outerConeAngle, allocator);
-            comp.AddMember("castShadows", object->m_SpotLight.castShadows, allocator);
+            comp.AddMember("intensity", spl.intensity, allocator);
+            comp.AddMember("range", spl.range, allocator);
+            comp.AddMember("innerConeAngle", spl.innerConeAngle, allocator);
+            comp.AddMember("outerConeAngle", spl.outerConeAngle, allocator);
+            comp.AddMember("castShadows", spl.castShadows, allocator);
             components.PushBack(comp, allocator);
         }
         objValue.AddMember("components", components, allocator);

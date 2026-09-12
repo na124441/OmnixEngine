@@ -38,6 +38,8 @@
 #include "Scene/SceneManager.h"
 #include "RenderingEngine/Runtime/engine/EngineLoop.h"
 #include "RenderingEngine/Runtime/Resources/AssetCache.h"
+#include "Runtime/Public/AssetManager.h"
+#include "Runtime/Public/RuntimeLoaders.h"
 #include "Serializer/ECS/SchemaRegistry.h"
 #include "Physics/Public/PhysicsWorld.h"
 #include "Runtime/Public/Gameplay/Systems/InteractionSystem.h"
@@ -59,24 +61,6 @@ namespace eng::runtime {
         Shutdown();
     }
 
-    void EngineRuntime::InputThreadWorker() {
-        while (m_InputThreadRunning.load(std::memory_order_relaxed)) {
-            std::string line;
-            if (std::getline(std::cin, line)) {
-                // If input is active, process it
-                if (m_Input) {
-                    // We can post CLI commands here or push to input system queue
-                    // For compatibility, we can trigger rebindings or gameplay commands
-                    if (line == "quit") {
-                        if (m_Renderer) {
-                            static_cast<EngineLoop*>(m_Renderer.get())->RequestExit();
-                        }
-                        m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
-                    }
-                }
-            }
-        }
-    }
 
     bool EngineRuntime::Initialize(int argc, char* argv[]) {
         m_State.store(RuntimeState::Initializing, std::memory_order_relaxed);
@@ -211,9 +195,6 @@ namespace eng::runtime {
         m_GameplaySaveSystem = std::make_unique<GameplaySaveSystem>();
         TrackAllocation("SaveSystem", sizeof(GameplaySaveSystem));
 
-        // 3. Spawning Input Thread
-        m_InputThreadRunning.store(true, std::memory_order_relaxed);
-        m_InputThread = std::thread(&EngineRuntime::InputThreadWorker, this);
 
         // Metadata Schema Registry
         m_SchemaRegistry = std::make_unique<ComponentSchemaRegistry>();
@@ -261,10 +242,6 @@ namespace eng::runtime {
         m_PhysicsWorld->Initialize();
 
         // 7. Assets Initialization (Retrieve from device or create)
-        m_Assets = std::make_unique<AssetCache>(nullptr);
-        TrackAllocation("Assets", sizeof(AssetCache));
-        RegisterSystemStartup("Assets");
-
         m_AssetRegistry = std::make_unique<AssetRegistry>();
         m_AssetRegistry->LoadRegistry("AssetRegistry.json");
         if (m_AssetRegistry->GetAssets().empty()) {
@@ -276,6 +253,17 @@ namespace eng::runtime {
             m_AssetRegistry->RegisterAsset("Assets/Textures/wood_albedo.png", AssetType::Texture);
             m_AssetRegistry->SaveRegistry("AssetRegistry.json");
         }
+
+        m_AssetManager = std::make_unique<AssetManager>(*m_AssetRegistry);
+        m_AssetManager->RegisterLoader(AssetType::Texture, std::make_unique<TextureLoader>());
+        m_AssetManager->RegisterLoader(AssetType::Mesh, std::make_unique<MeshLoader>());
+        m_AssetManager->RegisterLoader(AssetType::Material, std::make_unique<MaterialLoader>());
+        m_AssetManager->InitProceduralFallbacks();
+
+        auto assetCache = std::make_unique<AssetCache>(nullptr, m_AssetManager.get());
+        m_Assets = std::move(assetCache);
+        TrackAllocation("Assets", sizeof(AssetCache));
+        RegisterSystemStartup("Assets");
 
         // 8. Scene System (refactored to standard instanced class)
         auto sceneManager = std::make_unique<SceneManager>(&m_ECS->getCoordinator());
@@ -501,7 +489,7 @@ namespace eng::runtime {
                         float fixedDt = m_PhysicsWorld->GetFixedTimestep();
                         for (int i = 0; i < steps; ++i) {
                             if (playerControllerSys) {
-                                playerControllerSys->FixedUpdate(m_PhysicsWorld.get(), coordinator, fixedDt);
+                                playerControllerSys->FixedUpdate(m_PhysicsWorld.get(), coordinator, fixedDt, m_Input.get());
                             }
                             if (triggerSys) {
                                 triggerSys->FixedUpdate(m_Context, fixedDt);
@@ -647,13 +635,7 @@ namespace eng::runtime {
         m_State.store(RuntimeState::ShuttingDown, std::memory_order_relaxed);
         LOG_INFO("[Runtime] Beginning EngineRuntime Shutdown...");
 
-        // 1. Stop CLI Input Thread
-        m_InputThreadRunning.store(false, std::memory_order_relaxed);
-        if (m_InputThread.joinable()) {
-            m_InputThread.detach();
-        }
-
-        // Editor Shutdown
+        // 1. Editor Shutdown (Registered 11th if active)
         if (m_Editor) {
             RegisterSystemShutdown("Editor");
             m_Editor->Shutdown();
@@ -661,12 +643,42 @@ namespace eng::runtime {
             TrackDeallocation("Editor", sizeof(EditorLayer));
         }
 
-        // Audio Shutdown
+        // 2. Audio Shutdown (Registered 10th)
         if (m_AudioSystem) {
             RegisterSystemShutdown("Audio");
             m_AudioSystem->Shutdown();
             m_AudioSystem.reset();
             TrackDeallocation("Audio", sizeof(AudioSystem));
+        }
+
+        // 3. WorldManager Shutdown (Registered 9th)
+        if (m_WorldManager) {
+            RegisterSystemShutdown("WorldManager");
+            m_WorldManager.reset();
+            TrackDeallocation("WorldManager", sizeof(Omnix::WorldManager));
+        }
+
+        // 4. Scene Shutdown (Registered 8th)
+        if (m_Scenes) {
+            RegisterSystemShutdown("Scene");
+            m_Scenes.reset();
+            TrackDeallocation("Scene", sizeof(SceneManager));
+        }
+
+        // 5. Assets Shutdown (Registered 7th)
+        if (m_Assets) {
+            RegisterSystemShutdown("Assets");
+            m_Assets.reset();
+            m_AssetManager.reset();
+            TrackDeallocation("Assets", sizeof(AssetCache));
+        }
+
+        // 6. PhysicsWorld Shutdown (Registered 6th)
+        if (m_PhysicsWorld) {
+            RegisterSystemShutdown("PhysicsWorld");
+            m_PhysicsWorld->Shutdown();
+            m_PhysicsWorld.reset();
+            TrackDeallocation("PhysicsWorld", sizeof(eng::physics::PhysicsWorld));
         }
 
         // Save System Shutdown
@@ -675,36 +687,7 @@ namespace eng::runtime {
             TrackDeallocation("SaveSystem", sizeof(GameplaySaveSystem));
         }
 
-        // PhysicsWorld Shutdown
-        if (m_PhysicsWorld) {
-            RegisterSystemShutdown("PhysicsWorld");
-            m_PhysicsWorld->Shutdown();
-            m_PhysicsWorld.reset();
-            TrackDeallocation("PhysicsWorld", sizeof(eng::physics::PhysicsWorld));
-        }
-
-        // WorldManager Shutdown
-        if (m_WorldManager) {
-            RegisterSystemShutdown("WorldManager");
-            m_WorldManager.reset();
-            TrackDeallocation("WorldManager", sizeof(Omnix::WorldManager));
-        }
-
-        // 2. Scene Shutdown
-        if (m_Scenes) {
-            RegisterSystemShutdown("Scene");
-            m_Scenes.reset();
-            TrackDeallocation("Scene", sizeof(SceneManager));
-        }
-
-        // 3. Assets Shutdown
-        if (m_Assets) {
-            RegisterSystemShutdown("Assets");
-            m_Assets.reset();
-            TrackDeallocation("Assets", sizeof(AssetCache));
-        }
-
-        // 4. Renderer Shutdown
+        // 7. Renderer Shutdown (Registered 5th)
         if (m_Renderer) {
             RegisterSystemShutdown("Renderer");
             m_Renderer->Shutdown();
@@ -712,7 +695,7 @@ namespace eng::runtime {
             TrackDeallocation("Renderer", sizeof(EngineLoop));
         }
 
-        // 5. Scheduler Shutdown
+        // 8. Scheduler Shutdown (Registered 4th)
         if (m_Scheduler) {
             RegisterSystemShutdown("Scheduler");
             m_Scheduler->Shutdown();
@@ -720,7 +703,7 @@ namespace eng::runtime {
             TrackDeallocation("Scheduler", sizeof(SystemScheduler));
         }
 
-        // 6. ECS Shutdown (Now safely owned by EngineRuntime!)
+        // 9. ECS Shutdown (Registered 3rd)
         if (m_ECS) {
             RegisterSystemShutdown("ECS");
             m_ECS->Shutdown();
@@ -734,18 +717,18 @@ namespace eng::runtime {
             TrackDeallocation("SchemaRegistry", sizeof(ComponentSchemaRegistry));
         }
 
-        // 7. Input Shutdown
-        if (m_Input) {
-            RegisterSystemShutdown("Input");
-            m_Input.reset();
-            TrackDeallocation("Input", sizeof(InputManager));
-        }
-
-        // Event System Shutdown
+        // 10. Event System Shutdown (Registered 2nd)
         if (m_EventManager) {
             RegisterSystemShutdown("Events");
             m_EventManager.reset();
             TrackDeallocation("Events", sizeof(Omnix::EventManager));
+        }
+
+        // 11. Input Shutdown (Registered 1st)
+        if (m_Input) {
+            RegisterSystemShutdown("Input");
+            m_Input.reset();
+            TrackDeallocation("Input", sizeof(InputManager));
         }
 
         LOG_INFO("[Runtime] EngineRuntime Subsystem Shutdown Complete.");

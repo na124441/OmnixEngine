@@ -51,6 +51,11 @@ public:
     }
 
     template<typename T>
+    bool IsComponentRegistered() const {
+        return m_ComponentManager->IsComponentRegistered<T>();
+    }
+
+    template<typename T>
     void AddComponent(Entity entity, T component) {
         auto signature = m_EntityManager->GetSignature(entity);
         if (signature.test(GetComponentType<T>())) {
@@ -82,6 +87,17 @@ public:
     template<typename T>
     T& GetComponent(Entity entity) {
         return m_ComponentManager->GetComponent<T>(entity);
+    }
+
+    template<typename T>
+    const T& GetComponent(Entity entity) const {
+        return m_ComponentManager->GetComponent<T>(entity);
+    }
+
+    template<typename T>
+    bool HasComponent(Entity entity) const {
+        if (!m_EntityManager || !m_EntityManager->IsEntityAlive(entity)) return false;
+        return m_EntityManager->GetSignature(entity).test(const_cast<Coordinator*>(this)->GetComponentType<T>());
     }
 
     template<typename T>
