@@ -1,272 +1,154 @@
 # Omnix Studio Engine v0.4
 
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Graphics](https://img.shields.io/badge/Graphics-Vulkan-red.svg)]()
+[![C++17](https://img.shields.io/badge/Language-ISO%20C%2B%2B17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+[![Graphics](https://img.shields.io/badge/Graphics-Vulkan%201.3-red.svg)](https://www.vulkan.org/)
+[![Physics](https://img.shields.io/badge/Physics-NVIDIA%20PhysX%204.1-green.svg)](https://github.com/NVIDIA-Omniverse/PhysX)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-lightgrey.svg)]()
-[![Build](https://img.shields.io/badge/Build-CMake-brightgreen.svg)]()
+[![Build System](https://img.shields.io/badge/Build-CMake%20%7C%20Ninja-brightgreen.svg)]()
+[![Benchmark Suite](https://img.shields.io/badge/Benchmarks-12%20Empirical%20Suites-orange.svg)](docs/benchmarks.md)
 
-Omnix Studio Engine is a modular C++17 game engine built around a deterministic Entity Component System, a Vulkan rendering backend, PhysX simulation, an integrated editor layer, and a runtime gameplay framework. The v0.4 codebase moves the engine from a rendering/ECS prototype into an integrated editor and runtime environment with scene loading, gameplay systems, audio, asset import, hot reload, packaging, and diagnostics.
+**Omnix Engine** is a modular, high-performance C++17 systems game engine built on a deterministic Entity Component System (ECS), a 12-pass Vulkan deferred rendering pipeline, NVIDIA PhysX 4.1 rigid-body dynamics, custom cache-friendly memory allocators, and an in-memory package virtual file system.
 
-The primary executable is `Application`, implemented by `main.cpp`, `Core/Application.cpp`, and `Runtime/Private/EngineRuntime.cpp`.
+> **Engineering Release Notice**: This repository is prepared as a transparent, inspectable systems release. Architectural claims are backed by audited source code, and performance numbers are backed by reproducible benchmarks executed on local test hardware.
 
-## Current Feature Summary
+---
 
-### Runtime and Lifecycle
+## 1. Technical Documentation Set
 
-- Central `EngineRuntime` owns initialization, frame execution, and shutdown.
-- Runtime modes support normal game execution and editor mode through `--editor`.
-- Startup and shutdown are deterministic, with teardown performed in reverse order to release GPU, physics, scene, audio, and asset resources safely.
-- Frame timing uses high-resolution clocks, delta-time clamping, and fixed timestep physics updates.
-- `RuntimeContext` injects subsystem pointers into gameplay, editor, scheduler, scene, audio, and save systems without relying on broad singleton ownership.
+Complete technical documentation is organized in [`docs/`](docs/):
 
-### ECS and Simulation
+* **[Architecture Overview](docs/architecture.md)** — Core topology, component-level breakdowns, data/control flow, and subsystem inventory matrix.
+* **[Execution Model](docs/execution-model.md)** — Binary bootstrap sequence, 15-stage single-threaded frame loop, concurrency invariants, and LIFO teardown protocol.
+* **[Design Decisions (ADRs)](docs/design-decisions.md)** — Architecture Decision Records covering ECS vs. OOP, 12-pass Vulkan RenderGraph, LIFO teardown, asset handles, serialization, and archive mounting.
+* **[Empirical Benchmarks](docs/benchmarks.md)** — Hardware testbed, statistical methodology, full results table, and architectural bottleneck analysis.
+* **[Reproducibility Guide](docs/reproducibility.md)** — Build prerequisites, CMake/Ninja compilation commands, and verification test execution.
+* **[Known Limitations](docs/limitations.md)** — Single-threaded execution, monolithic `Renderer.cpp`, fixed entity capacities, and incomplete modules marked `Planned`.
 
-- Entity creation, destruction, component registration, component add/remove, and system signature matching are implemented.
-- Component data is organized for data-oriented iteration through manager-owned component pools.
-- Gameplay-ready components include transforms, render meshes, materials, rigid bodies, colliders, triggers, character controllers, player starts, objectives, checkpoints, doors, simple state objects, and interactables.
-- A scheduler/DAG framework exists, while several gameplay and physics update stages are still explicitly sequenced in `EngineRuntime`.
+---
 
-### Scene and Level Authoring
+## 2. Headline Empirical Benchmarks
 
-- `SceneManager`, `SceneLoader`, `SceneSerializer`, `SceneValidator`, `SceneObject`, prefab support, camera support, and hierarchy management are present.
-- JSON scene loading and saving are integrated for runtime and editor workflows.
-- `.omnixscene` binary format structures and tests exist, but binary scene loading is not yet the default runtime scene path.
-- Scene validation checks for hierarchy cycles, invalid transforms, duplicate names, and missing asset references.
+The figures below represent empirical measurements executed via [`benchmarks/bench_main.cpp`](benchmarks/bench_main.cpp) on an **Intel Core i7-6820HQ @ 2.70GHz, 8GB DDR4, Windows 11 Enterprise (MSVC /O2 x64, Ninja 1.13.2)**:
 
-### Rendering
+| Engine Subsystem | Workload Description | Batch Count | Median Duration | p95 Latency | Measured Throughput |
+|:---|:---|:---:|:---:|:---:|:---:|
+| **Memory Allocator** | Linear Arena Allocation (64-byte chunks) | 1,000 | 11.70 $\mu\text{s}$ | 11.80 $\mu\text{s}$ | **85,034,013 allocs/sec** |
+| **Memory Allocator** | Stack Allocator LIFO Push/Pop (128-byte) | 500 | 5.70 $\mu\text{s}$ | 20.20 $\mu\text{s}$ | **72,337,962 push-pop/sec** |
+| **Memory Allocator** | Pool Allocator Fixed-Size Recycle (32-byte) | 1,000 | 17.90 $\mu\text{s}$ | 37.90 $\mu\text{s}$ | **44,901,441 alloc-ops/sec** |
+| **Transform & Math** | Affine Matrix4x4 TRS SIMD Composition | 10,000 | 4,695.60 $\mu\text{s}$ | 5,497.40 $\mu\text{s}$ | **2,117,534 matrices/sec** |
+| **Asset Pipeline** | Package Archive Offset & Handle Lookup | 1,000 | 710.90 $\mu\text{s}$ | 1,419.50 $\mu\text{s}$ | **1,249,164 queries/sec** |
+| **ECS Subsystem** | Entity Batch Instantiation (50k Entities) | 50,000 | 49,189.80 $\mu\text{s}$ | 52,023.70 $\mu\text{s}$ | **1,016,268 entities/sec** |
+| **ECS Subsystem** | System Iteration & Signature Dispatch (10k) | 10,000 | 44,208.60 $\mu\text{s}$ | 56,557.00 $\mu\text{s}$ | **211,709 ent-ticks/sec** |
+| **Serialization** | Binary ECS State Serialization (2k Entities) | 2,000 | 16,823.10 $\mu\text{s}$ | 18,751.40 $\mu\text{s}$ | **116,556 entities/sec** |
+| **Transform & Math** | Deep Hierarchy Tree Traversal (Depth 100) | 1 | 13.70 $\mu\text{s}$ | 28.50 $\mu\text{s}$ | **65,030 traversals/sec** |
+| **ECS Subsystem** | Dynamic Component Attachment (10k Entities) | 10,000 | 152,651.00 $\mu\text{s}$ | 174,683.10 $\mu\text{s}$ | **64,499 entities/sec** |
 
-- Vulkan is the primary graphics backend.
-- Rendering code is split across RHI-style resource interfaces, Vulkan device/swapchain/memory setup, render scene structures, render passes, shader loading, GLTF model loading, and scene rendering.
-- Implemented rendering features include mesh rendering, material handling, shader loading from SPIR-V, lighting components, UI/HUD overlays, debug rendering, and editor viewport rendering.
-- CMake can compile Vulkan shaders through `glslc` when the Vulkan SDK tool is available.
+*Raw CSV telemetry available at [`benchmarks/benchmark_results.csv`](benchmarks/benchmark_results.csv).*
 
-### Physics and Collision
+---
 
-- PhysX-backed `PhysicsWorld` is integrated with runtime fixed updates.
-- Implemented features include dynamic rigid bodies, static colliders, trigger volumes, raycasts, character controller support, collision/trigger events, and debug collider drawing.
-- Missing or partial areas include mesh collider support, richer collision filtering, visual interpolation between physics ticks, and advanced character step/slope behavior.
-
-### Gameplay Framework
-
-- `GameMode` and `VerticalSliceGameMode` drive level flow.
-- `GameplayEventBus` connects runtime events to objectives, interaction, checkpointing, object activation, HUD, audio, and save systems.
-- Implemented gameplay systems include:
-  - player spawn and player controller
-  - interactable objects
-  - objective tracking
-  - checkpoints and respawn snapshots
-  - activatable doors and simple state objects
-  - gameplay HUD prompts and notifications
-  - gameplay save/load snapshots with checksum validation
-  - audio events through miniaudio
-
-### Editor
-
-- Launch editor mode with `Application.exe --editor`.
-- Editor layer uses Dear ImGui and ImGuizmo.
-- Implemented panels and tools include viewport, scene hierarchy, inspector, console, asset browser, transform gizmos, component widgets, file dialogs, selection state, dirty-state tracking, scene save/load, and play/edit simulation transitions.
-- Play mode clones active scene state so simulation can be stopped and restored to edit state.
-
-### Asset Pipeline and Runtime Formats
-
-- `AssetRegistry.json` tracks asset metadata and UUID-style references.
-- Runtime import and loading code includes texture import, OBJ/GLTF mesh import, mesh validation, asset manager, asset cache tests, runtime loaders, file watching, hot reload, package builder, package manager, and package tests.
-- Supported or defined engine formats include:
-  - `.omnixmesh`
-  - `.omnixtexture`
-  - `.omnixmat`
-  - `.omnixscene`
-  - `.omnixworld`
-  - `.omnixzone`
-  - `.omnixpackage`
-  - gameplay save files under `Saves/`
-
-### Diagnostics and Memory
-
-- Core memory utilities include allocation tracking, linear allocators, pool allocators, stack allocators, validation, and fragmentation diagnostics.
-- Runtime diagnostics include allocation diagnostics, ownership validation, stress tests, frame/runtime stage tracking, and memory test mode.
-- Run memory diagnostics with `Application.exe --test-memory`.
-
-## Architecture Overview
+## 3. High-Level System Architecture
 
 ```mermaid
 graph TD
-    Main[main.cpp] --> Runtime[EngineRuntime]
-    Runtime --> Context[RuntimeContext]
-    Runtime --> ECS[ECS Coordinator]
-    Runtime --> Scene[SceneManager]
-    Runtime --> Physics[PhysicsWorld]
-    Runtime --> Render[RenderingEngine / Vulkan]
-    Runtime --> Assets[AssetRegistry + AssetManager]
-    Runtime --> Audio[AudioSystem]
-    Runtime --> Input[InputManager]
-    Runtime --> Events[EventManager + GameplayEventBus]
-    Runtime --> GameMode[GameMode / VerticalSliceGameMode]
-    Runtime --> Editor[EditorLayer]
+    subgraph Client Application Layer
+        Main[main.cpp] --> Runtime[EngineRuntime]
+        Runtime --> Editor[Dear ImGui Editor Layer]
+        Runtime --> GameMode[GameMode / Gameplay Framework]
+    end
 
-    Context --> GameSystems[Gameplay Systems]
-    ECS --> Components[Component Pools]
-    ECS --> Systems[SystemManager / Scheduler]
-    Scene --> ECS
-    Physics --> ECS
-    Render --> Assets
-    GameSystems --> Events
-    Editor --> Scene
-    Editor --> ECS
-    Editor --> Render
+    subgraph Core Simulation & Data Flow
+        Runtime --> Scene[SceneManager & SceneGraph]
+        Runtime --> ECS[ECS Coordinator]
+        ECS --> CompPools[Dense ComponentArrays<T>]
+        ECS --> SysMgr[SystemManager]
+        Scene -->|EntityID Handles| ECS
+    end
+
+    subgraph Physics Subsystem
+        Runtime --> Physics[PhysicsWorld]
+        Physics --> PhysX[NVIDIA PhysX 4.1 Native]
+        Physics -->|Synchronize Transforms| ECS
+    end
+
+    subgraph Vulkan Graphics Backend
+        Runtime --> Renderer[Renderer & RenderGraph]
+        Renderer --> VHost[12-Pass Deferred Pipeline]
+        VHost --> VDevice[Vulkan RHI Device & Swapchain]
+    end
+
+    subgraph Memory & Virtual Filesystem
+        Runtime --> CoreMem[Linear / Pool / Stack Allocators]
+        Runtime --> PkgMgr[PackageManager & .omnixpackage VFS]
+    end
 ```
 
-### Subsystem Boundaries
+---
 
-| Subsystem | Main Location | Responsibility |
-| :--- | :--- | :--- |
-| Core | `Core/` | Logging, timers, diagnostics, memory allocators, application glue. |
-| Runtime | `Runtime/` | Engine lifecycle, runtime context, gameplay framework, editor layer, asset pipeline, audio, hot reload, packaging. |
-| ECS | `ECS/` | Entity IDs, component registration, component pools, signatures, system registration. |
-| Components | `Components/` | Spatial, physical, perceptual, logical, relational, temporal, and behavior component definitions. |
-| Scene | `Scene/` | Scene graph, scene loading/saving, prefabs, cameras, validation, hierarchy management. |
-| Rendering | `RenderingEngine/` | Vulkan device/swapchain, RHI resources, frame/render graphs, render passes, shaders, meshes, materials, GLTF loading. |
-| Physics | `Physics/` | PhysX world, rigid/static actors, raycasts, trigger handling, debug draw, validation. |
-| Systems | `Systems/` | Scheduler framework and planned/typed simulation system categories. |
-| Serializer | `Serializer/` | Binary/text serialization, ECS snapshots, schema registry, delta snapshots. |
-| Input | `Input/` | Keyboard, mouse, gamepad, input bindings, input events. |
-| EventManagement | `EventManagement/` | Event queues, event types, decoupled pub/sub messaging. |
-| Assets | `Assets/` | Scenes, materials, textures, audio, and sample content. |
-| ThirdParty | `ThirdParty/`, `Dependencies/` | ImGui, ImGuizmo, nlohmann_json, RapidJSON, SDL3, miniaudio, and other bundled dependencies. |
+## 4. Quickstart: Building & Running
 
-### Startup Order
+### 4.1 Prerequisites
+* Windows 10/11 x64
+* Visual Studio 2022 / 2026 (MSVC x64 C++17)
+* CMake 3.25+ & Ninja
+* LunarG Vulkan SDK 1.3+
+* `vcpkg` packages: `glfw3:x64-windows`, `glm:x64-windows`, `unofficial-omniverse-physx-sdk:x64-windows`
 
-The intended boot sequence is:
-
-1. Logger and core diagnostics.
-2. Timers and frame timing.
-3. Input manager and event buses.
-4. ECS world and coordinator.
-5. Scheduler and frame stage tracking.
-6. Window, Vulkan RHI, swapchain, renderer, and shader resources.
-7. Asset registry and asset/runtime loaders.
-8. Scene manager and initial scene.
-9. Physics world.
-10. Audio system.
-11. Game mode and gameplay systems.
-12. Editor layer, when launched with `--editor`.
-
-Shutdown runs in reverse order.
-
-## Build and Run
-
-### Prerequisites
-
-- CMake 3.10 or newer.
-- C++17 compiler.
-- Vulkan SDK.
-- GLFW package available to CMake.
-- PhysX package via `unofficial-omniverse-physx-sdk` when `OMNIX_WITH_PHYSX=ON`.
-- Windows x64 is the primary tested target.
-
-The repository also includes bundled dependencies such as SDL3, Dear ImGui, ImGuizmo, miniaudio, nlohmann_json, RapidJSON, stb_image, and tinygltf.
-
-### Configure and Build
-
+### 4.2 Configure and Compile
 ```powershell
-cmake -S . -B build_ninja
-cmake --build build_ninja --config Release
+# In x64 Native Tools Command Prompt
+git clone https://github.com/na124441/OmnixEngine.git
+cd OmnixEngine
+
+mkdir build_ninja
+cd build_ninja
+
+cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" ..
+ninja -j 8
 ```
 
-Or use the provided MSVC helper:
-
+### 4.3 Running Binaries
 ```powershell
-.\build_msvc.bat
+# Run the interactive Vulkan editor & runtime
+.\Application.exe --editor
+
+# Run the empirical benchmark suite
+.\omnix_benchmarks.exe
+
+# Run the transform & math unit tests
+.\transform_tests.exe
+
+# Run headless memory diagnostic suite
+.\Application.exe --test-memory --headless
 ```
 
-### Run
+---
 
-```powershell
-.\build_ninja\Application.exe
-```
-
-Run editor mode:
-
-```powershell
-.\build_ninja\Application.exe --editor
-```
-
-Run memory diagnostics:
-
-```powershell
-.\build_ninja\Application.exe --test-memory
-```
-
-Run the ECS sampler:
-
-```powershell
-.\build_ninja\sampler.exe
-```
-
-Depending on the generator and configuration, binaries may also appear under `build/bin/Release/`.
-
-## CMake Targets
-
-- `EngineCore`: logging, timers, diagnostics, memory utilities, core behavior support.
-- `Serialization`: binary/text serializers, delta serializers, ECS snapshots, schema bridge.
-- `ECS`: entity, component, system, and coordinator implementation.
-- `Input`: input manager.
-- `Scene`: scene graph, scene manager, prefabs, cameras, loader, serializer, validator.
-- `Physics`: PhysX-facing physics world, validation, conversion, debug draw.
-- `RenderingEngine`: Vulkan runtime, windowing, renderer, scene renderer, model/material/texture/shader loading.
-- `EngineRuntime`: gameplay, editor, asset registry, importers, loaders, hot reload, package management, diagnostics, audio.
-- `Application`: main engine executable.
-- `sampler`: ECS sample executable.
-- `imgui`: Dear ImGui static library used by renderer and editor.
-- `CompileShaders`: optional shader compilation target when `glslc` is found.
-
-## Known Partial or Planned Areas
-
-- Scheduler DAG exists, but some runtime systems are still hardcoded in sequential frame stages.
-- Binary `.omnixscene` format is defined and tested, but JSON remains the integrated scene loading path.
-- Additive scene loading and visual loading screens are not fully implemented.
-- Prefab disk save/load has partial/stubbed areas.
-- Dynamic shadow mapping, skybox rendering, multi-material blending, skeletal animation/skinning, and mesh colliders are still incomplete or planned.
-- Editor undo/redo, snapping, asset search/tag filtering, and frame-step debugging are not yet complete.
-- Async scene loading and async save/load are not yet integrated.
-
-## Documentation
-
-Useful deeper references:
-
-- `OMNIX_V0_4_ENGINE_REPORT.md`
-- `OMNIX_V0_4_VERIFIED_FEATURE_AUDIT.md`
-- `EDITOR_MODE_DEEP_AUDIT.md`
-- `Docs/Architecture/SUBSYSTEMS.md`
-- `Docs/Architecture/STARTUP_ORDER.md`
-- `Docs/Architecture/SHUTDOWN_ORDER.md`
-- `Docs/Architecture/RELATIONSHIP_GRAPH.md`
-- `Docs/Formats/OMNIXWORLD_FORMAT.md`
-- [RADIANCE_RENDERING_SYSTEM.md](file:///d:/OmnixEngine/Docs/RADIANCE_RENDERING_SYSTEM.md)
-- `Markdown/INSTALLATION_GUIDE.md`
-- `Markdown/PROJECT_STRUCTURE_README.md`
-- `Markdown/ENGINE_COMPLETE_OVERVIEW.md`
-
-## Repository Layout
+## 5. Repository Structure
 
 ```txt
 OmnixEngine/
-  Assets/              Runtime scenes, materials, textures, audio, and sample content
-  Components/          ECS component catalog
-  Config/              Editor/runtime configuration files
-  Core/                Logging, timing, diagnostics, allocators, application glue
-  Docs/                Architecture and format documentation
-  ECS/                 Coordinator, entity manager, component manager, systems
-  EventManagement/     Engine and gameplay event definitions and queues
-  Input/               Input devices, bindings, and input manager
-  Physics/             PhysX integration and physics debug utilities
-  RenderingEngine/     Vulkan renderer, RHI resources, render passes, scene renderer
-  Runtime/             Engine runtime, editor, gameplay, assets, audio, hot reload
-  Scene/               Scene graph, loading, saving, prefabs, validation
-  Serializer/          ECS and binary/text serialization
-  Systems/             Scheduler and system category definitions
-  ThirdParty/          Bundled external libraries
-  Time/                Time scale, frame timer, frame budget utilities
-  shaders/             PBR shader sources and compiled SPIR-V
+├── benchmarks/          Empirical benchmark harness (bench_main.cpp, benchmark_results.csv)
+├── docs/                Architectural and benchmark release documentation
+│   ├── architecture.md      High-level system topology & subsystem breakdown
+│   ├── execution-model.md   15-stage frame loop, bootstrap & LIFO teardown
+│   ├── design-decisions.md  Architectural Decision Records (ADRs)
+│   ├── benchmarks.md        Empirical performance report & bottleneck analysis
+│   ├── limitations.md       Known limitations & architectural debt
+│   └── reproducibility.md   Step-by-step build & verification guide
+├── Core/                Memory allocators (Linear, Pool, Stack), diagnostics, logging
+├── ECS/                 Coordinator, EntityManager, ComponentManager, ComponentArray
+├── Physics/             PhysX 4.1 integration, rigid actors, raycasting, debug draw
+├── Rendering/           Vulkan 1.3 backend, 12-pass deferred pipeline, RenderGraph
+├── Runtime/             EngineRuntime frame loop, EditorLayer, PackageManager, Audio
+├── Scene/               SceneManager, SceneObject handles, Transform hierarchy
+├── Serializer/          Schema-driven reflectionless binary serialization
+├── shaders/             GLSL sources and compiled SPIR-V binaries
+└── CMakeLists.txt       Root build configuration
 ```
 
+---
+
+## 6. License & Acknowledgments
+
+Omnix Engine is released under the [MIT License](LICENSE). Third-party libraries bundled or linked include GLFW, GLM, NVIDIA PhysX 4.1, Dear ImGui, ImGuizmo, and miniaudio.

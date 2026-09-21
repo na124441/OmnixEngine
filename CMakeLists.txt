@@ -342,6 +342,10 @@ add_executable(transform_tests Scene/tests/TransformTests.cpp)
 target_link_libraries(transform_tests PRIVATE Scene EngineCore)
 target_include_directories(transform_tests PRIVATE ${ENGINE_INCLUDE_DIRS})
 
+add_executable(omnix_benchmarks benchmarks/bench_main.cpp)
+target_link_libraries(omnix_benchmarks PRIVATE EngineCore ECS Serialization Scene EngineRuntime)
+target_include_directories(omnix_benchmarks PRIVATE ${ENGINE_INCLUDE_DIRS})
+
 # Phase 2: RenderQueue Unit Test
 # add_executable(engine_tests RenderingEngine/Renderer/tests/RenderQueue_test.cpp)
 # target_include_directories(engine_tests PRIVATE ${ENGINE_INCLUDE_DIRS})

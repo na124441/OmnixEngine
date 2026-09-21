@@ -1,0 +1,13 @@
+Workload,Configuration,Runs,Median_us,Mean_us,StdDev_us,Min_us,Max_us,p95_us,p99_us,Throughput,ThroughputUnit
+"ECS Entity Spawn","10,000 entities",25,44106.8,45573.9,3303.89,42531.8,53301.4,52564.1,53301.4,219424,"entities/s"
+"ECS Entity Spawn","50,000 entities",15,49189.8,49199.6,1377.07,47420.6,52023.7,52023.7,52023.7,1.01627e+06,"entities/s"
+"ECS Component Attach","10,000 ent (2 comps)",25,152651,155040,8173.46,147901,183094,174683,183094,64499.7,"entities/s"
+"ECS System Iteration","10,000 entities (dt)",100,44208.6,47234.4,7765.54,41362.1,93243,56557,93243,211710,"ent-ticks/s"
+"Matrix4x4 TRS Construction","10,000 transforms",100,4695.6,4722.47,391.789,4155.3,5894,5497.4,5894,2.11753e+06,"matrices/s"
+"Transform Hierarchy Tree","Depth 100 multiply chain",200,13.7,15.3775,5.95276,13.5,68.1,28.5,44.9,65030.1,"traversals/s"
+"ECS Binary Serialize","2,000 entities in RAM",50,16823.1,17159.1,1173.97,16084,23255,18751.4,23255,116556,"entities/s"
+"ECS Binary Deserialize","2,000 entities from RAM",50,41203.6,43101.6,6941.04,37536.8,73651.5,58478.6,73651.5,46402,"entities/s"
+"Linear Allocator","1,000 allocs (64B)",100,11.7,11.76,0.26,11.6,14.3,11.8,14.3,8.5034e+07,"allocs/s"
+"Pool Allocator","1,000 alloc/free (32B)",100,17.9,22.271,10.5591,17.7,88.5,37.9,88.5,4.49014e+07,"alloc-ops/s"
+"Stack Allocator","500 push/pop (128B)",100,5.7,6.912,4.20184,5.7,25.1,20.2,25.1,7.2338e+07,"push-pop/s"
+"Package Handle Lookup","1,000 queries in archive",100,710.9,800.535,220.419,663.5,1576.1,1419.5,1576.1,1.24916e+06,"queries/s"
