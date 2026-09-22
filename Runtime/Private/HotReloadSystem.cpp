@@ -22,11 +22,26 @@ namespace eng::runtime {
             return p;
         }
 
+        static bool IsSafePath(const std::string& path)
+        {
+            const std::string unsafeChars = "&|;<>$\"`\n\r";
+            return path.find_first_of(unsafeChars) == std::string::npos;
+        }
+
         bool CompileGLSLToSPIRV(const std::string& glslPath, const std::string& spvPath, std::string& outCompilerError)
         {
+            if (!IsSafePath(glslPath) || !IsSafePath(spvPath)) {
+                outCompilerError = "Unsafe characters detected in file paths.";
+                return false;
+            }
+
             std::string glslcCmd = "glslc";
             const char* vulkanSdk = std::getenv("VULKAN_SDK");
             if (vulkanSdk) {
+                if (!IsSafePath(vulkanSdk)) {
+                    outCompilerError = "Unsafe characters detected in VULKAN_SDK path.";
+                    return false;
+                }
                 std::string sdkPath = vulkanSdk;
                 std::replace(sdkPath.begin(), sdkPath.end(), '/', '\\');
                 glslcCmd = std::string("\"") + sdkPath + "\\bin\\glslc.exe\"";
