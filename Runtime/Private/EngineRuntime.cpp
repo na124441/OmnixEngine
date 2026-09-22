@@ -25,6 +25,7 @@
 #include "Runtime/Public/AssetLoadingStressTests.h"
 #include "Runtime/Public/HotReloadTests.h"
 #include "Runtime/Public/PackageTests.h"
+#include "Core/Logging/LoggerTests.h"
 #include <cstdlib>
 
 #include "Physics/Public/PhysicsWorld.h"
@@ -77,10 +78,13 @@ namespace eng::runtime {
         bool testLoad = false;
         bool testReload = false;
         bool testPackage = false;
+        bool testLogger = false;
         for (int i = 1; i < argc; ++i) {
             if (argv[i]) {
                 std::string arg(argv[i]);
-                if (arg == "--test-fail-ecs") {
+                if (arg == "--test-logger") {
+                    testLogger = true;
+                } else if (arg == "--test-fail-ecs") {
                     failECS = true;
                 } else if (arg == "--test-fail-renderer") {
                     failRenderer = true;
@@ -162,6 +166,12 @@ namespace eng::runtime {
         if (testPackage) {
             // Run package pipeline validation tests
             bool success = eng::runtime::RunPackageTests();
+            std::exit(success ? 0 : 1);
+        }
+
+        if (testLogger) {
+            // Run logger tests
+            bool success = eng::logging::RunLoggerTests();
             std::exit(success ? 0 : 1);
         }
 
