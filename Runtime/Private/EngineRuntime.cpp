@@ -25,6 +25,7 @@
 #include "Runtime/Public/AssetLoadingStressTests.h"
 #include "Runtime/Public/HotReloadTests.h"
 #include "Runtime/Public/PackageTests.h"
+#include "Core/Tests/TimerTests.h"
 #include <cstdlib>
 
 #include "Physics/Public/PhysicsWorld.h"
@@ -77,6 +78,7 @@ namespace eng::runtime {
         bool testLoad = false;
         bool testReload = false;
         bool testPackage = false;
+        bool testTimer = false;
         for (int i = 1; i < argc; ++i) {
             if (argv[i]) {
                 std::string arg(argv[i]);
@@ -102,6 +104,8 @@ namespace eng::runtime {
                     testReload = true;
                 } else if (arg == "--test-package") {
                     testPackage = true;
+                } else if (arg == "--test-timer") {
+                    testTimer = true;
                 } else if (arg == "--editor") {
                     m_Context.mode = RuntimeMode::Editor;
                 }
@@ -162,6 +166,12 @@ namespace eng::runtime {
         if (testPackage) {
             // Run package pipeline validation tests
             bool success = eng::runtime::RunPackageTests();
+            std::exit(success ? 0 : 1);
+        }
+
+        if (testTimer) {
+            // Run timer tests
+            bool success = eng::core::RunTimerTests();
             std::exit(success ? 0 : 1);
         }
 

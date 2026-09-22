@@ -101,7 +101,7 @@ namespace eng::logging {
 #if defined(_WIN32)
         localtime_s(&bt, &timer);
 #else
-        localtime_r(&bt, &timer);
+        localtime_r(&timer, &bt);
 #endif
 
         std::ostringstream oss;
