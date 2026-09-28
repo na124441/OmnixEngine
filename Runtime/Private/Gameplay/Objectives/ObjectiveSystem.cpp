@@ -128,8 +128,7 @@ namespace eng::runtime {
             newObj.Description = "";
             newObj.Repeatable = false;
             newObj.State = ObjectiveState::Inactive;
-            m_Objectives[objectiveID] = newObj;
-            it = m_Objectives.find(objectiveID);
+            it = m_Objectives.emplace_hint(it, objectiveID, std::move(newObj));
         }
 
         bool shouldSimulate = (m_Context->mode == RuntimeMode::Game) ||
@@ -174,8 +173,7 @@ namespace eng::runtime {
             newObj.Description = "";
             newObj.Repeatable = false;
             newObj.State = ObjectiveState::Active; // Needs to be active to complete
-            m_Objectives[objectiveID] = newObj;
-            it = m_Objectives.find(objectiveID);
+            it = m_Objectives.emplace_hint(it, objectiveID, std::move(newObj));
         }
 
         Objective& objective = it->second;
